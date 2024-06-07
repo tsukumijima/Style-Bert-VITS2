@@ -88,7 +88,7 @@ def get_net_g(model_path: str, version: str, device: str, hps: HyperParameters):
         _ = utils.checkpoints.load_checkpoint(
             model_path, net_g, None, skip_optimizer=True
         )
-    elif model_path.endswith(".safetensors"):
+    elif model_path.endswith(".safetensors") or model_path.endswith(".aivm"):
         _ = utils.safetensors.load_safetensors(model_path, net_g, True)
     else:
         raise ValueError(f"Unknown model format: {model_path}")
