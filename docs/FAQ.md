@@ -1,9 +1,22 @@
 # よくある質問
 
+## 書き起こしにエラーが出たりして失敗する
+
+ffmpegが入っていないことが問題のようです。
+ググるか、おそらくWindowsなら
+```
+winget install ffmpeg
+```
+によりffmpegをインストールできます。その後で試してみてください。
+
 ## Google Colabでの学習がエラーが何か出て動かない
 
 Google Colabのノートブックは以前のバージョンのノートブックのコピーを使っていませんか？
 Colabノートブックは最新のバージョンに合ったノートブックで動かすことを前提としています。ノートブック記載のバージョンを確認して、[最新のcolabノートブック](http://colab.research.google.com/github/litagin02/Style-Bert-VITS2/blob/master/colab.ipynb)（を必要ならコピーして）から使うようにしてください。
+
+## `ModuleNotFoundError: No module named '_socket'`と出る
+
+フォルダ名をインストールした時から変えていませんか？フォルダ名を変えるとパスが変わってしまい、インストール時に指定したパスと異なるためにエラーが出ます。フォルダ名を元に戻してください。
 
 ## 学習に時間がかかりすぎる
 
