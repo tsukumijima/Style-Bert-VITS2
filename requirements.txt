@@ -14,7 +14,7 @@ psutil
 punctuators
 pyannote.audio>=3.1.0
 pyloudnorm
-pyopenjtalk-dict
+pyopenjtalk-plus
 pypinyin
 pyworld-prebuilt
 stable_ts
