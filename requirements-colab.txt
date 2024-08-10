@@ -1,3 +1,4 @@
+accelerate
 cmudict
 cn2an
 g2p_en
@@ -10,7 +11,7 @@ numpy<2
 onnxruntime
 pyannote.audio>=3.1.0
 pyloudnorm
-pyopenjtalk-dict
+pyopenjtalk-plus
 pypinyin
 pyworld-prebuilt
 torch<2.4

@@ -22,6 +22,7 @@ classifiers = [
     "Programming Language :: Python :: Implementation :: CPython",
 ]
 dependencies = [
+    "accelerate",
     "cmudict",
     "cn2an",
     "g2p_en",
@@ -31,7 +32,7 @@ dependencies = [
     "numba",
     "numpy",
     "pydantic>=2.0",
-    "pyopenjtalk-dict",
+    "pyopenjtalk-plus",
     "pypinyin",
     "pyworld-prebuilt",
     "safetensors",
@@ -65,7 +66,7 @@ exclude = [".git", ".gitignore", ".gitattributes"]
 packages = ["style_bert_vits2"]
 
 [tool.hatch.envs.test]
-dependencies = ["coverage[toml]>=6.5", "pytest"]
+dependencies = ["coverage[toml]>=6.5", "pytest", "scipy"]
 [tool.hatch.envs.test.scripts]
 # Usage: `hatch run test:test`
 test = "pytest {args:tests}"
@@ -80,10 +81,12 @@ cov = ["test-cov", "cov-report"]
 detached = true
 dependencies = ["black[jupyter]", "isort"]
 [tool.hatch.envs.style.scripts]
+# Usage: `hatch run style:check`
 check = [
     "black --check --diff .",
     "isort --check-only --diff --profile black --gitignore --lai 2 . --sg \"Data/*\" --sg \"inputs/*\" --sg \"model_assets/*\" --sg \"static/*\"",
 ]
+# Usage: `hatch run style:fmt`
 fmt = [
     "black .",
     "isort --profile black --gitignore --lai 2 . --sg \"Data/*\" --sg \"inputs/*\" --sg \"model_assets/*\" --sg \"static/*\"",
