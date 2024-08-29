@@ -1,8 +1,10 @@
 import re
 import unicodedata
+import sys
 
 from num2words import num2words
 
+from style_bert_vits2.nlp.japanese.katakana_map import KATAKANA_MAP
 from style_bert_vits2.nlp.symbols import PUNCTUATIONS
 
 
@@ -156,6 +158,8 @@ def normalize_text(text: str) -> str:
     res = res.replace("～", "ー")
     res = res.replace("〜", "ー")
 
+    res = __convert_english_to_katakana(res)  # 英単語をカタカナに変換
+
     res = replace_punctuation(res)  # 句読点等正規化、読めない文字を削除
 
     # 結合文字の濁点・半濁点を削除
@@ -202,3 +206,74 @@ def __convert_numbers_to_words(text: str) -> str:
     res = __NUMBER_PATTERN.sub(lambda m: num2words(m[0], lang="ja"), res)
 
     return res
+
+
+def __convert_english_to_katakana(text: str) -> str:
+    """
+    テキスト中の英単語をカタカナに変換する。
+    Language-Specific のような複数の英単語がハイフンで連結されている単語にも対応する。
+    英単語は大文字・小文字を区別せず、変換マップに存在しない場合は元の単語をそのまま返す。
+
+    Args:
+        text (str): 変換するテキスト (例: "なぜかVSCodeのSyntax Highlightingが効かない")
+
+    Returns:
+        str: 変換されたテキスト (例: "なぜかVSCodeのシンタックスハイライティングが効かない")
+    """
+
+    words = []
+    current_word = ""
+    for char in text:
+        # 英単語を構成する文字であれば current_word に追加
+        if 'a' <= char <= 'z' or 'A' <= char <= 'Z' or char == '-':
+            current_word += char
+        else:
+            # 英単語が終了したらカタカナに変換して words に追加
+            if current_word:
+                # ハイフンで連結された単語を分割
+                sub_words = current_word.split('-')
+                katakana_word = ""
+                for i, sub_word in enumerate(sub_words):
+                    # 全部大文字、最初だけ大文字、全部小文字のいずれのパターンにも一致しない場合はカタカナ変換しない
+                    if (
+                        not sub_word.islower()
+                        and not sub_word.isupper()
+                        and not (len(sub_word) > 1 and sub_word[0].isupper() and sub_word[1:].islower())
+                    ):
+                        katakana_word += sub_word
+                    else:
+                        # 各単語を小文字に変換し、カタカナ語マップから対応するカタカナを取得
+                        katakana_word += KATAKANA_MAP.get(sub_word.lower(), sub_word)
+                    # もしハイフンで連結された単語であれば、カタカナ化した後にハイフンを再度挿入
+                    if i < len(sub_words) - 1:  # 最後の単語でない場合のみハイフンを追加
+                        katakana_word += "-"
+
+                words.append(katakana_word)
+                current_word = ""
+            words.append(char)
+    # 最後の単語を処理
+    if current_word:
+        sub_words = current_word.split('-')
+        katakana_word = ""
+        for i, sub_word in enumerate(sub_words):
+            # 全部大文字、最初だけ大文字、全部小文字のいずれのパターンにも一致しない場合はカタカナ変換しない
+            if (
+                not sub_word.islower()
+                and not sub_word.isupper()
+                and not (len(sub_word) > 1 and sub_word[0].isupper() and sub_word[1:].islower())
+            ):
+                katakana_word += sub_word
+            else:
+                # 各単語を小文字に変換し、カタカナ語マップから対応するカタカナを取得
+                katakana_word += KATAKANA_MAP.get(sub_word.lower(), sub_word)
+            if i < len(sub_words) - 1:  # 最後の単語でない場合のみハイフンを追加
+                katakana_word += "-"
+        words.append(katakana_word)
+    return "".join(words)
+
+
+if __name__ == "__main__":
+    if len(sys.argv) != 2:
+        print(f"Usage: python -m style_bert_vits2.nlp.japanese.normalizer <text>")
+        sys.exit(1)
+    print(normalize_text(sys.argv[1]))
