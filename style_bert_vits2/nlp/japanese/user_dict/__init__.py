@@ -76,7 +76,7 @@ def update_dict(
     default_dict_path: Path = default_dict_path,
     user_dict_path: Path = user_dict_path,
     compiled_dict_path: Path = compiled_dict_path,
-) -> None:
+) -> str:
     """
     辞書の更新
     Parameters
@@ -104,7 +104,7 @@ def update_dict(
         # デフォルト辞書データの追加
         if not default_dict_path.is_file():
             print("Warning: Cannot find default dictionary.", file=sys.stderr)
-            return
+            return ""
         default_dict = default_dict_path.read_text(encoding="utf-8")
         if default_dict == default_dict.rstrip():
             default_dict += "\n"
@@ -164,6 +164,8 @@ def update_dict(
             tmp_csv_path.unlink()
         if tmp_compiled_path.exists():
             tmp_compiled_path.unlink()
+
+    return csv_text
 
 
 # @mutex_wrapper(mutex_user_dict)
