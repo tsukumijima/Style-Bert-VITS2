@@ -1,6 +1,9 @@
 import re
 from typing import TypedDict
 
+
+from fugashi import Tagger
+
 from style_bert_vits2.constants import Languages
 from style_bert_vits2.logging import logger
 from style_bert_vits2.nlp import bert_models
@@ -8,7 +11,7 @@ from style_bert_vits2.nlp.japanese import pyopenjtalk_worker as pyopenjtalk
 from style_bert_vits2.nlp.japanese.mora_list import MORA_KATA_TO_MORA_PHONEMES, VOWELS
 from style_bert_vits2.nlp.japanese.normalizer import replace_punctuation
 from style_bert_vits2.nlp.symbols import PUNCTUATIONS
-
+from style_bert_vits2.nlp.japanese.user_dict import update_dict
 
 def g2p(
     norm_text: str, use_jp_extra: bool = True, raise_yomi_error: bool = False
@@ -53,6 +56,10 @@ def g2p(
 
     # punctuation 無しのアクセント情報を使って、punctuation を含めたアクセント情報を作る
     phone_tone_list = __align_tones(phone_w_punct, phone_tone_list_wo_punct)
+
+    # fugashiで解析
+    sep_text, sep_kata ,sep_phonemes, phone_tone_list =  update_yomi(sep_text, sep_kata, phone_tone_list)
+
     # logger.debug(f"phone_tone_list:\n{phone_tone_list}")
 
     # word2ph は厳密な解答は不可能なので（「今日」「眼鏡」等の熟字訓が存在）、
@@ -158,6 +165,606 @@ def text_to_sep_kata(
         sep_kata.append(yomi)
 
     return sep_text, sep_kata
+
+
+def update_yomi(
+        sep_text: list[str],
+        sep_kata: list[str],
+        phone_tone_list: list[tuple[str,int]]
+) -> tuple[ list[str], list[str],  list[list[str]], list[tuple[str, int]], ]:
+    """
+    fugashiで比較的新しいunidicを使って読みを取得し、openjtalkの古い読みと比較して一致していない場合更新する。
+    アクセント取得時にopenjtalkでもう一回処理を通す時のために、norm_textの該当箇所をカタカナに変更する。
+
+    Args:
+        sep_text (list[str]):
+        sep_kata (list[str]):
+        phone_tone_list (list[tuple[str, int]]):
+
+    Returns:
+        tuple[list[str], list[str],  list[list[str]], list[tuple[str, int]], ]:
+    """
+    # fugashiで使用するunidicは別ライブラリに分けられている
+    # fygashiで使用するuniduicのバージョンは3.10
+    # unidic-liteは2.13なのでたぶんopenjtalk同等
+
+
+    # openjtalkの辞書のバージョンについて
+    # １．アクセント情報のないipadicにアクセント情報を足したもの
+    # ipadicは2011年で更新が止まっているがどのバージョンを使用しているのかわからなかった
+    # ２，上記の辞書と情報の配列が同じunidic
+    # openjtalkの更新時期(2018)から推測してunidic-csj-2.3.0以前
+
+
+# ユーザー辞書を読み込んでopenjrtalkで処理し、ユーザー辞書に登録されている項目で文章を分割する
+# ["text", ("word","pron"),"text"]のような形式になる
+
+    # ユーザー辞書に登録されている項目で分割された文章
+    split_text: list[str | list[str]] = []
+
+    # 形式 = [("word". "yomi")]
+    user_dict: list[tuple[str,str,str,str]] = []
+
+    # デバッグ用とここでの使用用に、update_dict(の挙動を最終的なcsv形式のユーザー辞書を返すよう変更した
+    user_dict_csv = update_dict()
+
+    # ユーザー辞書が読み込めた場合のみ
+    if user_dict_csv != "":
+
+        # 形式変換
+        for word in user_dict_csv.split("\n"):
+            if not word == "":
+
+                word = word.split(",")
+
+                surface = word[0]
+                pron = word[12]
+                accent = str(word[13])[0]
+                position = word[4]
+
+                user_dict.append((surface, pron, accent, position))
+
+        merged_text:str = ""
+        #print(user_dict)
+
+        for i in range(0, len(sep_text)):
+
+            cur_surface:str = sep_text[i]
+            cur_pron:str = sep_kata[i]
+
+
+            # 辞書に登録されている項目とopenjtalkの出力が一致するか調べる
+            for word in user_dict:
+
+                cur_dict_surface:str = word[0]
+                cur_dict_pron:str = word[1]
+                cur_dict_acc:str = word[2]
+
+                # 辞書に登録されている項目とopenjtalkの出力が一致する場合
+                if cur_surface == cur_dict_surface and cur_pron == cur_dict_pron:
+
+
+                    # ユーザー辞書に載っていないテキストを結合したものを追加し変数をリセット
+                    if merged_text != "":
+                        split_text.append(merged_text)
+                        merged_text = ""
+
+
+                    split_text.append([cur_surface, cur_dict_pron, cur_dict_acc])
+
+                    break
+
+            # 辞書に登録されている項目とopenjtalkの出力が一致しない場合
+            else:
+                # ユーザー辞書に載っていないテキストを結合したもの
+                merged_text += cur_surface
+
+        if merged_text != "":
+            split_text.append(merged_text)
+
+    #print(sep_text)
+
+    word_list: list[str] = []
+    kana_list: list[str] = []
+    accent_list: list[str] = []
+    pos_list: list[str] = []
+
+    for text in split_text:
+
+        # 現在のテキストがpyopenjtalkのユーザー辞書にない場合
+        if type(text) == str:
+            cur_word_list, cur_kana_list, cur_accent_list, cur_pos_list = __fugashi_sep_kata(text)
+
+            word_list += cur_word_list
+            kana_list += cur_kana_list
+            accent_list += cur_accent_list # type: ignore
+            pos_list += cur_pos_list
+
+        if type(text) == list:
+            word_list.append(text[0])
+            kana_list.append(text[1])
+            accent_list.append(text[2])
+            pos_list.append(text[3])
+
+    print(split_text)
+
+    # fugashiでの解析結果
+    #print(word_list)
+    #print(kana_list)
+    #print(accent_list)
+
+
+    new_sep_text:list[str] = word_list
+    new_sep_kata:list[str] = kana_list
+    accent_hl_list:list[str] = []
+
+    # value = "tokyo" or "kinki" or "kyusyu"
+    hougen = "tokyo"
+
+    # 方言処理
+    if not hougen == "tokyo":
+        kana_list = __hougen_patch(kana_list, pos_list, hougen)
+
+    # 京阪式アクセント処理
+    if hougen == "kinki":
+        accent_list = __keihan_pacth(kana_list,accent_list,pos_list)
+
+    for num1 in range(0, len(kana_list)):
+
+        cur_kana = kana_list[num1]
+        cur_accent = accent_list[num1]
+
+        cur_acc_hl = __convert_acc2hl(cur_kana, cur_accent)
+        accent_hl_list += cur_acc_hl
+
+    #print(accent_hl_list)
+
+# sep_phonemes: 各単語ごとの音素のリストのリスト
+    sep_phonemes = __handle_long([__kata_to_phoneme_list(i) for i in kana_list])
+
+# phone_w_punct: sep_phonemes を結合した音素列
+    phone_w_punct: list[str] = []
+    for i in sep_phonemes:
+        phone_w_punct += i
+
+    #print(phone_w_punct)
+
+# 音素数とアクセント数が一致しない場合
+    assert len(accent_hl_list) == len(phone_w_punct), f"accent list num:{len(accent_hl_list)} != phone_list num:{len(phone_w_punct)}"
+
+# new_phone_tone_list == 新しいphone_tone_list(そのままの意味)
+    new_phone_tone_list = []
+
+    for i in range(0, len(phone_w_punct)):
+
+        phone = phone_w_punct[i]
+        accent = accent_hl_list[i]
+        new_phone_tone_list.append([phone, int(accent)])
+
+    # 近畿方言以外
+    if hougen == "kinki":
+        # openjtalkの出力と合成
+        for phone in new_phone_tone_list:
+
+            for old_phone in phone_tone_list:
+
+                if str(phone[0]) == str(old_phone[0]):
+
+                    # 一致する場合古いアクセントを使う
+                    phone[1] = old_phone[1]
+                    phone_tone_list.remove(old_phone)
+
+    #print(new_phone_tone_list)
+
+    return new_sep_text, new_sep_kata , sep_phonemes, new_phone_tone_list
+
+
+def __fugashi_sep_kata(
+        text: str
+) -> tuple[list[str], list[str], list[str | list[str]], list[str] ]:
+
+    tagger = Tagger('-Owakati')
+
+
+    word_list: list[str] = []
+    kana_list: list[str] = []
+    accent_list: list[str | list[str]] = []
+    pos_list: list[str] = []
+
+    #解析
+    for word in tagger(text):
+        feature = word.feature_raw
+
+        #アクセント核が二つある場合,"*,*",という風に記述されているので,を/に変更し"を消す
+        if re.search(r'\".*,.*\"', feature):
+
+            accStart = re.search(r'\".*,.*\"', feature).start() # type: ignore
+            accEnd = re.search(r'\".*,.*\"', feature).end() # type: ignore
+
+            accent = feature[accStart:accEnd].replace(",","/")
+
+            feature = feature[:accStart] + accent.replace("\"","") + feature[accEnd:]
+
+        feature = feature.split(",")
+
+        # "feature" is the Unidic feature data as a named tuple
+        # feature_rawはその語句の生の特徴情報
+
+        #得られる分類情報についてのメモ
+
+        # unidicの
+        # 0から数えて0番目(csv形式の時0から数えて4番目)が分類一
+        # 0から数えて9番目(csv形式の時0から数えて13番目)が発音系
+        # 0から数えて24番目(csv形式の時0から数えて28番目)がアクセントタイプ
+        # 0から数えて25番目(csv形式の時0から数えて29番目)がアクセント結合型
+
+        #print(feature)
+
+        # 辞書にある場合
+        if len(feature) == 29:
+            pos1: str = feature[0]
+            kana: str = feature[9]
+            accent = feature[24]
+
+            # 読みがない場合
+            if kana == "*":
+
+                kana ="'"
+
+            # 感嘆符か疑問符の場合
+            if re.match(r'[!?]+', str(word)):
+                kana = str(word)
+
+
+            word_list.append(str(word))
+            kana_list.append(kana)
+            accent_list.append(accent)
+            pos_list.append(pos1)
+
+        # 辞書にない場合の処理
+        else:
+
+            # fugashiで読みが取得できなくてもopennjtalkのnjdで処理できる場合
+            # アクセントはあとでopenjtalkのものと合成する
+            if  re.match(r'[ァ-ロワ-ヴぁ-ろわ-ん－a-zA-Za-zａ-ｚＡ-Ｚ]+', str(word)):
+
+                word, kana = text_to_sep_kata(str(word), raise_yomi_error= False) # type: ignore
+                word_list += word
+                kana_list += kana
+
+                # Xbox等fugashi解析時につながっていてもpyopenjtlkでは x box に分かれる
+                # なので分かれた数だけアクセントを追加する
+                for  i in range(0,len(word)):
+                    accent_list.append("0")
+                    pos_list.append("未分類")
+
+            else:
+                kana = "'"
+                accent = "*"
+                pos1 = "未分類"
+
+                word_list.append(str(word))
+                kana_list.append(kana)
+                accent_list.append(accent)
+                pos_list.append(pos1)
+
+
+    # fugashiでアクセント未取得時、0に設定
+    for i in range(0, len(accent_list)):
+
+        if str(accent_list[i]) == "*":
+            accent_list[i] = "0"
+
+        # アクセントの種類が2つ以上の場合先頭のものを使う
+        elif len(accent_list[i]) == 3:
+            accent_list[i] = str(accent_list[i]).split("/")[0]
+
+    return word_list, kana_list, accent_list, pos_list
+
+
+def __convert_acc2hl(
+    kana: str,
+    accent: str # type: ignore
+) -> list[str]:
+
+# アクセントの変換処理
+# カタカナの読みの文字数(= 拍数 = mora数)から音素数のアクセント配列のリストに変換
+# 後で音素と合成する
+
+    # toneのリスト
+    accent_hl_list: list[str] = []
+
+    #拗音の正規表現
+    _YOUON_PATTERN = re.compile(r'[ァィゥェォャュョヮ]')
+
+
+    mora = len(kana)
+
+    #すべて1にする
+    if accent == "ALL_H":
+        for phone in __kata_to_phoneme_list(kana):
+
+            accent_hl_list.append("1")
+        return accent_hl_list
+    #すべて0にする
+    elif accent == "ALL_L":
+        for phone in __kata_to_phoneme_list(kana):
+
+            accent_hl_list.append("0")
+        return accent_hl_list
+
+    accent:int = int(accent)
+
+    # 一文字の場合
+    if mora == 1:
+
+        if accent == 1:
+
+            # 返した音素のリストの数だけ実行
+            for phone in __kata_to_phoneme_list(kana):
+
+                accent_hl_list.append("1")
+
+        else:
+
+            for phone in __kata_to_phoneme_list(kana):
+                accent_hl_list.append("0")
+
+    # 二文字で拗音が続く場合
+    elif mora == 2 and _YOUON_PATTERN.fullmatch(kana[1]):
+
+        if accent == 1:
+            for phone in __kata_to_phoneme_list(kana):
+                accent_hl_list.append("1")
+
+        else:
+            for phone in __kata_to_phoneme_list(kana):
+                accent_hl_list.append("0")
+
+    # アクセント核が平型の場合平型に
+    elif accent == 0:
+
+        # 2文字目に拗音が続く場合
+        # 例　"キャ" など
+        if _YOUON_PATTERN.fullmatch(kana[1]):
+
+            # 先頭を追加
+            for phone in __kata_to_phoneme_list(kana[:2]):
+                accent_hl_list.append("0")
+
+            for phone in __kata_to_phoneme_list(kana[2:]):
+                accent_hl_list.append("1")
+
+        # 拗音が続かない場合
+        else:
+
+            # 先頭を追加
+            for phone in __kata_to_phoneme_list(kana[0]):
+                accent_hl_list.append("0")
+
+            for phone in __kata_to_phoneme_list(kana[1:]):
+                accent_hl_list.append("1")
+
+    # アクセント核が先頭の場合先頭を先に音素に変換しアクセントを設定する。
+    # 例　"ア"  =>　"a" -> ("a", "1")
+    elif accent == 1:
+
+        # 2文字目に拗音が続く場合
+        # 例　"キャ" など
+        if _YOUON_PATTERN.fullmatch(kana[1]):
+
+            # 2文字目までを追加
+            for phone in __kata_to_phoneme_list(kana[:2]):
+                accent_hl_list.append("1")
+
+            # 3文字目以降を追加
+            for phone in __kata_to_phoneme_list(kana[2:]):
+                accent_hl_list.append("0")
+
+        # 拗音が続かない場合
+        else:
+
+            # 1文字目を追加
+            for phone in __kata_to_phoneme_list(kana[0]):
+                accent_hl_list.append("1")
+
+            # 2文字目以降を追加
+            for phone in __kata_to_phoneme_list(kana[1:]):
+                accent_hl_list.append("0")
+
+    # アクセント核が先端と終端の間に位置する場合先頭を先に音素に変換しアクセントを設定する。
+    elif accent < mora:
+
+        # acc = 0スタートに直した 泊で数えた アクセント数
+        acc = accent -1
+
+        # 2文字目に拗音が続く場合でアクセント核が3文字目の場合
+        # 例　"フェニックス" など
+        if _YOUON_PATTERN.fullmatch(kana[1]) and accent == 2:
+            # 2文字目までを追加
+            for phone in __kata_to_phoneme_list(kana[:2]):
+                accent_hl_list.append("0")
+
+            # 3文字目以降を追加
+            for phone in __kata_to_phoneme_list(kana[2]):
+                accent_hl_list.append("1")
+
+            for phone in __kata_to_phoneme_list(kana[3:]):
+                accent_hl_list.append("0")
+
+        # アクセント核の2文字目に拗音が続く場合
+        # 例　"インフェルノ" など
+        elif _YOUON_PATTERN.fullmatch(kana[acc+1]):
+            # アクセント核までを追加
+            for phone in __kata_to_phoneme_list(kana[:acc]):
+                accent_hl_list.append("0")
+
+            # アクセント核以降を追加
+            for phone in __kata_to_phoneme_list(kana[acc:accent+1]):
+                accent_hl_list.append("1")
+
+            for phone in __kata_to_phoneme_list(kana[accent+1:]):
+                accent_hl_list.append("0")
+
+        else:
+            #先頭からアクセント核まで
+            for phone in __kata_to_phoneme_list(kana[:acc]):
+                accent_hl_list.append("0")
+
+            # アクセント核を追加
+            for phone in __kata_to_phoneme_list(kana[acc]):
+                accent_hl_list.append("1")
+
+            #　アクセント核の一個先から終端まで
+            for phone in __kata_to_phoneme_list(kana[accent:]):
+                accent_hl_list.append("0")
+
+
+    # アクセント核が終端の場合先頭を先に音素に変換しアクセントを設定する。
+    elif accent == mora:
+
+        # acc = 0スタートに直した 泊で数えた アクセント数
+        acc = accent -1
+
+        for phone in __kata_to_phoneme_list(kana[:acc]):
+            accent_hl_list.append("0")
+
+        # 終端を追加
+        for phone in __kata_to_phoneme_list(kana[acc]):
+            accent_hl_list.append("1")
+
+    return accent_hl_list
+
+
+def __hougen_patch(
+        sep_kata:list[str],
+        sep_pos:list[str],
+        hougen_id:str
+) -> list[str]:
+    """
+    NHK日本語アクセント辞典を参考に方言の修正を加える。
+    区分は付録NHK日本語アクセント辞典125ｐを参照した。
+    持っていない人のためにも、細かくコメントを残しておく。
+
+    Args:
+        sep_kata (list[str]):
+        sep_kata (list[str]):
+        hougen_id (str):
+    Returns:
+        sep_kata(list[str]): 修正された sep_kata
+    """
+
+    # 区分は以下の通り
+    # 本土方言/
+    #   八丈方言
+    #   東部方言
+    #   西部方言 /
+    #         近畿方言 kinki
+    #   九州方言 kyusyu/
+
+    assert hougen_id == "kinki" or "kyusyu",f"ERROR: hougen vale {hougen_id} is not used"
+
+    __KYUSYU_HATUON_PATTERN = re.compile(f"[ヌニムミモ]")
+
+    for i in range(0, len(sep_kata)):
+
+
+        if hougen_id == "kyusyu":
+
+            # 九州のほぼ全域で e を ye と発音する；付録131ｐ
+            sep_kata[i] = sep_kata[i].replace("エ", "イェ")
+
+            # 九州のほぼ全域で s eをsh e , z eをj eと発音する；付録132ｐ
+            sep_kata[i] = sep_kata[i].replace("セ", "シェ")
+            sep_kata[i] = sep_kata[i].replace("ゼ", "ジェ")
+
+            # 発音化：語末のヌ、ニ、ム、モ、ミなどが発音 ンN で表される。；付録132ｐ
+            num = len(sep_kata[i])
+            if __KYUSYU_HATUON_PATTERN.fullmatch(sep_kata[i][num-1]):
+                sep_kata[i] = sep_kata[i][:num-1] + "ン"
+
+        elif hougen_id == "kinki":
+            #1泊の名詞を長音化し2泊で発音する
+            if sep_pos[i] == "名詞" and len(sep_kata[i]) == 1:
+                sep_kata[i] = sep_kata[i] + "ー"
+
+    return sep_kata
+
+def __keihan_pacth(
+    sep_kata:list[str],
+    sep_acc:list[str],
+    sep_pos:list[str],
+) -> list[str]:
+
+    """
+    NHK日本語アクセント辞典を参考にアクセントを京阪式にする
+    東京式と京阪式の対応表は付録146ｐを参照した
+    持っていない人のためにも、細かくコメントを残しておく
+
+    Args:
+        sep_kata (list[str]):
+        sep_acc (list[str]):
+        sep_pos (list[str]):
+    Returns:
+        sep_acc (list[str]): 修正された sep_acc
+    """
+
+    for i in range(0, len(sep_pos)):
+
+        # 分類が名詞の場合
+        if sep_pos[i] == "名詞" :
+            # 一音の場合(長音可で2泊化)されている
+            if sep_kata[i][1] == "ー":
+                # 平型の場合頭高型に
+                if sep_acc[i] == "0":
+                    sep_acc[i] = "1"
+                # 頭高型の場合全て低く
+                if sep_acc[i] == "ALL_L":
+                    sep_acc[i] = "0"
+            # ニ音の場合
+            elif len(sep_kata[i]) == 2:
+                # 平型の場合全て高く
+                if sep_acc[i] == "0":
+                    sep_acc[i] = "ALL_H"
+                # 尾高型の場合頭高型に
+                if sep_acc[i] == "2":
+                    sep_acc[i] = "1"
+
+        # 分類が動詞の場合
+        elif sep_pos[i] == "動詞" :
+            # ニ音の場合
+            if len(sep_kata[i]) == 2:
+                # 平型の場合全て高く
+                if sep_acc[i] == "0":
+                    sep_acc[i] = "ALL_H"
+                # 頭高型の場合頭高型に
+                if sep_acc[i] == "1":
+                    sep_acc[i] = "2"
+            # 三音の場合
+            if len(sep_kata[i]) == 3:
+                # 平型の場合全て高く
+                if sep_acc[i] == "0":
+                    sep_acc[i] = "ALL_H"
+                # 中高型の場合尾高型に
+                if sep_acc[i] == "2":
+                    sep_acc[i] = "3"
+
+        # 分類が形容詞の場合
+        elif sep_pos[i] == "形容詞" :
+            # ニ音の場合
+            if len(sep_kata[i]) == 2:
+                # 頭高型の場合頭高型に
+                if sep_acc[i] == "1":
+                    sep_acc[i] = "2"
+            # 三音の場合
+            if len(sep_kata[i]) == 3:
+                # 平型の場合頭高に
+                if sep_acc[i] == "0":
+                    sep_acc[i] = "1"
+                # 中高型の場合頭高に
+                if sep_acc[i] == "2":
+                    sep_acc[i] = "1"
+    return sep_acc
 
 
 def adjust_word2ph(
