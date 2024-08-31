@@ -1,6 +1,6 @@
 import re
-import unicodedata
 import sys
+import unicodedata
 
 from num2words import num2words
 
@@ -225,20 +225,24 @@ def __convert_english_to_katakana(text: str) -> str:
     current_word = ""
     for char in text:
         # 英単語を構成する文字であれば current_word に追加
-        if 'a' <= char <= 'z' or 'A' <= char <= 'Z' or char == '-':
+        if "a" <= char <= "z" or "A" <= char <= "Z" or char == "-":
             current_word += char
         else:
             # 英単語が終了したらカタカナに変換して words に追加
             if current_word:
                 # ハイフンで連結された単語を分割
-                sub_words = current_word.split('-')
+                sub_words = current_word.split("-")
                 katakana_word = ""
                 for i, sub_word in enumerate(sub_words):
                     # 全部大文字、最初だけ大文字、全部小文字のいずれのパターンにも一致しない場合はカタカナ変換しない
                     if (
                         not sub_word.islower()
                         and not sub_word.isupper()
-                        and not (len(sub_word) > 1 and sub_word[0].isupper() and sub_word[1:].islower())
+                        and not (
+                            len(sub_word) > 1
+                            and sub_word[0].isupper()
+                            and sub_word[1:].islower()
+                        )
                     ):
                         katakana_word += sub_word
                     else:
@@ -253,14 +257,18 @@ def __convert_english_to_katakana(text: str) -> str:
             words.append(char)
     # 最後の単語を処理
     if current_word:
-        sub_words = current_word.split('-')
+        sub_words = current_word.split("-")
         katakana_word = ""
         for i, sub_word in enumerate(sub_words):
             # 全部大文字、最初だけ大文字、全部小文字のいずれのパターンにも一致しない場合はカタカナ変換しない
             if (
                 not sub_word.islower()
                 and not sub_word.isupper()
-                and not (len(sub_word) > 1 and sub_word[0].isupper() and sub_word[1:].islower())
+                and not (
+                    len(sub_word) > 1
+                    and sub_word[0].isupper()
+                    and sub_word[1:].islower()
+                )
             ):
                 katakana_word += sub_word
             else:
