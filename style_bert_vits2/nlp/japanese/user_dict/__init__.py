@@ -76,7 +76,7 @@ def update_dict(
     default_dict_path: Path = default_dict_path,
     user_dict_path: Path = user_dict_path,
     compiled_dict_path: Path = compiled_dict_path,
-) -> str:
+):
     """
     辞書の更新
     Parameters
@@ -104,7 +104,7 @@ def update_dict(
         # デフォルト辞書データの追加
         if not default_dict_path.is_file():
             print("Warning: Cannot find default dictionary.", file=sys.stderr)
-            return ""
+            return
         default_dict = default_dict_path.read_text(encoding="utf-8")
         if default_dict == default_dict.rstrip():
             default_dict += "\n"
@@ -164,6 +164,70 @@ def update_dict(
             tmp_csv_path.unlink()
         if tmp_compiled_path.exists():
             tmp_compiled_path.unlink()
+
+    return
+
+def get_dict(
+    default_dict_path: Path = default_dict_path,
+    user_dict_path: Path = user_dict_path,
+) -> str:
+    """
+    辞書の取得
+    Parameters
+    ----------
+    default_dict_path : Path
+        デフォルト辞書ファイルのパス
+    user_dict_path : Path
+        ユーザー辞書ファイルのパス
+    compiled_dict_path : Path
+        コンパイル済み辞書ファイルのパス
+    """
+
+    try:
+        # 辞書.csvを作成
+        csv_text = ""
+
+        # デフォルト辞書データの追加
+        if not default_dict_path.is_file():
+            print("Warning: Cannot find default dictionary.", file=sys.stderr)
+            return ""
+        default_dict = default_dict_path.read_text(encoding="utf-8")
+        if default_dict == default_dict.rstrip():
+            default_dict += "\n"
+        csv_text += default_dict
+
+        # ユーザー辞書データの追加
+        user_dict = read_dict(user_dict_path=user_dict_path)
+        for word_uuid in user_dict:
+            word = user_dict[word_uuid]
+            csv_text += (
+                "{surface},{context_id},{context_id},{cost},{part_of_speech},"
+                + "{part_of_speech_detail_1},{part_of_speech_detail_2},"
+                + "{part_of_speech_detail_3},{inflectional_type},"
+                + "{inflectional_form},{stem},{yomi},{pronunciation},"
+                + "{accent_type}/{mora_count},{accent_associative_rule}\n"
+            ).format(
+                surface=word.surface,
+                context_id=word.context_id,
+                cost=_priority2cost(word.context_id, word.priority),
+                part_of_speech=word.part_of_speech,
+                part_of_speech_detail_1=word.part_of_speech_detail_1,
+                part_of_speech_detail_2=word.part_of_speech_detail_2,
+                part_of_speech_detail_3=word.part_of_speech_detail_3,
+                inflectional_type=word.inflectional_type,
+                inflectional_form=word.inflectional_form,
+                stem=word.stem,
+                yomi=word.yomi,
+                pronunciation=word.pronunciation,
+                accent_type=word.accent_type,
+                mora_count=word.mora_count,
+                accent_associative_rule=word.accent_associative_rule,
+            )
+
+    except Exception as e:
+        print("Error: Failed to update dictionary.", file=sys.stderr)
+        traceback.print_exc(file=sys.stderr)
+        raise e
 
     return csv_text
 

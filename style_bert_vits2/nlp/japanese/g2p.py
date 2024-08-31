@@ -11,10 +11,12 @@ from style_bert_vits2.nlp.japanese import pyopenjtalk_worker as pyopenjtalk
 from style_bert_vits2.nlp.japanese.mora_list import MORA_KATA_TO_MORA_PHONEMES, VOWELS
 from style_bert_vits2.nlp.japanese.normalizer import replace_punctuation
 from style_bert_vits2.nlp.symbols import PUNCTUATIONS
-from style_bert_vits2.nlp.japanese.user_dict import update_dict
+from style_bert_vits2.nlp.japanese.user_dict import get_dict
+
+from typing import Literal
 
 def g2p(
-    norm_text: str, use_jp_extra: bool = True, raise_yomi_error: bool = False
+    norm_text: str, use_jp_extra: bool = True, raise_yomi_error: bool = False, use_uindic3: bool = False, hougen_mode:Literal["tokyo", "kinki", "kyusyu"] = "tokyo"
 ) -> tuple[list[str], list[int], list[int]]:
     """
     他で使われるメインの関数。`normalize_text()` で正規化された `norm_text` を受け取り、
@@ -28,6 +30,8 @@ def g2p(
         norm_text (str): 正規化されたテキスト
         use_jp_extra (bool, optional): False の場合、「ん」の音素を「N」ではなく「n」とする。Defaults to True.
         raise_yomi_error (bool, optional): False の場合、読めない文字が「'」として発音される。Defaults to False.
+        use_uindic3 (bool, optional): True の場合、fugashiとunidic3.10を使用する。Defaults to False.
+        hougen_mode (bool, optional): use_uindic3がTrue担っている必要がある。有効値は"tokyo","kinki","kyusyu"。"kinki"の場合アクセントも京阪式になる。Defaults to "tokyo".
 
     Returns:
         tuple[list[str], list[int], list[int]]: 音素のリスト、アクセントのリスト、word2ph のリスト
@@ -58,7 +62,8 @@ def g2p(
     phone_tone_list = __align_tones(phone_w_punct, phone_tone_list_wo_punct)
 
     # fugashiで解析
-    sep_text, sep_kata ,sep_phonemes, phone_tone_list =  update_yomi(sep_text, sep_kata, phone_tone_list)
+    if use_uindic3 == True:
+        sep_text, sep_kata ,sep_phonemes, phone_tone_list =  update_yomi(sep_text, sep_kata, sep_phonemes, phone_w_punct, phone_tone_list, hougen_mode=hougen_mode)
 
     # logger.debug(f"phone_tone_list:\n{phone_tone_list}")
 
@@ -170,7 +175,10 @@ def text_to_sep_kata(
 def update_yomi(
         sep_text: list[str],
         sep_kata: list[str],
-        phone_tone_list: list[tuple[str,int]]
+        sep_phonemes: list[list[str]],
+        phone_w_punct: list[str],
+        phone_tone_list: list[tuple[str,int]],
+        hougen_mode: str = "tokyo"
 ) -> tuple[ list[str], list[str],  list[list[str]], list[tuple[str, int]], ]:
     """
     fugashiで比較的新しいunidicを使って読みを取得し、openjtalkの古い読みと比較して一致していない場合更新する。
@@ -205,8 +213,7 @@ def update_yomi(
     # 形式 = [("word". "yomi")]
     user_dict: list[tuple[str,str,str,str]] = []
 
-    # デバッグ用とここでの使用用に、update_dict(の挙動を最終的なcsv形式のユーザー辞書を返すよう変更した
-    user_dict_csv = update_dict()
+    user_dict_csv = get_dict()
 
     # ユーザー辞書が読み込めた場合のみ
     if user_dict_csv != "":
@@ -224,45 +231,62 @@ def update_yomi(
 
                 user_dict.append((surface, pron, accent, position))
 
-        merged_text:str = ""
-        #print(user_dict)
+        norm_text = "".join(sep_text)
 
-        for i in range(0, len(sep_text)):
+        # 消去する番号のリスト
+        dict_del_list: list[tuple[str,str,str,str]] = []
 
-            cur_surface:str = sep_text[i]
-            cur_pron:str = sep_kata[i]
+        for i in range(0, len(user_dict)):
+            if not user_dict[i][0] in norm_text:
+                dict_del_list.append(user_dict[i])
 
-
-            # 辞書に登録されている項目とopenjtalkの出力が一致するか調べる
-            for word in user_dict:
-
-                cur_dict_surface:str = word[0]
-                cur_dict_pron:str = word[1]
-                cur_dict_acc:str = word[2]
-
-                # 辞書に登録されている項目とopenjtalkの出力が一致する場合
-                if cur_surface == cur_dict_surface and cur_pron == cur_dict_pron:
+        # 今回の文章にない単語を消去
+        for word in dict_del_list:
+            user_dict.remove(word)
 
 
-                    # ユーザー辞書に載っていないテキストを結合したものを追加し変数をリセット
-                    if merged_text != "":
-                        split_text.append(merged_text)
-                        merged_text = ""
+        # 該当するものがある場合
+        if user_dict != []:
+
+            merged_text:str = ""
+
+            for i in range(0, len(sep_text)):
+
+                cur_surface:str = sep_text[i]
+                cur_pron:str = sep_kata[i]
 
 
-                    split_text.append([cur_surface, cur_dict_pron, cur_dict_acc])
+                # 辞書に登録されている項目とopenjtalkの出力が一致するか調べる
+                for word in user_dict:
 
-                    break
+                    cur_dict_surface:str = word[0]
+                    cur_dict_pron:str = word[1]
+                    cur_dict_acc:str = word[2]
+                    cur_dict_pos:str = word[3]
 
-            # 辞書に登録されている項目とopenjtalkの出力が一致しない場合
-            else:
-                # ユーザー辞書に載っていないテキストを結合したもの
-                merged_text += cur_surface
+                    # 辞書に登録されている項目とopenjtalkの出力が一致する場合
+                    if cur_surface == cur_dict_surface and cur_pron == cur_dict_pron:
 
-        if merged_text != "":
-            split_text.append(merged_text)
 
-    #print(sep_text)
+                        # ユーザー辞書に載っていないテキストを結合したものを追加し変数をリセット
+                        if merged_text != "":
+                            split_text.append(merged_text)
+                            merged_text = ""
+
+
+                        split_text.append([cur_surface, cur_dict_pron, cur_dict_acc , cur_dict_pos])
+
+                        break
+
+                # 辞書に登録されている項目とopenjtalkの出力が一致しない場合
+                else:
+                    # ユーザー辞書に載っていないテキストを結合したもの
+                    merged_text += cur_surface
+
+            if merged_text != "":
+                split_text.append(merged_text)
+        else:
+            split_text = sep_text #type: ignore
 
     word_list: list[str] = []
     kana_list: list[str] = []
@@ -286,28 +310,18 @@ def update_yomi(
             accent_list.append(text[2])
             pos_list.append(text[3])
 
-    print(split_text)
+    # 方言処理
+    if  hougen_mode != "tokyo":
+        kana_list = __hougen_patch(kana_list, pos_list, hougen_mode)
 
-    # fugashiでの解析結果
-    #print(word_list)
-    #print(kana_list)
-    #print(accent_list)
-
+    # 京阪式アクセント処理
+    if hougen_mode == "kinki":
+        accent_list = __keihan_patch(kana_list,accent_list,pos_list)
 
     new_sep_text:list[str] = word_list
     new_sep_kata:list[str] = kana_list
     accent_hl_list:list[str] = []
 
-    # value = "tokyo" or "kinki" or "kyusyu"
-    hougen = "tokyo"
-
-    # 方言処理
-    if not hougen == "tokyo":
-        kana_list = __hougen_patch(kana_list, pos_list, hougen)
-
-    # 京阪式アクセント処理
-    if hougen == "kinki":
-        accent_list = __keihan_pacth(kana_list,accent_list,pos_list)
 
     for num1 in range(0, len(kana_list)):
 
@@ -317,46 +331,35 @@ def update_yomi(
         cur_acc_hl = __convert_acc2hl(cur_kana, cur_accent)
         accent_hl_list += cur_acc_hl
 
-    #print(accent_hl_list)
+# new_sep_phonemes: 各単語ごとの音素のリストのリスト
+    new_sep_phonemes = __handle_long([__kata_to_phoneme_list(i) for i in kana_list])
 
-# sep_phonemes: 各単語ごとの音素のリストのリスト
-    sep_phonemes = __handle_long([__kata_to_phoneme_list(i) for i in kana_list])
-
-# phone_w_punct: sep_phonemes を結合した音素列
-    phone_w_punct: list[str] = []
-    for i in sep_phonemes:
-        phone_w_punct += i
-
-    #print(phone_w_punct)
+# phone_w_punct: new_sep_phonemes を結合した音素列
+    new_phone_w_punct: list[str] = []
+    for i in new_sep_phonemes:
+        new_phone_w_punct += i
 
 # 音素数とアクセント数が一致しない場合
-    assert len(accent_hl_list) == len(phone_w_punct), f"accent list num:{len(accent_hl_list)} != phone_list num:{len(phone_w_punct)}"
+    assert len(accent_hl_list) == len(new_phone_w_punct), f"accent list num:{len(accent_hl_list)} != phone_list num:{len(new_phone_w_punct)}"
 
 # new_phone_tone_list == 新しいphone_tone_list(そのままの意味)
     new_phone_tone_list = []
 
-    for i in range(0, len(phone_w_punct)):
+    for i in range(0, len(new_phone_w_punct)):
 
-        phone = phone_w_punct[i]
+        phone = new_phone_w_punct[i]
         accent = accent_hl_list[i]
         new_phone_tone_list.append([phone, int(accent)])
 
-    # 近畿方言以外
-    if hougen == "kinki":
-        # openjtalkの出力と合成
-        for phone in new_phone_tone_list:
+    # 標準語の場合
+    if hougen_mode == "tokyo":
 
-            for old_phone in phone_tone_list:
+        # 音素が完全一致して区切った数も一致した場合openjtalkの出力したアクセントを使う。
+        if phone_w_punct == new_phone_w_punct and len(kana_list) == len(sep_kata):
+            return sep_text, sep_kata , sep_phonemes, phone_tone_list
 
-                if str(phone[0]) == str(old_phone[0]):
-
-                    # 一致する場合古いアクセントを使う
-                    phone[1] = old_phone[1]
-                    phone_tone_list.remove(old_phone)
-
-    #print(new_phone_tone_list)
-
-    return new_sep_text, new_sep_kata , sep_phonemes, new_phone_tone_list
+    # そうでない場合は区切り方が間違っているので新しいものを使う
+    return new_sep_text, new_sep_kata , new_sep_phonemes, new_phone_tone_list
 
 
 def __fugashi_sep_kata(
@@ -398,8 +401,6 @@ def __fugashi_sep_kata(
         # 0から数えて24番目(csv形式の時0から数えて28番目)がアクセントタイプ
         # 0から数えて25番目(csv形式の時0から数えて29番目)がアクセント結合型
 
-        #print(feature)
-
         # 辞書にある場合
         if len(feature) == 29:
             pos1: str = feature[0]
@@ -424,9 +425,9 @@ def __fugashi_sep_kata(
         # 辞書にない場合の処理
         else:
 
-            # fugashiで読みが取得できなくてもopennjtalkのnjdで処理できる場合
+            # fugashiで読みが取得できなくてもopenjtalkのnjdで処理できる場合
             # アクセントはあとでopenjtalkのものと合成する
-            if  re.match(r'[ァ-ロワ-ヴぁ-ろわ-ん－a-zA-Za-zａ-ｚＡ-Ｚ]+', str(word)):
+            if  re.match(r'[ァ-ロワ-ヴぁ-ろわ-ん－a-zA-Zａ-ｚＡ-Ｚ]+', str(word)):
 
                 word, kana = text_to_sep_kata(str(word), raise_yomi_error= False) # type: ignore
                 word_list += word
@@ -686,11 +687,12 @@ def __hougen_patch(
         elif hougen_id == "kinki":
             #1泊の名詞を長音化し2泊で発音する
             if sep_pos[i] == "名詞" and len(sep_kata[i]) == 1:
-                sep_kata[i] = sep_kata[i] + "ー"
+                if sep_kata[i] == "!" or "?" or "'":
+                    sep_kata[i] = sep_kata[i] + "ー"
 
     return sep_kata
 
-def __keihan_pacth(
+def __keihan_patch(
     sep_kata:list[str],
     sep_acc:list[str],
     sep_pos:list[str],
