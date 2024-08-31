@@ -234,20 +234,8 @@ def __convert_english_to_katakana(text: str) -> str:
                 sub_words = current_word.split("-")
                 katakana_word = ""
                 for i, sub_word in enumerate(sub_words):
-                    # 全部大文字、最初だけ大文字、全部小文字のいずれのパターンにも一致しない場合はカタカナ変換しない
-                    if (
-                        not sub_word.islower()
-                        and not sub_word.isupper()
-                        and not (
-                            len(sub_word) > 1
-                            and sub_word[0].isupper()
-                            and sub_word[1:].islower()
-                        )
-                    ):
-                        katakana_word += sub_word
-                    else:
-                        # 各単語を小文字に変換し、カタカナ語マップから対応するカタカナを取得
-                        katakana_word += KATAKANA_MAP.get(sub_word.lower(), sub_word)
+                    # 各単語を小文字に変換し、カタカナ語マップから対応するカタカナを取得
+                    katakana_word += KATAKANA_MAP.get(sub_word.lower(), sub_word)
                     # もしハイフンで連結された単語であれば、カタカナ化した後にハイフンを再度挿入
                     if i < len(sub_words) - 1:  # 最後の単語でない場合のみハイフンを追加
                         katakana_word += "-"
@@ -260,20 +248,8 @@ def __convert_english_to_katakana(text: str) -> str:
         sub_words = current_word.split("-")
         katakana_word = ""
         for i, sub_word in enumerate(sub_words):
-            # 全部大文字、最初だけ大文字、全部小文字のいずれのパターンにも一致しない場合はカタカナ変換しない
-            if (
-                not sub_word.islower()
-                and not sub_word.isupper()
-                and not (
-                    len(sub_word) > 1
-                    and sub_word[0].isupper()
-                    and sub_word[1:].islower()
-                )
-            ):
-                katakana_word += sub_word
-            else:
-                # 各単語を小文字に変換し、カタカナ語マップから対応するカタカナを取得
-                katakana_word += KATAKANA_MAP.get(sub_word.lower(), sub_word)
+            # 各単語を小文字に変換し、カタカナ語マップから対応するカタカナを取得
+            katakana_word += KATAKANA_MAP.get(sub_word.lower(), sub_word)
             if i < len(sub_words) - 1:  # 最後の単語でない場合のみハイフンを追加
                 katakana_word += "-"
         words.append(katakana_word)
