@@ -21,6 +21,8 @@ __REPLACE_MAP = {
     "…": "...",
     "···": "...",
     "・・・": "...",
+    "/": ".",
+    "／": ".",
     "·": ",",
     "・": ",",
     "、": ",",
@@ -222,38 +224,43 @@ def __convert_english_to_katakana(text: str) -> str:
     """
 
     words = []
-    current_word = ""
+    current_word = ''
     for char in text:
         # 英単語を構成する文字であれば current_word に追加
-        if "a" <= char <= "z" or "A" <= char <= "Z" or char == "-":
+        if "a" <= char <= "z" or "A" <= char <= "Z" or char in '-.\'+':
             current_word += char
         else:
             # 英単語が終了したらカタカナに変換して words に追加
             if current_word:
-                # ハイフンで連結された単語を分割
-                sub_words = current_word.split("-")
-                katakana_word = ""
-                for i, sub_word in enumerate(sub_words):
-                    # 各単語を小文字に変換し、カタカナ語マップから対応するカタカナを取得
-                    katakana_word += KATAKANA_MAP.get(sub_word.lower(), sub_word)
-                    # もしハイフンで連結された単語であれば、カタカナ化した後にハイフンを再度挿入
-                    if i < len(sub_words) - 1:  # 最後の単語でない場合のみハイフンを追加
-                        katakana_word += "-"
+                # まず、ハイフンがくっついたままの状態で辞書にあるか確認
+                katakana_word = KATAKANA_MAP.get(current_word.lower())
+                if not katakana_word:
+                    # 辞書になければ、ハイフンで分割して処理
+                    sub_words = current_word.split('-')
+                    katakana_sub_words = []
+                    for sub_word in sub_words:
+                        # 各単語を小文字に変換し、カタカナ語マップから対応するカタカナを取得
+                        katakana_sub_word = KATAKANA_MAP.get(sub_word.lower(), sub_word)
+                        katakana_sub_words.append(katakana_sub_word)
+                    katakana_word = '-'.join(katakana_sub_words)
 
                 words.append(katakana_word)
-                current_word = ""
+                current_word = ''
             words.append(char)
+
     # 最後の単語を処理
     if current_word:
-        sub_words = current_word.split("-")
-        katakana_word = ""
-        for i, sub_word in enumerate(sub_words):
-            # 各単語を小文字に変換し、カタカナ語マップから対応するカタカナを取得
-            katakana_word += KATAKANA_MAP.get(sub_word.lower(), sub_word)
-            if i < len(sub_words) - 1:  # 最後の単語でない場合のみハイフンを追加
-                katakana_word += "-"
+        katakana_word = KATAKANA_MAP.get(current_word.lower())
+        if not katakana_word:
+            sub_words = current_word.split('-')
+            katakana_sub_words = []
+            for sub_word in sub_words:
+                katakana_sub_word = KATAKANA_MAP.get(sub_word.lower(), sub_word)
+                katakana_sub_words.append(katakana_sub_word)
+            katakana_word = '-'.join(katakana_sub_words)
         words.append(katakana_word)
-    return "".join(words)
+
+    return ''.join(words)
 
 
 if __name__ == "__main__":
