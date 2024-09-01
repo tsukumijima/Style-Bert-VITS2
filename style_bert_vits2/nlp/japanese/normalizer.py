@@ -65,7 +65,9 @@ __SYMBOL_REPLACE_MAP = {
     "」": "'",
 }
 # 記号類の正規化パターン
-__SYMBOL_REPLACE_PATTERN = re.compile("|".join(re.escape(p) for p in __SYMBOL_REPLACE_MAP))
+__SYMBOL_REPLACE_PATTERN = re.compile(
+    "|".join(re.escape(p) for p in __SYMBOL_REPLACE_MAP)
+)
 
 # 記号などの読み正規化マップ
 __SYMBOL_YOMI_MAP = {
@@ -261,7 +263,7 @@ def normalize_text(text: str) -> str:
 
     # 一番先に記号を変換
     # 最初でないと ℃ が unicodedata.normalize() で分割されてしまう
-    res = replace_symbols(text)
+    res = __replace_symbols(text)
 
     res = unicodedata.normalize("NFKC", res)  # ここでアルファベットは半角になる
     res = __convert_numbers_to_words(res)  # 「100円」→「百円」等
@@ -281,7 +283,7 @@ def normalize_text(text: str) -> str:
     return res
 
 
-def replace_symbols(text: str) -> str:
+def __replace_symbols(text: str) -> str:
     """
     記号類の読みを適切に変換する。
 
@@ -291,6 +293,11 @@ def replace_symbols(text: str) -> str:
     Returns:
         str: 正規化されたテキスト
     """
+
+    # 数字と数字に挟まれた「〜」を「から」に置換
+    text = re.sub(
+        r"(\d+)\s*[〜~～]\s*(\d+)", lambda m: f"{m.group(1)}から{m.group(2)}", text
+    )
 
     # 数式の読み方を改善
     text = re.sub(
@@ -371,52 +378,78 @@ def __convert_numbers_to_words(text: str) -> str:
 def __convert_english_to_katakana(text: str) -> str:
     """
     テキスト中の英単語をカタカナに変換する。
-    Language-Specific のような複数の英単語がハイフンで連結されている単語にも対応する。
+    Language-Specific のような複数の英単語がハイフンで連結されている単語や、
+    ApplePencil のようなキャメルケースの複合語にも対応する。
     英単語は大文字・小文字を区別せず、変換マップに存在しない場合は元の単語をそのまま返す。
 
     Args:
         text (str): 変換するテキスト (例: "なぜかVSCodeのSyntax Highlightingが効かない")
 
     Returns:
-        str: 変換されたテキスト (例: "なぜかVSCodeのシンタックスハイライティングが効かない")
+        str: 変換されたテキスト (例: "なぜかブイエスコードのシンタックスハイライティングが効かない")
     """
+
+    def process_english_word(word: str) -> str:
+        """
+        英単語をカタカナに変換する。
+        ハイフンで連結された単語や、キャメルケースの複合語に対応する。
+
+        Args:
+            word (str): 変換する英単語
+
+        Returns:
+            str: カタカナに変換された単語
+        """
+
+        # まず、単語全体でカタカナ変換を試みる
+        print(word)
+        katakana_word = KATAKANA_MAP.get(word.lower())
+        if katakana_word:
+            return katakana_word
+
+        # ハイフンで分割して処理
+        if "-" in word:
+            sub_words = word.split("-")
+            katakana_sub_words = [
+                KATAKANA_MAP.get(sub.lower(), sub) for sub in sub_words
+            ]
+            return "-".join(katakana_sub_words)
+
+        # キャメルケースの複合語を分割して処理
+        sub_words = re.findall(
+            r"[A-Z]?[a-z0-9]+|[A-Z]+(?=[A-Z][a-z0-9]|\d|\W|$)|\d+", word
+        )
+        if len(sub_words) > 1:
+            katakana_sub_words = []
+            for sub in sub_words:
+                katakana_sub = KATAKANA_MAP.get(sub.lower())
+                if katakana_sub:
+                    katakana_sub_words.append(katakana_sub)
+                else:
+                    return word  # 一つでも変換できない部分があれば、元の単語を返す
+            return "".join(katakana_sub_words)
+
+        # 上記のいずれにも該当しない場合は元の単語を返す
+        return word
 
     words = []
     current_word = ""
+    english_pattern = re.compile(r"[a-zA-Z0-9]")
+
     for char in text:
-        # 英単語を構成する文字であれば current_word に追加
-        if "a" <= char <= "z" or "A" <= char <= "Z" or char in "-.'+":
+        # 英数字であれば current_word に追加
+        if english_pattern.match(char) is not None or char in "-.'+":
             current_word += char
         else:
             # 英単語が終了したらカタカナに変換して words に追加
             if current_word:
-                # まず、ハイフンがくっついたままの状態で辞書にあるか確認
-                katakana_word = KATAKANA_MAP.get(current_word.lower())
-                if not katakana_word:
-                    # 辞書になければ、ハイフンで分割して処理
-                    sub_words = current_word.split("-")
-                    katakana_sub_words = []
-                    for sub_word in sub_words:
-                        # 各単語を小文字に変換し、カタカナ語マップから対応するカタカナを取得
-                        katakana_sub_word = KATAKANA_MAP.get(sub_word.lower(), sub_word)
-                        katakana_sub_words.append(katakana_sub_word)
-                    katakana_word = "-".join(katakana_sub_words)
-
-                words.append(katakana_word)
+                words.append(process_english_word(current_word))
                 current_word = ""
             words.append(char)
 
     # 最後の単語を処理
     if current_word:
-        katakana_word = KATAKANA_MAP.get(current_word.lower())
-        if not katakana_word:
-            sub_words = current_word.split("-")
-            katakana_sub_words = []
-            for sub_word in sub_words:
-                katakana_sub_word = KATAKANA_MAP.get(sub_word.lower(), sub_word)
-                katakana_sub_words.append(katakana_sub_word)
-            katakana_word = "-".join(katakana_sub_words)
-        words.append(katakana_word)
+        words.append(process_english_word(current_word))
 
     return "".join(words)
 
@@ -434,7 +467,9 @@ def replace_punctuation(text: str) -> str:
     """
 
     # 句読点を辞書で置換
-    replaced_text = __SYMBOL_REPLACE_PATTERN.sub(lambda x: __SYMBOL_REPLACE_MAP[x.group()], text)
+    replaced_text = __SYMBOL_REPLACE_PATTERN.sub(
+        lambda x: __SYMBOL_REPLACE_MAP[x.group()], text
+    )
 
     # 上述以外の文字を削除
     replaced_text = __PUNCTUATION_CLEANUP_PATTERN.sub("", replaced_text)
