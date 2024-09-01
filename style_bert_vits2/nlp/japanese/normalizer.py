@@ -1,6 +1,7 @@
 import re
 import sys
 import unicodedata
+from datetime import datetime
 
 from num2words import num2words
 
@@ -9,7 +10,7 @@ from style_bert_vits2.nlp.symbols import PUNCTUATIONS
 
 
 # 記号類の正規化マップ
-__REPLACE_MAP = {
+__SYMBOL_REPLACE_MAP = {
     "：": ",",
     "；": ",",
     "，": ",",
@@ -64,7 +65,111 @@ __REPLACE_MAP = {
     "」": "'",
 }
 # 記号類の正規化パターン
-__REPLACE_PATTERN = re.compile("|".join(re.escape(p) for p in __REPLACE_MAP))
+__SYMBOL_REPLACE_PATTERN = re.compile("|".join(re.escape(p) for p in __SYMBOL_REPLACE_MAP))
+
+# 記号などの読み正規化マップ
+__SYMBOL_YOMI_MAP = {
+    "+": "プラス",
+    "＋": "プラス",
+    "➕": "プラス",
+    "➖": "マイナス",  # 絵文字以外のハイフンは伸ばす棒と区別がつかないので記述していない
+    "×": "掛ける",
+    "✖": "掛ける",
+    "÷": "割る",
+    "➗": "割る",
+    "=": "イコール",
+    "＝": "イコール",
+    "≠": "ノットイコール",
+    "≒": "ニアリーイコール",
+    "±": "プラスマイナス",
+    "%": "パーセント",
+    "‰": "パーミル",
+    "′": "プライム",
+    "″": "ダブルプライム",
+    "°": "度",
+    "℃": "度",
+    "℉": "度",
+    "@": "アットマーク",
+    "＠": "アットマーク",
+    "#": "ハッシュ",
+    "＃": "ハッシュ",
+    "#️⃣": "ハッシュ",
+    "&": "アンド",
+    "＆": "アンド",
+    "*": "アスタリスク",
+    "＊": "アスタリスク",
+    "♯": "シャープ",
+    "♭": "フラット",
+    "♮": "ナチュラル",
+    "<": "未満",
+    ">": "より大きい",
+    "≤": "以下",
+    "≥": "以上",
+    "∧": "かつ",
+    "∨": "または",
+    "√": "ルート",
+    "∞": "無限大",
+    "♾️": "無限大",
+    "π": "パイ",
+    "∑": "シグマ",
+    "∫": "インテグラル",
+    "∂": "パーシャル",
+    "∇": "ナブラ",
+    "∝": "比例",
+    "∈": "属する",
+    "∉": "属さない",
+    "∪": "和集合",
+    "∩": "共通部分",
+    "⊂": "部分集合",
+    "⊃": "上位集合",
+    "≡": "合同",
+    "∥": "平行",
+    "⊥": "垂直",
+    "∠": "角",
+    "∧": "論理積",
+    "∨": "論理和",
+    "∩": "共通部分",
+    "∪": "和集合",
+    "∅": "空集合",
+    "⊕": "排他的論理和",
+    "⊗": "テンソル積",
+    "💲": "ドル",
+}
+# 記号類の読み正規化パターン
+__SYMBOL_YOMI_PATTERN = re.compile("|".join(re.escape(p) for p in __SYMBOL_YOMI_MAP))
+
+# 単位の正規化マップ
+# 単位は OpenJTalk 側でも変換してくれるので、単位が1文字で読み間違いが発生しやすい L, m, g, B とその関連単位のみ変換する
+__UNIT_MAP = {
+    "kL": "キロリットル",
+    "L": "リットル",
+    "dL": "デシリットル",
+    "mL": "ミリリットル",
+    "km": "キロメートル",
+    "m": "メートル",
+    "cm": "センチメートル",
+    "mm": "ミリメートル",
+    "kg": "キログラム",
+    "g": "グラム",
+    "mg": "ミリグラム",
+    "PB": "ペタバイト",
+    "PiB": "ペビバイト",
+    "TB": "テラバイト",
+    "TiB": "テビバイト",
+    "GB": "ギガバイト",
+    "GiB": "ギビバイト",
+    "MB": "メガバイト",
+    "MiB": "メビバイト",
+    "KB": "キロバイト",
+    "kB": "キロバイト",
+    "KiB": "キビバイト",
+    "B": "バイト",
+}
+# 単位の正規化パターン
+__UNIT_PATTERN = re.compile(
+    r"([0-9.]*[0-9])\s*((k|d|m)?L|(k|c|m)?m|(k|m)?g|PB|PiB|TB|TiB|GB|GiB|MB|MiB|KB|kB|KiB|B)(?=[^a-zA-Z]|$)"
+)
+
 # 句読点等の正規化パターン
 __PUNCTUATION_CLEANUP_PATTERN = re.compile(
     # ↓ ひらがな、カタカナ、漢字
@@ -78,6 +183,7 @@ __PUNCTUATION_CLEANUP_PATTERN = re.compile(
     # ↓ "!", "?", "…", ",", ".", "'", "-", 但し`…`はすでに`...`に変換されている
     + "".join(PUNCTUATIONS) + r"]+",  # fmt: skip
 )
+
 # 数字・通貨記号の正規化パターン
 __CURRENCY_MAP = {
     "$": "ドル",
@@ -153,7 +259,11 @@ def normalize_text(text: str) -> str:
         str: 正規化されたテキスト
     """
 
-    res = unicodedata.normalize("NFKC", text)  # ここでアルファベットは半角になる
+    # 一番先に記号を変換
+    # 最初でないと ℃ が unicodedata.normalize() で分割されてしまう
+    res = replace_symbols(text)
+
+    res = unicodedata.normalize("NFKC", res)  # ここでアルファベットは半角になる
     res = __convert_numbers_to_words(res)  # 「100円」→「百円」等
     # 「～」と「〜」と「~」も長音記号として扱う
     res = res.replace("~", "ー")
@@ -171,10 +281,9 @@ def normalize_text(text: str) -> str:
     return res
 
 
-def replace_punctuation(text: str) -> str:
+def replace_symbols(text: str) -> str:
     """
-    句読点等を「.」「,」「!」「?」「'」「-」に正規化し、OpenJTalk で読みが取得できるもののみ残す：
-    漢字・平仮名・カタカナ、アルファベット、ギリシャ文字
+    記号類の読みを適切に変換する。
 
     Args:
         text (str): 正規化するテキスト
@@ -183,13 +292,61 @@ def replace_punctuation(text: str) -> str:
         str: 正規化されたテキスト
     """
 
-    # 句読点を辞書で置換
-    replaced_text = __REPLACE_PATTERN.sub(lambda x: __REPLACE_MAP[x.group()], text)
+    # 数式の読み方を改善
+    text = re.sub(
+        r"(\d+)\s*([+\-×÷])\s*(\d+)\s*=\s*(\d+)",
+        lambda m: f'{num2words(m.group(1), lang="ja")}{__SYMBOL_YOMI_MAP.get(m.group(2), m.group(2))}{num2words(m.group(3), lang="ja")}イコール{num2words(m.group(4), lang="ja")}',
+        text,
+    )
 
-    # 上述以外の文字を削除
-    replaced_text = __PUNCTUATION_CLEANUP_PATTERN.sub("", replaced_text)
+    def date_to_words(match: re.Match[str]) -> str:
+        date_str = match.group(0)
+        try:
+            # 2桁の年を4桁に拡張する処理 (Y/m/d or Y-m-d の時のみ)
+            if re.match(r"\d{2}[-/]\d{1,2}[-/]\d{1,2}", date_str):
+                if len(date_str.split("/")[0]) == 2 or len(date_str.split("-")[0]) == 2:
+                    date_str = "20" + date_str
 
-    return replaced_text
+            # Y/m/d, Y-m-d, m/d のパターンを試す
+            for fmt in ["%Y/%m/%d", "%Y-%m-%d", "%m/%d"]:
+                try:
+                    date = datetime.strptime(date_str, fmt)
+                    if fmt == "%m/%d":
+                        return f"{date.month}月{date.day}日"
+                    return f"{date.year}年{date.month}月{date.day}日"
+                except ValueError:
+                    continue
+            # どのパターンにも一致しない場合は元の文字列を返す
+            return date_str
+        except Exception:
+            # エラーが発生した場合は元の文字列を返す
+            return date_str
+
+    # 日付パターンの変換
+    text = re.sub(
+        r"\d{4}[-/]\d{1,2}[-/]\d{1,2}|\d{2}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}/\d{1,2}",
+        date_to_words,
+        text,
+    )
+
+    # 分数の処理
+    text = re.sub(
+        r"(\d+)/(\d+)",
+        lambda m: f'{num2words(m.group(1), lang="ja")}分の{num2words(m.group(2), lang="ja")}',
+        text,
+    )
+
+    # 指数表記の処理
+    text = re.sub(
+        r"(\d+(?:\.\d+)?)[eE]([-+]?\d+)",
+        lambda m: f'{num2words(float(m.group(0)), lang="ja")}',
+        text,
+    )
+
+    # 記号類を辞書で置換
+    text = __SYMBOL_YOMI_PATTERN.sub(lambda x: __SYMBOL_YOMI_MAP[x.group()], text)
+
+    return text
 
 
 def __convert_numbers_to_words(text: str) -> str:
@@ -203,7 +360,8 @@ def __convert_numbers_to_words(text: str) -> str:
         str: 変換されたテキスト
     """
 
-    res = __NUMBER_WITH_SEPARATOR_PATTERN.sub(lambda m: m[0].replace(",", ""), text)
+    res = __UNIT_PATTERN.sub(lambda m: m[1] + __UNIT_MAP.get(m[2], m[2]), text)
+    res = __NUMBER_WITH_SEPARATOR_PATTERN.sub(lambda m: m[0].replace(",", ""), res)
     res = __CURRENCY_PATTERN.sub(lambda m: m[2] + __CURRENCY_MAP.get(m[1], m[1]), res)
     res = __NUMBER_PATTERN.sub(lambda m: num2words(m[0], lang="ja"), res)
 
@@ -224,10 +382,10 @@ def __convert_english_to_katakana(text: str) -> str:
     """
 
     words = []
-    current_word = ''
+    current_word = ""
     for char in text:
         # 英単語を構成する文字であれば current_word に追加
-        if "a" <= char <= "z" or "A" <= char <= "Z" or char in '-.\'+':
+        if "a" <= char <= "z" or "A" <= char <= "Z" or char in "-.'+":
             current_word += char
         else:
             # 英単語が終了したらカタカナに変換して words に追加
@@ -236,31 +394,52 @@ def __convert_english_to_katakana(text: str) -> str:
                 katakana_word = KATAKANA_MAP.get(current_word.lower())
                 if not katakana_word:
                     # 辞書になければ、ハイフンで分割して処理
-                    sub_words = current_word.split('-')
+                    sub_words = current_word.split("-")
                     katakana_sub_words = []
                     for sub_word in sub_words:
                         # 各単語を小文字に変換し、カタカナ語マップから対応するカタカナを取得
                         katakana_sub_word = KATAKANA_MAP.get(sub_word.lower(), sub_word)
                         katakana_sub_words.append(katakana_sub_word)
-                    katakana_word = '-'.join(katakana_sub_words)
+                    katakana_word = "-".join(katakana_sub_words)
 
                 words.append(katakana_word)
-                current_word = ''
+                current_word = ""
             words.append(char)
 
     # 最後の単語を処理
     if current_word:
         katakana_word = KATAKANA_MAP.get(current_word.lower())
         if not katakana_word:
-            sub_words = current_word.split('-')
+            sub_words = current_word.split("-")
             katakana_sub_words = []
             for sub_word in sub_words:
                 katakana_sub_word = KATAKANA_MAP.get(sub_word.lower(), sub_word)
                 katakana_sub_words.append(katakana_sub_word)
-            katakana_word = '-'.join(katakana_sub_words)
+            katakana_word = "-".join(katakana_sub_words)
         words.append(katakana_word)
 
-    return ''.join(words)
+    return "".join(words)
+
+
+def replace_punctuation(text: str) -> str:
+    """
+    句読点等を「.」「,」「!」「?」「'」「-」に正規化し、OpenJTalk で読みが取得できるもののみ残す：
+    漢字・平仮名・カタカナ、アルファベット、ギリシャ文字
+
+    Args:
+        text (str): 正規化するテキスト
+
+    Returns:
+        str: 正規化されたテキスト
+    """
+
+    # 句読点を辞書で置換
+    replaced_text = __SYMBOL_REPLACE_PATTERN.sub(lambda x: __SYMBOL_REPLACE_MAP[x.group()], text)
+
+    # 上述以外の文字を削除
+    replaced_text = __PUNCTUATION_CLEANUP_PATTERN.sub("", replaced_text)
+
+    return replaced_text
 
 
 if __name__ == "__main__":
