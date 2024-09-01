@@ -402,7 +402,6 @@ def __convert_english_to_katakana(text: str) -> str:
         """
 
         # まず、単語全体でカタカナ変換を試みる
-        print(word)
         katakana_word = KATAKANA_MAP.get(word.lower())
         if katakana_word:
             return katakana_word
