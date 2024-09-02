@@ -232,6 +232,20 @@ __CURRENCY_PATTERN = re.compile(
 __NUMBER_PATTERN = re.compile(r"[0-9]+(\.[0-9]+)?")
 __NUMBER_WITH_SEPARATOR_PATTERN = re.compile("[0-9]{1,3}(,[0-9]{3})+")
 
+# __replace_symbols() で使う正規表現パターン
+__NUMBER_RANGE_PATTERN = re.compile(r"(\d+)\s*[〜~～]\s*(\d+)")
+__NUMBER_MATH_PATTERN = re.compile(r"(\d+)\s*([+\-×÷])\s*(\d+)\s*=\s*(\d+)")
+__DATE_EXPAND_PATTERN = re.compile(r"\d{2}[-/]\d{1,2}[-/]\d{1,2}")
+__DATE_PATTERN = re.compile(
+    r"\d{4}[-/]\d{1,2}[-/]\d{1,2}|\d{2}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}/\d{1,2}"
+)
+__FRACTION_PATTERN = re.compile(r"(\d+)/(\d+)")
+__EXPONENT_PATTERN = re.compile(r"(\d+(?:\.\d+)?)[eE]([-+]?\d+)")
+
+# __convert_english_to_katakana() で使う正規表現パターン
+__SUB_WORDS_PATTERN = re.compile(r"[A-Z]?[a-z0-9]+|[A-Z]+(?=[A-Z][a-z0-9]|\d|\W|$)|\d+")
+__ENGLISH_WORD_PATTERN = re.compile(r"[a-zA-Z0-9]")
+
 
 def normalize_text(text: str) -> str:
     """
@@ -295,13 +309,10 @@ def __replace_symbols(text: str) -> str:
     """
 
     # 数字と数字に挟まれた「〜」を「から」に置換
-    text = re.sub(
-        r"(\d+)\s*[〜~～]\s*(\d+)", lambda m: f"{m.group(1)}から{m.group(2)}", text
-    )
+    text = __NUMBER_RANGE_PATTERN.sub(lambda m: f"{m.group(1)}から{m.group(2)}", text)
 
     # 数式の読み方を改善
-    text = re.sub(
-        r"(\d+)\s*([+\-×÷])\s*(\d+)\s*=\s*(\d+)",
+    text = __NUMBER_MATH_PATTERN.sub(
         lambda m: f'{num2words(m.group(1), lang="ja")}{__SYMBOL_YOMI_MAP.get(m.group(2), m.group(2))}{num2words(m.group(3), lang="ja")}イコール{num2words(m.group(4), lang="ja")}',
         text,
     )
@@ -310,7 +321,7 @@ def __replace_symbols(text: str) -> str:
         date_str = match.group(0)
         try:
             # 2桁の年を4桁に拡張する処理 (Y/m/d or Y-m-d の時のみ)
-            if re.match(r"\d{2}[-/]\d{1,2}[-/]\d{1,2}", date_str):
+            if __DATE_EXPAND_PATTERN.match(date_str):
                 if len(date_str.split("/")[0]) == 2 or len(date_str.split("-")[0]) == 2:
                     date_str = "20" + date_str
 
@@ -330,24 +341,17 @@ def __replace_symbols(text: str) -> str:
             return date_str
 
     # 日付パターンの変換
-    text = re.sub(
-        r"\d{4}[-/]\d{1,2}[-/]\d{1,2}|\d{2}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}/\d{1,2}",
-        date_to_words,
-        text,
-    )
+    text = __DATE_PATTERN.sub(date_to_words, text)
 
     # 分数の処理
-    text = re.sub(
-        r"(\d+)/(\d+)",
+    text = __FRACTION_PATTERN.sub(
         lambda m: f'{num2words(m.group(1), lang="ja")}分の{num2words(m.group(2), lang="ja")}',
         text,
     )
 
     # 指数表記の処理
-    text = re.sub(
-        r"(\d+(?:\.\d+)?)[eE]([-+]?\d+)",
-        lambda m: f'{num2words(float(m.group(0)), lang="ja")}',
-        text,
+    text = __EXPONENT_PATTERN.sub(
+        lambda m: f'{num2words(float(m.group(0)), lang="ja")}', text
     )
 
     # 記号類を辞書で置換
@@ -415,9 +419,7 @@ def __convert_english_to_katakana(text: str) -> str:
             return "-".join(katakana_sub_words)
 
         # キャメルケースの複合語を分割して処理
-        sub_words = re.findall(
-            r"[A-Z]?[a-z0-9]+|[A-Z]+(?=[A-Z][a-z0-9]|\d|\W|$)|\d+", word
-        )
+        sub_words = __SUB_WORDS_PATTERN.findall(word)
         if len(sub_words) > 1:
             katakana_sub_words = []
             for sub in sub_words:
@@ -433,11 +435,10 @@ def __convert_english_to_katakana(text: str) -> str:
 
     words = []
     current_word = ""
-    english_pattern = re.compile(r"[a-zA-Z0-9]")
 
     for char in text:
         # 英数字であれば current_word に追加
-        if english_pattern.match(char) is not None or char in "-.'+":
+        if __ENGLISH_WORD_PATTERN.match(char) is not None or char in "-.'+":
             current_word += char
         else:
             # 英単語が終了したらカタカナに変換して words に追加
