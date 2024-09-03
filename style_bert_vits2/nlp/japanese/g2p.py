@@ -12,12 +12,13 @@ from style_bert_vits2.nlp.symbols import PUNCTUATIONS
 
 def g2p(
     norm_text: str, use_jp_extra: bool = True, raise_yomi_error: bool = False
-) -> tuple[list[str], list[int], list[int]]:
+) -> tuple[list[str], list[int], list[int], list[str]]:
     """
     他で使われるメインの関数。`normalize_text()` で正規化された `norm_text` を受け取り、
     - phones: 音素のリスト（ただし `!` や `,` や `.` など punctuation が含まれうる）
     - tones: アクセントのリスト、0（低）と1（高）からなり、phones と同じ長さ
     - word2ph: 元のテキストの各文字に音素が何個割り当てられるかを表すリスト
+    - sep_kata_with_joshi: 単語単位の単語のカタカナ読みのリスト (助詞を直前の単語に連結している)
     のタプルを返す。
     ただし `phones` と `tones` の最初と終わりに `_` が入り、応じて `word2ph` の最初と最後に 1 が追加される。
 
@@ -27,7 +28,7 @@ def g2p(
         raise_yomi_error (bool, optional): False の場合、読めない文字が「'」として発音される。Defaults to False.
 
     Returns:
-        tuple[list[str], list[int], list[int]]: 音素のリスト、アクセントのリスト、word2ph のリスト
+        tuple[list[str], list[int], list[int], list[str]]: 音素のリスト、アクセントのリスト、word2ph のリスト、助詞を連結した読みのリスト
     """
 
     # pyopenjtalk のフルコンテキストラベルを使ってアクセントを取り出すと、punctuation の位置が消えてしまい情報が失われてしまう：
@@ -41,7 +42,10 @@ def g2p(
 
     # sep_text: 単語単位の単語のリスト
     # sep_kata: 単語単位の単語のカタカナ読みのリスト、読めない文字は raise_yomi_error=True なら例外、False なら読めない文字を「'」として返ってくる
-    sep_text, sep_kata = text_to_sep_kata(norm_text, raise_yomi_error=raise_yomi_error)
+    # sep_kata_with_joshi: sep_kata と同様だが、助詞を直前の単語に連結している
+    sep_text, sep_kata, sep_kata_with_joshi = text_to_sep_kata(
+        norm_text, raise_yomi_error=raise_yomi_error
+    )
 
     # sep_phonemes: 各単語ごとの音素のリストのリスト
     sep_phonemes = __handle_long([__kata_to_phoneme_list(i) for i in sep_kata])
@@ -88,12 +92,12 @@ def g2p(
     if not use_jp_extra:
         phones = [phone if phone != "N" else "n" for phone in phones]
 
-    return phones, tones, word2ph
+    return phones, tones, word2ph, sep_kata_with_joshi
 
 
 def text_to_sep_kata(
     norm_text: str, raise_yomi_error: bool = False
-) -> tuple[list[str], list[str]]:
+) -> tuple[list[str], list[str], list[str]]:
     """
     `normalize_text` で正規化済みの `norm_text` を受け取り、それを単語分割し、
     分割された単語リストとその読み（カタカナ or 記号1文字）のリストのタプルを返す。
@@ -107,13 +111,14 @@ def text_to_sep_kata(
         raise_yomi_error (bool, optional): False の場合、読めない文字が「'」として発音される。Defaults to False.
 
     Returns:
-        tuple[list[str], list[str]]: 分割された単語リストと、その読み（カタカナ or 記号1文字）のリスト
+        tuple[list[str], list[str], list[str]]: 分割された単語リストと、その読み（カタカナ or 記号1文字）のリスト、助詞を連結した読みのリスト
     """
 
     # parsed: OpenJTalkの解析結果
     parsed = pyopenjtalk.run_frontend(norm_text)
     sep_text: list[str] = []
     sep_kata: list[str] = []
+    sep_kata_with_joshi: list[str] = []  # 助詞を分けずに連結した sep_kata (例: "鉛筆", "を" -> "鉛筆を") # fmt: skip
 
     for parts in parsed:
         # word: 実際の単語の文字列
@@ -157,7 +162,13 @@ def text_to_sep_kata(
         sep_text.append(word)
         sep_kata.append(yomi)
 
-    return sep_text, sep_kata
+        # この単語が助詞 or 助動詞のときは前の要素に連結
+        if parts["pos"] in ["助詞", "助動詞"]:
+            sep_kata_with_joshi[-1] += yomi
+        else:
+            sep_kata_with_joshi.append(yomi)
+
+    return sep_text, sep_kata, sep_kata_with_joshi
 
 
 def adjust_word2ph(
