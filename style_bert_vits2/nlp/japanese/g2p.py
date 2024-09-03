@@ -163,7 +163,7 @@ def text_to_sep_kata(
         sep_kata.append(yomi)
 
         # この単語が助詞 or 助動詞のときは前の要素に連結
-        if parts["pos"] in ["助詞", "助動詞"]:
+        if parts["pos"] in ["助詞", "助動詞"] and len(sep_kata_with_joshi) > 0:
             sep_kata_with_joshi[-1] += yomi
         else:
             sep_kata_with_joshi.append(yomi)
