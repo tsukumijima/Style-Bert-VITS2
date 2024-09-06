@@ -170,7 +170,8 @@ def update_dict(
                 + ["*"]
                 + word[10:13]
                 + ["*", "*", "*", "*", "*", "*", "*", "*", "*", "*", "*", "*", "*", "*"]
-                + ["*", "*", "*", "*", "*"]
+                + [word[13][0]]
+                + ["*", "*", "*", "*"]
             )  # [ str(word[13])[0] ] + ["*","*","*","*"]
             converted_word = ",".join(converted_word_list)
             new_fugashi_user_dict_list.append(converted_word)
