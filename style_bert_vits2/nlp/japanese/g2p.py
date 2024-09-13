@@ -18,8 +18,8 @@ def g2p(
     norm_text: str,
     use_jp_extra: bool = True,
     raise_yomi_error: bool = False,
-    use_uindic3: bool = False,
-    hougen_mode: Literal["tokyo", "kinki", "kyusyu"] = "kinki",
+    use_unidic3: bool = True,
+    hougen_mode: Literal["tokyo", "kinki", "kyusyu", "convert2b2v"] = "convert2b2v",
     fugashi_dict: Path | None = None,
     fugashi_user_dict: Path | None = None,
 ) -> tuple[list[str], list[int], list[int]]:
@@ -35,8 +35,8 @@ def g2p(
         norm_text (str): 正規化されたテキスト
         use_jp_extra (bool, optional): False の場合、「ん」の音素を「N」ではなく「n」とする。Defaults to True.
         raise_yomi_error (bool, optional): False の場合、読めない文字が「'」として発音される。Defaults to False.
-        use_uindic3 (bool, optional): True の場合、fugashiとunidic3.10を使用する。Defaults to False.
-        hougen_mode (Literal["tokyo", "kinki", "kyusyu"]): use_uindic3がTrueである必要がある。有効値は"tokyo","kinki","kyusyu"。"kinki"の場合アクセントも京阪式になる。Defaults to "tokyo".
+        use_unidic3 (bool, optional): True の場合、fugashiとunidic3.10を使用する。Defaults to False.
+        hougen_mode (Literal["tokyo", "kinki", "kyusyu"]): use_unidic3がTrueである必要がある。有効値は"tokyo","kinki","kyusyu"。"kinki"の場合アクセントも京阪式になる。b2vはmora bをv に変換し外国語風の訛を作る。Defaults to "tokyo".
 
     Returns:
         tuple[list[str], list[int], list[int]]: 音素のリスト、アクセントのリスト、word2ph のリスト
@@ -67,7 +67,7 @@ def g2p(
     phone_tone_list = __align_tones(phone_w_punct, phone_tone_list_wo_punct)
 
     # fugashiで解析
-    if use_uindic3 == True:
+    if use_unidic3 == True:
         sep_text, sep_kata, sep_phonemes, phone_tone_list = update_yomi(
             sep_text,
             sep_kata,
@@ -586,6 +586,8 @@ def __hougen_patch(sep_kata: list[str], sep_pos: list[str], hougen_id: str) -> l
     #         近畿方言 kinki
     #   九州方言 kyusyu/
 
+    #   bがvになった架空の外国語風訛　convert2b2v
+
     assert hougen_id == "kinki" or "kyusyu", f"ERROR: hougen vale {hougen_id} is not used"
 
     __KYUSYU_HATUON_PATTERN = re.compile("[ヌニムミモ]")
@@ -609,6 +611,18 @@ def __hougen_patch(sep_kata: list[str], sep_pos: list[str], hougen_id: str) -> l
             if sep_pos[i] == "名詞" and len(sep_kata[i]) == 1:
                 if sep_kata[i] == "!" or "?" or "'":
                     sep_kata[i] = sep_kata[i] + "ー"
+
+        elif hougen_id == "convert2b2v":
+            if "バ" in str(sep_kata[i]):
+                sep_kata[i] = sep_kata[i].replace("バ","ヴァ")
+            if "ビ" in str(sep_kata[i]):
+                sep_kata[i] = sep_kata[i].replace("ビ","ヴィ")
+            if "ブ" in str(sep_kata[i]):
+                sep_kata[i] = sep_kata[i].replace("ブ","ヴ")
+            if "ベ" in str(sep_kata[i]):
+                sep_kata[i] = sep_kata[i].replace("ベ","ヴェ")
+            if "ボ" in str(sep_kata[i]):
+                sep_kata[i] = sep_kata[i].replace("ボ","ヴォ")
 
     return sep_kata
 
