@@ -18,8 +18,8 @@ def g2p(
     norm_text: str,
     use_jp_extra: bool = True,
     raise_yomi_error: bool = False,
-    use_unidic3: bool = True,
-    hougen_mode: Literal["tokyo", "kinki", "kyusyu", "convert2b2v"] = "convert2b2v",
+    use_unidic3: bool = False,
+    hougen_mode: Literal["tokyo", "kinki", "kyusyu", "convert2b2v", "convert2t2ts",] = "tokyo",
     fugashi_dict: Path | None = None,
     fugashi_user_dict: Path | None = None,
 ) -> tuple[list[str], list[int], list[int]]:
@@ -585,10 +585,9 @@ def __hougen_patch(sep_kata: list[str], sep_pos: list[str], hougen_id: str) -> l
     #   西部方言 /
     #         近畿方言 kinki
     #   九州方言 kyusyu/
-
-    #   bがvになった架空の外国語風訛　convert2b2v
-
-    assert hougen_id == "kinki" or "kyusyu", f"ERROR: hougen vale {hougen_id} is not used"
+    #
+    #   bをvに変換する convert2b2v
+    #   bをvに変換する convert2t2ts
 
     __KYUSYU_HATUON_PATTERN = re.compile("[ヌニムミモ]")
 
@@ -624,8 +623,17 @@ def __hougen_patch(sep_kata: list[str], sep_pos: list[str], hougen_id: str) -> l
             if "ボ" in str(sep_kata[i]):
                 sep_kata[i] = sep_kata[i].replace("ボ","ヴォ")
 
-    return sep_kata
+        elif hougen_id == "convert2t2ts":
+            if "タ" in str(sep_kata[i]):
+                sep_kata[i] = sep_kata[i].replace("タ","ツァ")
+            if "チ" in str(sep_kata[i]):
+                sep_kata[i] = sep_kata[i].replace("チ","ツィ")
+            if "て" in str(sep_kata[i]):
+                sep_kata[i] = sep_kata[i].replace("ツ","ツェ")
+            if "ト" in str(sep_kata[i]):
+                sep_kata[i] = sep_kata[i].replace("ト","ツォ")
 
+    return sep_kata
 
 def __keihan_patch(
     sep_kata: list[str],

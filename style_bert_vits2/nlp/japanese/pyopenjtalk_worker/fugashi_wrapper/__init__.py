@@ -7,6 +7,10 @@ import unidic
 def fugashi_user_dict(compiled_dict_path: str, tmp_csv_path: str):
     # unidic-pyのunidicのpath
     unidic_path_str = unidic.DICDIR
+    unidic_path = Path(unidic_path_str)
+
+    dicrc_path = unidic_path / "dicrc"
+    dicrc_path_str = str(dicrc_path)
 
     # windows環境だとパスが途中でエスケープされるバグがある(windows環境で引数指定する人がいないのかも)
     if os.name == "nt":
@@ -14,32 +18,16 @@ def fugashi_user_dict(compiled_dict_path: str, tmp_csv_path: str):
         compiled_dict_path = compiled_dict_path.replace("\\", "\\\\")
         # csvファイルのパス
         tmp_csv_path = tmp_csv_path.replace("\\", "\\\\")
+
         unidic_path_str = unidic_path_str.replace("\\", "\\\\")
 
-    current_dir = Path.cwd()
+        dicrc_path_str = dicrc_path_str.replace("\\", "\\\\")
 
-    # リソースファイルなどの読み込み
-    unidic_path = Path(unidic_path_str)
-
-    DICRC = (unidic_path / "dicrc").read_text(encoding="utf-8")
-    REWRITE_DEF = (unidic_path / "rewrite.def").read_text(encoding="utf-8")
-    LEFT_ID_DEF = (unidic_path / "left-id.def").read_text(encoding="utf-8")
-    RIGHT_ID_DEF = (unidic_path / "right-id.def").read_text(encoding="utf-8")
-
-    # 作業ディレクトリにリソースファイル等を作る必要がある
-    dicrc_path = current_dir / "dicrc"
-    rerwrite_def_path = current_dir / "rewrite.def"
-    left_id_def_path = current_dir / "left_id.def"
-    right_id_def_path = current_dir / "right_id.def"
-
-    # 書き込み
-    dicrc_path.write_text(DICRC, encoding="shift_jis")
-    rerwrite_def_path.write_text(REWRITE_DEF, encoding="shift_jis")
-    left_id_def_path.write_text(LEFT_ID_DEF, "utf-8")
-    right_id_def_path.write_text(RIGHT_ID_DEF, "utf-8")
-
-    # mecabは辞書のエンコード名が曖昧にでUTF8でもutf-8でも良いがシステム辞書とユーザー辞書で完全位置していないと動かない。unidic-pyのエンコードがutf8になっているのでビルド時の引数を変えてはいけない
-    build_dictionary(f"-d{unidic_path_str} -u {compiled_dict_path} -f utf8 -t utf8 {tmp_csv_path}")
+        # mecabは辞書のエンコード名が曖昧にでUTF8でもutf-8でも良いがシステム辞書とユーザー辞書で完全一致していないと動かない。unidic-pyのエンコードがutf8になっているのでビルド時の引数を変えてはいけない
+        # なぜかリソースファイルが読み込まれず、先頭の引数はなぜかくっつけないと認識しない。
+        build_dictionary(f"-r{dicrc_path_str} -d {unidic_path_str} -u {compiled_dict_path} -f utf8 -t utf8 {tmp_csv_path}")
+    else:
+        build_dictionary(f"-d {unidic_path_str} -u {compiled_dict_path} -f utf8 -t utf8 {tmp_csv_path}")
 
     # システム辞書が間違った情報でコンパイルされているのでユーザー辞書も間違った情報に合わせる
     # matrix.def に記載されている left_id.def と right_id.def のサイズが逆になっているため、
