@@ -1,8 +1,9 @@
-from pathlib import Path
 import os
+from pathlib import Path
 
-from fugashi import build_dictionary  # type: ignore
 import unidic
+from fugashi import build_dictionary  # type: ignore
+
 
 def fugashi_user_dict(compiled_dict_path: str, tmp_csv_path: str):
     # unidic-pyのunidicのpath

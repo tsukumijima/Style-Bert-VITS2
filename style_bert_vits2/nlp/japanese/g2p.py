@@ -14,12 +14,13 @@ from style_bert_vits2.nlp.japanese.mora_list import MORA_KATA_TO_MORA_PHONEMES, 
 from style_bert_vits2.nlp.japanese.normalizer import replace_punctuation
 from style_bert_vits2.nlp.symbols import PUNCTUATIONS
 
+
 def g2p(
     norm_text: str,
     use_jp_extra: bool = True,
     raise_yomi_error: bool = False,
     use_unidic3: bool = False,
-    hougen_mode: Literal["tokyo", "kinki", "kyusyu", "convert2b2v", "convert2t2ts",] = "tokyo",
+    hougen_mode: Literal["tokyo", "kinki", "kyusyu", "convert2b2v", "convert2t2ts", "1st_mora_tyouon", "1st_mora_sokuon"] = "tokyo",
     fugashi_dict: Path | None = None,
     fugashi_user_dict: Path | None = None,
 ) -> tuple[list[str], list[int], list[int]]:
@@ -237,7 +238,7 @@ def update_yomi(
 
     # 方言処理
     if hougen_mode != "tokyo":
-        kana_list = __hougen_patch(kana_list, pos_list, hougen_mode)
+        kana_list, accent_list = __hougen_patch(kana_list,accent_list, pos_list, hougen_mode)
 
     # 京阪式アクセント処理
     if hougen_mode == "kinki":
@@ -309,7 +310,7 @@ def __fugashi_sep_kata(
             # ユーザー辞書を読ませる場合は辞書も引数で読ませる必要がある
             tagger = GenericTagger(f"-r {dicrc_path_str} -Owakati -d {dict_path_str} -u {user_dict_path_str}")
         else:
-            tagger = GenericTagger(f"-r {str(dicrc_path)} -Owakati -d {str(dict_path_str)} -u {str(user_dict_path)}")
+            tagger = GenericTagger(f"-r {dicrc_path!s} -Owakati -d {dict_path_str!s} -u {user_dict_path!s}")
 
     # 辞書が指定されている場合
     elif dict_path != None:
@@ -320,7 +321,7 @@ def __fugashi_sep_kata(
             dicrc_path_str: str = str(dicrc_path).replace("\\", "\\\\")
             tagger = GenericTagger(f"-r {dicrc_path_str} -Owakati -d {dict_path_str}")
         else:
-            tagger = GenericTagger(f"-r {str(dicrc_path)} -Owakati -d {str(dict_path)}")
+            tagger = GenericTagger(f"-r {dicrc_path!s} -Owakati -d {dict_path!s}")
     else:
         tagger = Tagger("-Owakati")
 
@@ -564,7 +565,7 @@ def __convert_acc2hl(
     return accent_hl_list
 
 
-def __hougen_patch(sep_kata: list[str], sep_pos: list[str], hougen_id: str) -> list[str]:
+def __hougen_patch(sep_kata: list[str], sep_acc: list[str], sep_pos: list[str], hougen_id: str) -> tuple[list[str],list[str]]:
     """
     NHK日本語アクセント辞典を参考に方言の修正を加える。
     区分は付録NHK日本語アクセント辞典125ｐを参照した。
@@ -588,8 +589,13 @@ def __hougen_patch(sep_kata: list[str], sep_pos: list[str], hougen_id: str) -> l
     #
     #   bをvに変換する convert2b2v
     #   bをvに変換する convert2t2ts
+    #   文章の１モーラ目を長音化 1st_mora_tyouon
+    #   文章の１モーラ目の後にpauseを挟む 1st_mora_pause
+
 
     __KYUSYU_HATUON_PATTERN = re.compile("[ヌニムミモ]")
+    __YOUON_PATTERN = re.compile("[ァィゥェォャュョヮ]+")
+
 
     for i in range(len(sep_kata)):
         if hougen_id == "kyusyu":
@@ -611,6 +617,7 @@ def __hougen_patch(sep_kata: list[str], sep_pos: list[str], hougen_id: str) -> l
                 if sep_kata[i] == "!" or "?" or "'":
                     sep_kata[i] = sep_kata[i] + "ー"
 
+        # ここから特に参考資料はないが表現の幅が広がったり、話者の特性を再現できそうなもの
         elif hougen_id == "convert2b2v":
             if "バ" in str(sep_kata[i]):
                 sep_kata[i] = sep_kata[i].replace("バ","ヴァ")
@@ -633,7 +640,38 @@ def __hougen_patch(sep_kata: list[str], sep_pos: list[str], hougen_id: str) -> l
             if "ト" in str(sep_kata[i]):
                 sep_kata[i] = sep_kata[i].replace("ト","ツォ")
 
-    return sep_kata
+        elif hougen_id == "1st_mora_tyouon":
+
+            if i == 0:
+                pos = __YOUON_PATTERN.search(str(sep_kata[0]))
+
+                if pos:
+                    #マッチしたパターンが二文字目からでかつ伸ばす必要がある(一文字文字以内の場合)
+                    if pos.start() == 1:
+                        sep_kata[0] = sep_kata[0][:pos.end()] + "ー" +sep_kata[0][pos.end():] # type:ignore
+                else:
+                    sep_kata[0] = sep_kata[0][0] + "ー" +sep_kata[0][1:]
+
+                #bアクセントを頭高型に変更
+                sep_acc[0] = "1"
+
+        elif hougen_id == "1st_mora_sokuon":
+
+            if i == 0:
+                pos = __YOUON_PATTERN.search(str(sep_kata[0]))
+
+                if pos:
+                    #マッチしたパターンが二文字目からでかつ伸ばす必要がある(一文字文字以内の場合)
+                    if pos.start() == 1:
+                        sep_kata[0] = sep_kata[0][:pos.end()] + "ッ" +sep_kata[0][pos.end():] # type:ignore
+                else:
+                    sep_kata[0] = sep_kata[0][0] + "ッ" +sep_kata[0][1:]
+
+                #bアクセントを頭高型に変更
+                sep_acc[0] = "1"
+
+
+    return sep_kata ,sep_acc
 
 def __keihan_patch(
     sep_kata: list[str],
