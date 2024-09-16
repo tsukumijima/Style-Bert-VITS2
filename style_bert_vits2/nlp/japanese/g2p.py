@@ -6,6 +6,9 @@ from typing import Literal, TypedDict
 import unidic
 from fugashi import GenericTagger, Tagger  # type: ignore
 
+import jaconv
+from yomikata.dbert import dBert
+
 from style_bert_vits2.constants import Languages
 from style_bert_vits2.logging import logger
 from style_bert_vits2.nlp import bert_models
@@ -20,6 +23,7 @@ def g2p(
     use_jp_extra: bool = True,
     raise_yomi_error: bool = False,
     use_unidic3: bool = False,
+    use_yomikata: bool = False,
     hougen_mode: Literal[
         "tokyo",
         "kinki",
@@ -92,6 +96,7 @@ def g2p(
             sep_phonemes,
             phone_w_punct,
             phone_tone_list,
+            use_yomiktata= use_yomikata,
             hougen_mode=hougen_mode,
             fugashi_dict=fugashi_dict,
             fugashi_user_dict=fugashi_user_dict,
@@ -204,6 +209,7 @@ def update_yomi(
     sep_phonemes: list[list[str]],
     phone_w_punct: list[str],
     phone_tone_list: list[tuple[str, int]],
+    use_yomiktata: bool = False,
     hougen_mode: str = "tokyo",
     fugashi_dict: Path | None = None,
     fugashi_user_dict: Path | None = None,
@@ -251,6 +257,10 @@ def update_yomi(
             kana_list += cur_kana_list
             accent_list += cur_accent_list  # type: ignore
             pos_list += cur_pos_list
+
+    # 同音異義語処理
+    if use_yomiktata == True:
+        kana_list = __yomikata_patch(word_list, kana_list)
 
     # 方言処理
     if hougen_mode != "tokyo":
@@ -580,6 +590,40 @@ def __convert_acc2hl(
 
     return accent_hl_list
 
+__YOMI_PATTERN = re.compile(r"..*/..*")
+
+def __yomikata_patch(sep_text: list[str],sep_kata:list[str]) -> list[str]:
+    norm_text = "".join(sep_text)
+
+    reader = dBert()
+    out_text:str = reader.furigana(norm_text)
+
+    # 読みを降ったほうがいいj文字が {何/なに}が{何/なん}でも のような形式になる
+
+    #{}/|は正規化で消えるので。textに混ざることはない。正規化を変更したときはこの処理も変える必要がある。
+    out_text = out_text.replace("{","|")
+    out_text = out_text.replace("}","|")
+    out_list = out_text.split("|")
+
+    convert_list_text:list[str] = []
+    convert_list_kana:list[str] = []
+
+    for i in out_list:
+        if __YOMI_PATTERN.fullmatch(i):
+
+            word = i.split("/")
+            convert_list_text.append(word[0])
+            # 読みをカタカナからひらがなに変更
+            kana = jaconv.hira2kata(word[1])
+            convert_list_kana.append(kana)
+
+    for i in range(0, len(sep_text)):
+        for ii in range(0, len(convert_list_text)):
+            # 読みを上書きすべき文字があったら
+            if sep_text[i] == convert_list_text[ii]:
+                sep_kata[i] = convert_list_kana[ii]
+
+    return sep_kata
 
 __KYUSYU_HATUON_PATTERN = re.compile("[ヌニムモミ]+")
 __YOUON_PATTERN = re.compile("[ァィゥェォャュョヮ]+")
