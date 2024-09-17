@@ -10,6 +10,7 @@ nltk<=3.8.1
 num2words
 numpy<2
 onnxruntime
+onnxruntime-gpu
 pyannote.audio>=3.1.0
 pyloudnorm
 pyopenjtalk-plus
