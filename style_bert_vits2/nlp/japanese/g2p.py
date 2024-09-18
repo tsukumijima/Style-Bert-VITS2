@@ -22,10 +22,9 @@ def g2p(
     norm_text: str,
     use_jp_extra: bool = True,
     raise_yomi_error: bool = False,
-    use_unidic3: bool = False,
+    use_unidic3: bool = True,
     use_yomikata: bool = False,
-    hougen_mode: Literal[
-        "tokyo",
+    hougen_mode: list[Literal[
         "kinki",
         "kyusyu",
         "convert2b2v",
@@ -35,13 +34,15 @@ def g2p(
         "1st_mora_sokuon",
         "1st_mora_remove",
         "1st_mora_renboin",
+        "last_mora_acc_h",
+        "last_word_acc_1",
         "add_youon_a",
         "add_youon_i",
         "add_youon_e",
         "add_youon_o",
         "hatuonbin",
         "youjigo_like",
-    ] = "tokyo",
+    ]] | None = None,
     fugashi_dict: Path | None = None,
     fugashi_user_dict: Path | None = None,
 ) -> tuple[list[str], list[int], list[int]]:
@@ -210,7 +211,25 @@ def update_yomi(
     phone_w_punct: list[str],
     phone_tone_list: list[tuple[str, int]],
     use_yomiktata: bool = False,
-    hougen_mode: str = "tokyo",
+    hougen_mode: list[Literal[
+        "kinki",
+        "kyusyu",
+        "convert2b2v",
+        "convert2t2ts",
+        "convert2d2r",
+        "1st_mora_tyouon",
+        "1st_mora_sokuon",
+        "1st_mora_remove",
+        "1st_mora_renboin",
+        "last_mora_acc_h",
+        "last_word_acc_1",
+        "add_youon_a",
+        "add_youon_i",
+        "add_youon_e",
+        "add_youon_o",
+        "hatuonbin",
+        "youjigo_like",
+    ]] | None = None,
     fugashi_dict: Path | None = None,
     fugashi_user_dict: Path | None = None,
 ) -> tuple[
@@ -263,7 +282,7 @@ def update_yomi(
         kana_list = __yomikata_patch(word_list, kana_list)
 
     # 方言処理
-    if hougen_mode != "tokyo":
+    if hougen_mode != None:
         kana_list, accent_list = __hougen_patch(kana_list, accent_list, pos_list, hougen_mode)
 
     # 京阪式アクセント処理
@@ -598,7 +617,7 @@ def __yomikata_patch(sep_text: list[str],sep_kata:list[str]) -> list[str]:
     reader = dBert()
     out_text:str = reader.furigana(norm_text)
 
-    # 読みを降ったほうがいいj文字が {何/なに}が{何/なん}でも のような形式になる
+    # 読みを降ったほうがいい文字が {何/なに}が{何/なん}でも のような形式になる
 
     #{}/|は正規化で消えるので。textに混ざることはない。正規化を変更したときはこの処理も変える必要がある。
     out_text = out_text.replace("{","|")
@@ -634,7 +653,28 @@ __O_DAN_PATTERN = re.compile("[オコソトノホモヨロゴゾドボポ]|[ョ�
 
 
 def __hougen_patch(
-    sep_kata: list[str], sep_acc: list[str], sep_pos: list[str], hougen_id: str
+    sep_kata: list[str],
+    sep_acc: list[str],
+    sep_pos: list[str],
+    hougen_id: list[Literal[
+        "kinki",
+        "kyusyu",
+        "convert2b2v",
+        "convert2t2ts",
+        "convert2d2r",
+        "1st_mora_tyouon",
+        "1st_mora_sokuon",
+        "1st_mora_remove",
+        "1st_mora_renboin",
+        "last_mora_acc_h",
+        "last_word_acc_1",
+        "add_youon_a",
+        "add_youon_i",
+        "add_youon_e",
+        "add_youon_o",
+        "hatuonbin",
+        "youjigo_like",
+    ]]
 ) -> tuple[list[str], list[str]]:
     """
     NHK日本語アクセント辞典を参考に方言の修正を加える。
@@ -668,6 +708,9 @@ def __hougen_patch(
     #   文章の１モーラ目を撥音化しアクセントを頭高型に 1st_mora_sokuon ;　やはり、　＝＞ やっはり　HLLL
     #   文章の１モーラ目をしアクセントを平型に っ　に変換 1st_mora_remove ;　やはり、　＝＞　っはり　LHH
 
+    #   最後の単語の終端をアクセント核にする last_mora_acc_h
+    #   最後のアクセントを頭高型に last_word_acc_1
+
     #   単語の先頭以外ののno,ra,ruをNに変換する hatuonbin
 
     #   sをchに変換する　youjigo_like ;(幼児語のネイティブ話者つまり幼児の喋る幼児語でなく、我々大人の喋る(イメージする)幼児語である)
@@ -679,7 +722,151 @@ def __hougen_patch(
     #   各単語に最初にお行がでてきた時"ぉ"をつけアクセントを頭高型にする。add_youon_i ;　ようこそ。　＝＞　よぉうこぉそ。
     #   各単語に最初を連母音にしアクセント頭高型にする。e は ei o は ou になる。1st_mora_renboin ;　俺のターン。　＝＞　おぅれのターン。 , 先生。　せぃんせい
 
-    if hougen_id == "1st_mora_tyouon":
+
+    if "kyusyu" in hougen_id:
+        for i in range(len(sep_kata)):
+            # 九州のほぼ全域で e を ye と発音する；付録131ｐ
+            sep_kata[i] = sep_kata[i].replace("エ", "イェ")
+
+            # 九州のほぼ全域で s eをsh e , z eをj eと発音する；付録132ｐ
+            sep_kata[i] = sep_kata[i].replace("セ", "シェ")
+            sep_kata[i] = sep_kata[i].replace("ゼ", "ジェ")
+
+            # 発音化：語末のヌ、ニ、ム、モ、ミなどが発音 ンN で表される。；付録132ｐ
+            num = len(sep_kata[i])
+            if __KYUSYU_HATUON_PATTERN.fullmatch(sep_kata[i][num - 1]):
+                sep_kata[i] = sep_kata[i][: num - 1] + "ン"
+
+    if "kinki" in hougen_id:
+        for i in range(len(sep_kata)):
+            # 1泊の名詞を長音化し2泊で発音する
+            if sep_pos[i] == "名詞" and len(sep_kata[i]) == 1:
+                if sep_kata[i] == "!" or "?" or "'":
+                    sep_kata[i] = sep_kata[i] + "ー"
+
+    # ここから特に参考資料はないが表現の幅が広がったり、話者の特性を再現できそうなもの
+    if "convert2b2v" in hougen_id:
+        for i in range(len(sep_kata)):
+            if "バ" in str(sep_kata[i]):
+                sep_kata[i] = sep_kata[i].replace("バ", "ヴァ")
+            if "ビ" in str(sep_kata[i]):
+                sep_kata[i] = sep_kata[i].replace("ビ", "ヴィ")
+            if "ブ" in str(sep_kata[i]):
+                sep_kata[i] = sep_kata[i].replace("ブ", "ヴ")
+            if "ベ" in str(sep_kata[i]):
+                sep_kata[i] = sep_kata[i].replace("ベ", "ヴェ")
+            if "ボ" in str(sep_kata[i]):
+                sep_kata[i] = sep_kata[i].replace("ボ", "ヴォ")
+
+    if "convert2t2ts" in hougen_id:
+        for i in range(len(sep_kata)):
+            if "タ" in str(sep_kata[i]):
+                sep_kata[i] = sep_kata[i].replace("タ", "ツァ")
+            if "チ" in str(sep_kata[i]):
+                sep_kata[i] = sep_kata[i].replace("チ", "ツィ")
+            if "テ" in str(sep_kata[i]):
+                sep_kata[i] = sep_kata[i].replace("テ", "ツェ")
+            if "ト" in str(sep_kata[i]):
+                sep_kata[i] = sep_kata[i].replace("ト", "ツォ")
+
+    if "convert2d2r" in hougen_id:
+        for i in range(len(sep_kata)):
+            if "ダ" in str(sep_kata[i]):
+                sep_kata[i] = sep_kata[i].replace("ダ", "ラ")
+                sep_acc[i] = "1"
+            if "デ" in str(sep_kata[i]):
+                sep_kata[i] = sep_kata[i].replace("デ", "レ")
+                sep_acc[i] = "1"
+            if "ド" in str(sep_kata[i]):
+                sep_kata[i] = sep_kata[i].replace("ド", "ロ")
+                sep_acc[i] = "1"
+
+                # bアクセントを平型に変更
+                sep_acc[0] = "0"
+
+
+    if "hatuonbin" in hougen_id:
+        for i in range(len(sep_kata)):
+            #1文字以外の時
+            if len(str(sep_kata[i])) != 1:
+                # 各単語先頭と終端は置き換えない
+                if "ナ" in str(sep_kata[i][1:-1]):
+                    sep_kata[i] = sep_kata[i].replace("ナ", "ン")
+                elif "ノ" in str(sep_kata[i][1:-1]):
+                    sep_kata[i] = sep_kata[i].replace("ノ", "ン")
+                # 一種ずつしか撥音化しない
+                elif "ル" in str(sep_kata[i][1:-1]):
+                    sep_kata[i] = sep_kata[i].replace("ル", "ン")
+                elif "ラ" in str(sep_kata[i][1:-1]):
+                    sep_kata[i] = sep_kata[i].replace("ラ", "ン")
+
+    if "youjigo_like" in hougen_id:
+        for i in range(len(sep_kata)):
+            if "サ" in str(sep_kata[i]):
+                sep_kata[i] = sep_kata[i].replace("サ", "チャ")
+            if "シ" in str(sep_kata[i]):
+                sep_kata[i] = sep_kata[i].replace("シ", "チ")
+            if "ス" in str(sep_kata[i]):
+                sep_kata[i] = sep_kata[i].replace("ス", "チュ")
+            if "セ" in str(sep_kata[i]):
+                sep_kata[i] = sep_kata[i].replace("セ", "チェ")
+            if "ソ" in str(sep_kata[i]):
+                sep_kata[i] = sep_kata[i].replace("ソ", "チョ")
+
+    if "add_youon_a" in hougen_id:
+        for i in range(len(sep_kata)):
+            pos = __A_DAN_PATTERN.search(str(sep_kata[i]))
+
+            if pos:
+                sep_kata[i] = sep_kata[i][: pos.end()] + "ァ" + sep_kata[i][pos.end() :]  # type:ignore
+
+                if type(pos.end()) == int:
+                        # ァがアクセント核になる
+                        sep_acc[i] = str(pos.end())  # type:ignore
+
+
+    if "add_youon_i" in hougen_id:
+        for i in range(len(sep_kata)):
+            pos = __I_DAN_PATTERN.search(str(sep_kata[i]))
+
+            if pos:
+                # マッチした語が最後の以外で　シャ　等　マッチした文字の後に拗音が来ない場合
+                if len(str(sep_kata[i])) > pos.end() and sep_kata[i][pos.end()] != "ャ":# type:ignore
+                    sep_kata[i] = sep_kata[i][: pos.end()] + "ィ" + sep_kata[i][pos.end() :]  # type:ignore
+
+                    if type(pos.end()) == int:
+                        # アクセントを頭高型にする。
+                            sep_acc[i] = "1"  # type:ignore
+
+                # 上記以外のャが入っていない条件
+                elif "ャ" not in sep_kata[i]:
+                    sep_kata[i] = sep_kata[i][: pos.end()] + "ィ" + sep_kata[i][pos.end() :]  # type:ignore
+
+                    if type(pos.end()) == int:
+                            # アクセントを頭高型にする
+                            sep_acc[i] = "1"  # type:ignore
+
+    if "add_youon_e" in hougen_id:
+        for i in range(len(sep_kata)):
+            pos = __E_DAN_PATTERN.search(str(sep_kata[i]))
+
+            if pos:
+                sep_kata[i] = sep_kata[i][: pos.end()] + "ェ" + sep_kata[i][pos.end() :]  # type:ignore
+                # ェがアクセント核になる
+                if type(pos.end()) == int:
+                    sep_acc[i] = str(pos.end())  # type:ignore
+
+    if "add_youon_o" in hougen_id:
+        for i in range(len(sep_kata)):
+            pos = __O_DAN_PATTERN.search(str(sep_kata[i]))
+
+            if pos:
+                sep_kata[i] = sep_kata[i][: pos.end()] + "ォ" + sep_kata[i][pos.end() :]  # type:ignore
+                # アクセントを頭高型にする。
+                if type(pos.end()) == int:
+                    sep_acc[i] = "1"  # type:ignore
+
+    if "1st_mora_tyouon" in hougen_id:
 
         pos = __YOUON_PATTERN.search(str(sep_kata[0]))
 
@@ -693,7 +880,7 @@ def __hougen_patch(
         # bアクセントを頭高型に変更
         sep_acc[0] = "1"
 
-    elif hougen_id == "1st_mora_sokuon":
+    if "1st_mora_sokuon" in hougen_id:
 
         pos = __YOUON_PATTERN.search(str(sep_kata[0]))
 
@@ -707,7 +894,7 @@ def __hougen_patch(
         # bアクセントを頭高型に変更
         sep_acc[0] = "1"
 
-    elif hougen_id == "1st_mora_remove":
+    if "1st_mora_remove" in hougen_id:
 
         pos = __YOUON_PATTERN.search(str(sep_kata[0]))
 
@@ -718,7 +905,7 @@ def __hougen_patch(
         else:
             sep_kata[0] = "ッ" + sep_kata[0][1:]
 
-    elif hougen_id == "1st_mora_renboin":
+    if "1st_mora_renboin"  in hougen_id:
 
         pos = __O_DAN_PATTERN.search(str(sep_kata[0]))
 
@@ -736,129 +923,16 @@ def __hougen_patch(
                 if type(pos.end()) == int:
                     sep_acc[0] = "1"  # type:ignore
 
-    for i in range(len(sep_kata)):
-        if hougen_id == "kyusyu":
-            # 九州のほぼ全域で e を ye と発音する；付録131ｐ
-            sep_kata[i] = sep_kata[i].replace("エ", "イェ")
+    if "last_mora_acc_h" in hougen_id:
+        # 最後の単語の終端をアクセント核にする
+        last_word = sep_kata[len(sep_kata)-1]
+        sep_acc[len(sep_acc)-1] = str(len(last_word))
 
-            # 九州のほぼ全域で s eをsh e , z eをj eと発音する；付録132ｐ
-            sep_kata[i] = sep_kata[i].replace("セ", "シェ")
-            sep_kata[i] = sep_kata[i].replace("ゼ", "ジェ")
 
-            # 発音化：語末のヌ、ニ、ム、モ、ミなどが発音 ンN で表される。；付録132ｐ
-            num = len(sep_kata[i])
-            if __KYUSYU_HATUON_PATTERN.fullmatch(sep_kata[i][num - 1]):
-                sep_kata[i] = sep_kata[i][: num - 1] + "ン"
+    if "last_word_acc_1" in hougen_id:
+        # 最後のアクセントを頭高型に
+        sep_acc[len(sep_acc)-1] = "1"
 
-        elif hougen_id == "kinki":
-            # 1泊の名詞を長音化し2泊で発音する
-            if sep_pos[i] == "名詞" and len(sep_kata[i]) == 1:
-                if sep_kata[i] == "!" or "?" or "'":
-                    sep_kata[i] = sep_kata[i] + "ー"
-
-        # ここから特に参考資料はないが表現の幅が広がったり、話者の特性を再現できそうなもの
-        elif hougen_id == "convert2b2v":
-            if "バ" in str(sep_kata[i]):
-                sep_kata[i] = sep_kata[i].replace("バ", "ヴァ")
-            if "ビ" in str(sep_kata[i]):
-                sep_kata[i] = sep_kata[i].replace("ビ", "ヴィ")
-            if "ブ" in str(sep_kata[i]):
-                sep_kata[i] = sep_kata[i].replace("ブ", "ヴ")
-            if "ベ" in str(sep_kata[i]):
-                sep_kata[i] = sep_kata[i].replace("ベ", "ヴェ")
-            if "ボ" in str(sep_kata[i]):
-                sep_kata[i] = sep_kata[i].replace("ボ", "ヴォ")
-
-        elif hougen_id == "convert2t2ts":
-            if "タ" in str(sep_kata[i]):
-                sep_kata[i] = sep_kata[i].replace("タ", "ツァ")
-            if "チ" in str(sep_kata[i]):
-                sep_kata[i] = sep_kata[i].replace("チ", "ツィ")
-            if "テ" in str(sep_kata[i]):
-                sep_kata[i] = sep_kata[i].replace("テ", "ツェ")
-            if "ト" in str(sep_kata[i]):
-                sep_kata[i] = sep_kata[i].replace("ト", "ツォ")
-
-        elif hougen_id == "convert2d2r":
-            if "ダ" in str(sep_kata[i]):
-                sep_kata[i] = sep_kata[i].replace("ダ", "ラ")
-                sep_acc[i] = "1"
-            if "デ" in str(sep_kata[i]):
-                sep_kata[i] = sep_kata[i].replace("デ", "レ")
-                sep_acc[i] = "1"
-            if "ド" in str(sep_kata[i]):
-                sep_kata[i] = sep_kata[i].replace("ド", "ロ")
-                sep_acc[i] = "1"
-
-                # bアクセントを平型に変更
-                sep_acc[0] = "0"
-
-        elif hougen_id == "hatuonbin":
-            # 各単語先頭と終端は置き換えない
-            if "ノ" in str(sep_kata[i][1:-1]):
-                sep_kata[i] = sep_kata[i].replace("ノ", "ン")
-            # 一種ずつしか撥音化しない
-            elif "ル" in str(sep_kata[i][1:-1]):
-                sep_kata[i] = sep_kata[i].replace("ル", "ン")
-            elif "ラ" in str(sep_kata[i][1:-1]):
-                sep_kata[i] = sep_kata[i].replace("ラ", "ン")
-
-        elif hougen_id == "youjigo_like":
-            if "サ" in str(sep_kata[i]):
-                sep_kata[i] = sep_kata[i].replace("サ", "チャ")
-            if "シ" in str(sep_kata[i]):
-                sep_kata[i] = sep_kata[i].replace("シ", "チ")
-            if "ス" in str(sep_kata[i]):
-                sep_kata[i] = sep_kata[i].replace("ス", "チュ")
-            if "セ" in str(sep_kata[i]):
-                sep_kata[i] = sep_kata[i].replace("セ", "チェ")
-            if "ソ" in str(sep_kata[i]):
-                sep_kata[i] = sep_kata[i].replace("ソ", "チョ")
-
-        elif hougen_id == "add_youon_a":
-            pos = __A_DAN_PATTERN.search(str(sep_kata[i]))
-
-            if pos:
-                sep_kata[i] = sep_kata[i][: pos.end()] + "ァ" + sep_kata[i][pos.end() :]  # type:ignore
-                # ァがアクセント核になる
-                if type(pos.end()) == int:
-                    sep_acc[i] = str(pos.end())  # type:ignore
-
-        elif hougen_id == "add_youon_i":
-            pos = __I_DAN_PATTERN.search(str(sep_kata[i]))
-
-            if pos:
-                # マッチした語が最後の以外で　シャ　等　マッチした文字の後に拗音が来ない場合
-                if len(str(sep_kata[i])) > pos.end() and sep_kata[i][pos.end()] != "ャ":# type:ignore
-                    sep_kata[i] = sep_kata[i][: pos.end()] + "ィ" + sep_kata[i][pos.end() :]  # type:ignore
-                    # ィがアクセント核になる
-                    if type(pos.end()) == int:
-                        sep_acc[i] = "1"  # type:ignore
-
-                # 上記以外のャが入っていない条件
-                elif "ャ" not in sep_kata[i]:
-                    sep_kata[i] = sep_kata[i][: pos.end()] + "ィ" + sep_kata[i][pos.end() :]  # type:ignore
-                    # ィがアクセント核になる
-                    if type(pos.end()) == int:
-                        sep_acc[i] = "1"  # type:ignore
-
-        elif hougen_id == "add_youon_e":
-            pos = __E_DAN_PATTERN.search(str(sep_kata[i]))
-
-            if pos:
-                sep_kata[i] = sep_kata[i][: pos.end()] + "ェ" + sep_kata[i][pos.end() :]  # type:ignore
-                # ェがアクセント核になる
-                if type(pos.end()) == int:
-                    sep_acc[i] = str(pos.end())  # type:ignore
-
-        elif hougen_id == "add_youon_o":
-            pos = __O_DAN_PATTERN.search(str(sep_kata[i]))
-
-            if pos:
-                sep_kata[i] = sep_kata[i][: pos.end()] + "ォ" + sep_kata[i][pos.end() :]  # type:ignore
-                # アクセントを頭高型にする。
-                if type(pos.end()) == int:
-                    sep_acc[i] = "1"  # type:ignore
 
     return sep_kata, sep_acc
 
