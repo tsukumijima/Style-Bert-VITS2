@@ -22,7 +22,7 @@ def g2p(
     norm_text: str,
     use_jp_extra: bool = True,
     raise_yomi_error: bool = False,
-    use_unidic3: bool = True,
+    use_unidic3: bool = False,
     use_yomikata: bool = False,
     hougen_mode: list[Literal[
         "kinki",
@@ -30,6 +30,8 @@ def g2p(
         "convert2b2v",
         "convert2t2ts",
         "convert2d2r",
+        "convert2r2d",
+        "convert2s2z_sh2j",
         "1st_mora_tyouon",
         "1st_mora_sokuon",
         "1st_mora_remove",
@@ -217,6 +219,8 @@ def update_yomi(
         "convert2b2v",
         "convert2t2ts",
         "convert2d2r",
+        "convert2r2d",
+        "convert2s2z_sh2j",
         "1st_mora_tyouon",
         "1st_mora_sokuon",
         "1st_mora_remove",
@@ -662,6 +666,8 @@ def __hougen_patch(
         "convert2b2v",
         "convert2t2ts",
         "convert2d2r",
+        "convert2r2d",
+        "convert2s2z_sh2j",
         "1st_mora_tyouon",
         "1st_mora_sokuon",
         "1st_mora_remove",
@@ -773,16 +779,64 @@ def __hougen_patch(
         for i in range(len(sep_kata)):
             if "ダ" in str(sep_kata[i]):
                 sep_kata[i] = sep_kata[i].replace("ダ", "ラ")
-                sep_acc[i] = "1"
+
             if "デ" in str(sep_kata[i]):
                 sep_kata[i] = sep_kata[i].replace("デ", "レ")
-                sep_acc[i] = "1"
+
             if "ド" in str(sep_kata[i]):
                 sep_kata[i] = sep_kata[i].replace("ド", "ロ")
-                sep_acc[i] = "1"
 
-                # bアクセントを平型に変更
-                sep_acc[0] = "0"
+            # アクセントを平型に変更
+            sep_acc[0] = "0"
+
+    if "convert2r2d" in hougen_id:
+        for i in range(len(sep_kata)):
+            if "ラ" in str(sep_kata[i]):
+                sep_kata[i] = sep_kata[i].replace("ラ", "ダ")
+
+            if "レ" in str(sep_kata[i]):
+                sep_kata[i] = sep_kata[i].replace("レ", "デ")
+
+            if "ロ" in str(sep_kata[i]):
+                sep_kata[i] = sep_kata[i].replace("ロ", "ド")
+
+            # アクセントを頭高型に変更
+            sep_acc[0] = "1"
+
+    if "convert2s2z_sh2j" in hougen_id:
+        for i in range(len(sep_kata)):
+            if "サ" in str(sep_kata[i]):
+                sep_kata[i] = sep_kata[i].replace("サ", "ザ")
+
+            if "スィ" in str(sep_kata[i]):
+                sep_kata[i] = sep_kata[i].replace("スィ", "ズィ")
+
+            if "ス" in str(sep_kata[i]):
+                sep_kata[i] = sep_kata[i].replace("ス", "ズ")
+
+            if "セ" in str(sep_kata[i]):
+                sep_kata[i] = sep_kata[i].replace("セ", "ゼ")
+
+            if "ソ" in str(sep_kata[i]):
+                sep_kata[i] = sep_kata[i].replace("ソ", "ゾ")
+
+            if "シャ" in str(sep_kata[i]):
+                sep_kata[i] = sep_kata[i].replace("シャ", "ジャ")
+
+            if "シ" in str(sep_kata[i]):
+                sep_kata[i] = sep_kata[i].replace("シ", "ジ")
+
+            if "シュ" in str(sep_kata[i]):
+                sep_kata[i] = sep_kata[i].replace("シュ", "ジュ")
+
+            if "シェ" in str(sep_kata[i]):
+                sep_kata[i] = sep_kata[i].replace("シェ", "ジェ")
+
+            if "ショ" in str(sep_kata[i]):
+                sep_kata[i] = sep_kata[i].replace("ショ", "ジョ")
+
+            # アクセントを頭高型に変更
+            sep_acc[0] = "1"
 
 
     if "hatuonbin" in hougen_id:
