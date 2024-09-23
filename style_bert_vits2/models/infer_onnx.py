@@ -75,15 +75,15 @@ def get_text_onnx(
 
     if language_str == Languages.ZH:
         bert = bert_ori
-        ja_bert = np.zeros((1024, len(phone)))
-        en_bert = np.zeros((1024, len(phone)))
+        ja_bert = np.zeros((1024, len(phone)), dtype=np.float32)
+        en_bert = np.zeros((1024, len(phone)), dtype=np.float32)
     elif language_str == Languages.JP:
-        bert = np.zeros((1024, len(phone)))
+        bert = np.zeros((1024, len(phone)), dtype=np.float32)
         ja_bert = bert_ori
-        en_bert = np.zeros((1024, len(phone)))
+        en_bert = np.zeros((1024, len(phone)), dtype=np.float32)
     elif language_str == Languages.EN:
-        bert = np.zeros((1024, len(phone)))
-        ja_bert = np.zeros((1024, len(phone)))
+        bert = np.zeros((1024, len(phone)), dtype=np.float32)
+        ja_bert = np.zeros((1024, len(phone)), dtype=np.float32)
         en_bert = bert_ori
     else:
         raise ValueError("language_str should be ZH, JP or EN")
@@ -92,9 +92,9 @@ def get_text_onnx(
         phone
     ), f"Bert seq len {bert.shape[-1]} != {len(phone)}"
 
-    phone = np.array(phone)
-    tone = np.array(tone)
-    language = np.array(language)
+    phone = np.array(phone, dtype=np.int64)
+    tone = np.array(tone, dtype=np.int64)
+    language = np.array(language, dtype=np.int64)
     return bert, ja_bert, en_bert, phone, tone, language
 
 
@@ -167,28 +167,64 @@ def infer_onnx(
             style_vec_tensor,
             np.array([length_scale], dtype=np.float32),
             np.array([sdp_ratio], dtype=np.float32),
+            np.array([noise_scale], dtype=np.float32),
+            np.array([noise_scale_w], dtype=np.float32),
+        ]
+    else:
+        input_tensor = [
+            x_tst,
+            x_tst_lengths,
+            sid_tensor,
+            tones,
+            lang_ids,
+            bert,
+            ja_bert,
+            en_bert,
+            style_vec_tensor,
+            np.array([length_scale], dtype=np.float32),
+            np.array([sdp_ratio], dtype=np.float32),
+            np.array([noise_scale], dtype=np.float32),
+            np.array([noise_scale_w], dtype=np.float32),
         ]
 
-        first_provider = onnx_session.get_providers()[0]
-        if first_provider == "CUDAExecutionProvider":
-            device_type = "cuda"
-        elif first_provider == "DmlExecutionProvider":
-            device_type = "dml"
-        else:
-            device_type = "cpu"
-
-        # GPU メモリに入力テンソルを割り当て
-        io_binding = onnx_session.io_binding()
-        for name, value in zip(input_names, input_tensor):
-            gpu_tensor = onnxruntime.OrtValue.ortvalue_from_numpy(value, device_type)
-            io_binding.bind_ortvalue_input(name, gpu_tensor)
-
-        # 推論の実行
-        io_binding.bind_output(output_name, device_type)
-        onnx_session.run_with_iobinding(io_binding)
-        output = io_binding.get_outputs()
+    # 入力テンソルを転送する GPU デバイスを取得
+    ## 本来は device_type="dml" もサポートされているはずだが、手元環境だと常に謎の RuntimeError が発生するため当面無効化している
+    first_provider = onnx_session.get_providers()[0]
+    if first_provider == "CUDAExecutionProvider":
+        device_type = "cuda"
+    # elif first_provider == "DmlExecutionProvider":
+    #     device_type = "dml"
     else:
-        raise NotImplementedError("Not implemented yet")
+        device_type = "cpu"
+
+    # 入力テンソルを転送する GPU デバイスの ID を取得
+    ## ExecutionProvider に指定したオプションの中から device_id を取得し、入力テンソルの転送先として指定する
+    ## InferenceSession で利用するデバイス ID と入力テンソルの転送先デバイス ID は一致している必要がある
+    ## 本来は ExecutionProvider に指定したオプションは InferenceSession.get_provider_options() で取得できるはずだが、
+    ## 手元環境だと DmlExecutionProvider のみ常に空の辞書が返されるため、当面 onnx_providers から直接オプションを取り出している
+    device_id = 0
+    onnx_providers_dict: dict[str, dict[str, Any]] = {}
+    for provider, options in onnx_providers:
+        if isinstance(options, dict):
+            onnx_providers_dict[provider] = options
+        else:
+            onnx_providers_dict[provider] = {}
+    first_provider_options = onnx_providers_dict[first_provider]
+    if "device_id" in first_provider_options:
+        device_id = int(first_provider_options["device_id"])
+
+    # GPU メモリに入力テンソルを割り当て
+    io_binding = onnx_session.io_binding()
+    for name, value in zip(input_names, input_tensor):
+        gpu_tensor = onnxruntime.OrtValue.ortvalue_from_numpy(
+            value, device_type, device_id
+        )
+        io_binding.bind_ortvalue_input(name, gpu_tensor)
+
+    # 推論の実行
+    io_binding.bind_output(output_name, device_type)
+    onnx_session.run_with_iobinding(io_binding)
+    output = io_binding.get_outputs()
 
     audio = output[0].numpy()[0, 0]
 

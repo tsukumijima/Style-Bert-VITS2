@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Optional, Sequence, Union
+from typing import TYPE_CHECKING, Any, Optional, Sequence, Union, cast
 
 import numpy as np
 from numpy.typing import NDArray
@@ -111,7 +111,7 @@ def extract_bert_feature_onnx(
         assist_text = "".join(text_to_sep_kata(assist_text, raise_yomi_error=False)[0])
 
     tokenizer = onnx_bert_models.load_tokenizer(Languages.JP)
-    inputs = tokenizer(text, return_tensors="pt")
+    inputs = tokenizer(text, return_tensors="np")
 
     session = onnx_bert_models.load_model(
         language=Languages.JP,
@@ -121,19 +121,19 @@ def extract_bert_feature_onnx(
     res = session.run(
         [output_name],
         {
-            "input_ids": inputs["input_ids"].detach().numpy(),
-            "attention_mask": inputs["attention_mask"].detach().numpy(),
+            "input_ids": inputs["input_ids"].astype(np.int64),  # type: ignore
+            "attention_mask": inputs["attention_mask"].astype(np.int64),  # type: ignore
         },
     )[0]
 
     style_res_mean = None
     if assist_text:
-        style_inputs = tokenizer(assist_text, return_tensors="pt")
+        style_inputs = tokenizer(assist_text, return_tensors="np")
         style_res = session.run(
             [output_name],
             {
-                "input_ids": style_inputs["input_ids"].detach().numpy(),
-                "attention_mask": style_inputs["attention_mask"].detach().numpy(),
+                "input_ids": style_inputs["input_ids"].astype(np.int64),  # type: ignore
+                "attention_mask": style_inputs["attention_mask"].astype(np.int64),  # type: ignore
             },
         )[0]
         style_res_mean = np.mean(style_res, axis=0)

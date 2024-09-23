@@ -138,11 +138,18 @@ class TTSModel:
         # ONNX 推論時
         else:
             sess_options = onnxruntime.SessionOptions()
-            # 基本的な最適化のみ有効化
-            # ONNX モデルの作成時にすでに onnxsim により最適化されているため、ここでは基本的な最適化のみ有効化する
-            sess_options.graph_optimization_level = (
-                onnxruntime.GraphOptimizationLevel.ORT_ENABLE_BASIC
+            # ONNX モデルの作成時にすでに onnxsim により最適化されていることから、ロード高速化のため最適化を無効にする
+            ## DmlExecutionProvider が先頭に指定されているときのみ、DirectML 推論の高速化のためすべての最適化を有効にする
+            assert len(self.onnx_providers) > 0
+            first_provider_name = (
+                self.onnx_providers[0]
+                if type(self.onnx_providers[0]) is str
+                else self.onnx_providers[0][0]
             )
+            if first_provider_name == "DmlExecutionProvider":
+                sess_options.graph_optimization_level = onnxruntime.GraphOptimizationLevel.ORT_ENABLE_ALL  # fmt: skip
+            else:
+                sess_options.graph_optimization_level = onnxruntime.GraphOptimizationLevel.ORT_DISABLE_ALL  # fmt: skip
             # エラー以外のログを出力しない
             # 本来は log_severity_level = 3 だけで効くはずだが、なぜか抑制できないので set_default_logger_severity() も呼び出している
             sess_options.log_severity_level = 3
@@ -156,6 +163,16 @@ class TTSModel:
             logger.info(
                 f"Model loaded successfully from {self.model_path} to {self.onnx_session.get_providers()[0]} ({time.time() - start_time:.2f}s)"
             )
+
+    def unload(self) -> None:
+        """
+        音声合成モデルをデバイスからアンロードする。
+        """
+
+        if self.net_g is not None:
+            self.net_g = None
+        if self.onnx_session is not None:
+            self.onnx_session = None
 
     def get_style_vector(self, style_id: int, weight: float = 1.0) -> NDArray[Any]:
         """
@@ -470,6 +487,7 @@ class TTSModelHolder:
         model_root_dir: Path,
         device: str,
         onnx_providers: Sequence[Union[str, tuple[str, dict[str, Any]]]],
+        ignore_onnx: bool = False,
     ) -> None:
         """
         Style-Bert-VITS2 の音声合成モデルを管理するクラスを初期化する。
@@ -491,11 +509,13 @@ class TTSModelHolder:
             model_root_dir (Path): 音声合成モデルが配置されているディレクトリのパス
             device (str): PyTorch 推論での音声合成時に利用するデバイス (cpu, cuda, mps など)
             onnx_providers (list[str]): ONNX 推論で利用する ExecutionProvider (CPUExecutionProvider, CUDAExecutionProvider など)
+            ignore_onnx (bool, optional): ONNX モデルを除外するかどうか. Defaults to False.
         """
 
         self.root_dir: Path = model_root_dir
         self.device: str = device
         self.onnx_providers: Sequence[Union[str, tuple[str, dict[str, Any]]]] = onnx_providers  # fmt: skip
+        self.ignore_onnx: bool = ignore_onnx
         self.model_files_dict: dict[str, list[Path]] = {}
         self.current_model: Optional[TTSModel] = None
         self.model_names: list[str] = []
@@ -516,11 +536,15 @@ class TTSModelHolder:
         for model_dir in model_dirs:
             if model_dir.name.startswith("."):
                 continue
+            suffixes = [".pth", ".pt", ".safetensors"]
+            if self.ignore_onnx is False:
+                suffixes.append(".onnx")
             model_files = sorted(
                 [
                     f
                     for f in model_dir.iterdir()
-                    if f.suffix in [".pth", ".pt", ".safetensors", ".onnx"]
+                    # 上記 suffixes にマッチするファイルのみを取得し、. から始まるファイルは除外
+                    if f.suffix in suffixes and not f.name.startswith(".")
                 ]
             )
             if len(model_files) == 0:
