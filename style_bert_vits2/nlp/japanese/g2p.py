@@ -1,4 +1,5 @@
 import re
+import sys
 from typing import TypedDict
 
 from style_bert_vits2.constants import Languages
@@ -730,3 +731,10 @@ class YomiError(Exception):
     基本的に「学習の前処理のテキスト処理時」には発生させ、そうでない場合は、
     raise_yomi_error=False にしておいて、この例外を発生させないようにする。
     """
+
+
+if __name__ == "__main__":
+    if len(sys.argv) != 2:
+        print(f"Usage: python -m style_bert_vits2.nlp.japanese.g2p <text>")
+        sys.exit(1)
+    print(g2p(sys.argv[1]))
