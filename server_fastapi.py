@@ -43,7 +43,21 @@ image = Image.debian_slim().pip_install(
     "scipy",
     "GPUtil",
     "psutil",
-    "yaml"
+    "PyYAML",
+    "loguru",
+    "cmudict",
+    "cn2an",
+    "g2p_en",
+    "jieba",
+    "num2words",
+    "numba",
+    "numpy",
+    "pydantic>=2.0",
+    "pyopenjtalk-dict",
+    "pypinyin",
+    "pyworld-prebuilt",
+    "safetensors",
+    "transformers",
 )
 
 
@@ -203,6 +217,10 @@ def create_app():
         loaded_models = load_models.remote()
         return get_loaded_models_info()
 
+    @fastapi_app.get("/health")
+    def health():
+        return {"status": "ok"}
+
     @fastapi_app.get("/status")
     def get_status():
         cpu_percent = psutil.cpu_percent(interval=1)
@@ -239,8 +257,3 @@ def create_app():
         }
 
     return fastapi_app
-
-
-# Entry point for Modal
-# if __name__ == "__main__":
-#     app.run(create_app)
