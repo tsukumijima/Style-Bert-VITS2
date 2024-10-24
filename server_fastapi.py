@@ -12,7 +12,7 @@ import torch
 from fastapi import FastAPI, HTTPException, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
-from modal import Image, Mount
+from modal import Image
 from scipy.io import wavfile
 
 from config import get_config
@@ -35,52 +35,36 @@ from style_bert_vits2.nlp.japanese.user_dict import update_dict
 from style_bert_vits2.tts_model import TTSModel, TTSModelHolder
 
 app = modal.App("style-bert-vits2-server")
-
-image = Image.debian_slim().pip_install(
-    "fastapi",
-    "uvicorn",
-    "torch",
-    "scipy",
-    "GPUtil",
-    "psutil",
-    "PyYAML",
-    "loguru",
-    "cmudict",
-    "cn2an",
-    "g2p_en",
-    "jieba",
-    "num2words",
-    "numba",
-    "numpy",
-    "pydantic>=2.0",
-    "pyopenjtalk-dict",
-    "pypinyin",
-    "pyworld-prebuilt",
-    "safetensors",
-    "transformers",
+configs_mount = modal.Mount.from_local_dir(".", remote_path="/root/.")
+image = (
+    Image.debian_slim()
+    .pip_install(
+        "fastapi",
+        "uvicorn",
+        "torch",
+        "scipy",
+        "GPUtil",
+        "psutil",
+        "PyYAML",
+        "loguru",
+        "cmudict",
+        "cn2an",
+        "g2p_en",
+        "jieba",
+        "num2words",
+        "numba",
+        "numpy",
+        "pydantic>=2.0",
+        "pyopenjtalk-dict",
+        "pypinyin",
+        "pyworld-prebuilt",
+        "safetensors",
+        "transformers",
+        "sentencepiece",
+    )
+    .copy_mount(configs_mount)
 )
-
-
-@app.function(image=image, gpu="any")
-def load_models():
-    config = get_config()
-    model_dir = Path(config.assets_root)
-    model_holder = TTSModelHolder(model_dir, "cpu")
-    if len(model_holder.model_names) == 0:
-        logger.error(f"Models not found in {model_dir}.")
-        sys.exit(1)
-
-    logger.info("Loading models...")
-    loaded_models = []
-    for model_name, model_paths in model_holder.model_files_dict.items():
-        model = TTSModel(
-            model_path=model_paths[0],
-            config_path=model_holder.root_dir / model_name / "config.json",
-            style_vec_path=model_holder.root_dir / model_name / "style_vectors.npy",
-            device=model_holder.device,
-        )
-        loaded_models.append(model)
-    return loaded_models
+model_loading_sequence = ["ima_004_whisperE001", "ima_blend_004_tsukuE015", "ima_blend_004_tsukuN004"]
 
 
 @app.function(image=image, gpu="any")
@@ -111,7 +95,31 @@ def create_app():
         )
 
     # Load models
-    loaded_models = load_models.remote()
+    logger.info("Loading models...")
+
+    model_dir = Path(config.assets_root)
+    model_holder = TTSModelHolder(model_dir, "cuda")
+    if len(model_holder.model_names) == 0:
+        logger.error(f"Models not found in {model_dir}.")
+        sys.exit(1)
+
+    logger.info("Loading models...")
+    loaded_models = []
+    for model_name in model_loading_sequence:
+        if model_name in model_holder.model_files_dict:
+            model_paths = model_holder.model_files_dict[model_name]
+            model = TTSModel(
+                model_path=model_paths[0],
+                config_path=model_holder.root_dir / model_name / "config.json",
+                style_vec_path=model_holder.root_dir / model_name / "style_vectors.npy",
+                device=model_holder.device,
+            )
+            loaded_models.append(model)
+            logger.info(f"Loaded model: {model_name}")
+        else:
+            logger.warning(f"Model {model_name} not found in {model_dir}.")
+
+    logger.info("All specified models loaded successfully.")
 
     class AudioResponse(Response):
         media_type = "audio/wav"
@@ -211,11 +219,11 @@ def create_app():
             }
         return result
 
-    @fastapi_app.post("/models/refresh")
-    def refresh():
-        nonlocal loaded_models
-        loaded_models = load_models.remote()
-        return get_loaded_models_info()
+    # @fastapi_app.post("/models/refresh")
+    # def refresh():
+    #     nonlocal loaded_models
+    #     loaded_models = load_models.remote()
+    #     return get_loaded_models_info()
 
     @fastapi_app.get("/health")
     def health():
