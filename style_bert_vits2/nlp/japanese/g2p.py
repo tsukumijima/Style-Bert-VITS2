@@ -9,6 +9,7 @@ from style_bert_vits2.nlp.japanese import pyopenjtalk_worker as pyopenjtalk
 from style_bert_vits2.nlp.japanese.g2p_utils.accent import convert_accent2hl
 from style_bert_vits2.nlp.japanese.g2p_utils.dialect import (
     DialectRule,
+    SpeakingStyleRule,
     apply_dialect_diff,
     apply_keihan_accent_diff,
 )
@@ -25,7 +26,8 @@ def g2p(
     raise_yomi_error: bool = False,
     use_fugashi_unidic: bool = False,
     use_yomikata: bool = False,
-    dialect_rules: list[DialectRule] = ["Standard"],
+    dialect_rule: DialectRule = "Standard",
+    speaking_style_rules: list[SpeakingStyleRule] = [],
     fugashi_dict_dir: Path | None = None,
     fugashi_user_dict_dir: Path | None = None,
 ) -> tuple[list[str], list[int], list[int]]:
@@ -43,10 +45,11 @@ def g2p(
         use_fugashi_unidic (bool, optional): True の場合、fugashi + UniDic を利用し読み方とアクセントを改善する。
             利用には別途 fugashi と UniDic の導入が必要。Defaults to False.
         use_yomikata (bool, optional): True の場合、yomikata を利用し同形異音語の読み方を改善する。
-            利用には別途 yomikata の導入が必要。Defaults to False.
-        dialect_rules (list[DialectRule]): 適用対象の方言ルールのリスト。use_fugashi_unidic が True の場合にのみ有効。
-            例えば "KansaiDialect" 指定時はアクセントが京阪式になる。"ConvertBToV" はモーラ "b" を "v" に変換し、外国語風の訛を作る。
-            未指定時は標準語（東京方言）のみ。Defaults to ["Standard"].
+            use_fugashi_unidic が True の場合にのみ有効。利用には別途 yomikata の導入が必要。Defaults to False.
+        dialect_rule (DialectRule): 適用対象の方言ルール。use_fugashi_unidic が True の場合にのみ有効。
+            例えば "Kansai" 指定時はアクセントが京阪式になる。未指定時は標準語。Defaults to "Standard".
+        speaking_style_rules (list[SpeakingStyleRule]): 適用対象の喋り方ルールのリスト。use_fugashi_unidic が True の場合にのみ有効。
+            例えば "ConvertBToV" はバ行をヴァ行に変換し、外国語風の訛りを作る。未指定時は何も適用されない。Defaults to [].
         fugashi_dict_dir (Path | None, optional): fugashi のシステム辞書のパス。use_fugashi_unidic が True の場合にのみ有効。
             未指定時は unidic / unidic-lite パッケージから取得する。Defaults to None.
         fugashi_user_dict_dir (Path | None, optional): fugashi のユーザー辞書のパス。use_fugashi_unidic が True の場合にのみ有効。
@@ -89,7 +92,8 @@ def g2p(
             phone_w_punct,
             phone_tone_list,
             use_yomikata=use_yomikata,
-            dialect_rules=dialect_rules,
+            dialect_rule=dialect_rule,
+            speaking_style_rules=speaking_style_rules,
             fugashi_dict_dir=fugashi_dict_dir,
             fugashi_user_dict_dir=fugashi_user_dict_dir,
         )
@@ -208,7 +212,8 @@ def improve_yomi_and_accent(
     phone_w_punct: list[str],
     phone_tone_list: list[tuple[str, int]],
     use_yomikata: bool = False,
-    dialect_rules: list[DialectRule] = ["Standard"],
+    dialect_rule: DialectRule = "Standard",
+    speaking_style_rules: list[SpeakingStyleRule] = [],
     fugashi_dict_dir: Path | None = None,
     fugashi_user_dict_dir: Path | None = None,
 ) -> tuple[
@@ -219,7 +224,7 @@ def improve_yomi_and_accent(
 ]:
     """
     fugashi と比較的新しい UniDic を使い正規化されたテキストの読みとアクセントを取得し、pyopenjtalk から取得した読みと比較した上で、
-    もし一致していない場合は読みとアクセントをより正確な値に更新する。
+    もし一致していない場合は読みとアクセントを補正した値に更新する。
     アクセント取得時に OpenJTalk でもう一回処理を通す時のために、norm_text の該当箇所をカタカナに変更する。
     利用には別途 fugashi と UniDic の導入が必要。
 
@@ -231,12 +236,13 @@ def improve_yomi_and_accent(
         phone_tone_list (list[tuple[str, int]]): 音素とアクセントのリスト
         use_yomikata (bool, optional): True の場合、yomikata を利用し同形異音語の読み方を改善する。
             利用には別途 yomikata の導入が必要。Defaults to False.
-        dialect_rules (list[DialectRule]): 適用対象の方言ルールのリスト。use_fugashi_unidic が True の場合にのみ有効。
-            例えば "KansaiDialect" 指定時はアクセントが京阪式になる。"ConvertBToV" はモーラ "b" を "v" に変換し、外国語風の訛を作る。
-            未指定時は標準語（東京方言）のみ。Defaults to ["Standard"].
-        fugashi_dict_dir (Path | None, optional): fugashi のシステム辞書のパス。use_fugashi_unidic が True の場合にのみ有効。
+        dialect_rule (DialectRule): 適用対象の方言ルール。
+            例えば "Kansai" 指定時はアクセントが京阪式になる。未指定時は標準語。Defaults to "Standard".
+        speaking_style_rules (list[SpeakingStyleRule]): 適用対象の喋り方ルールのリスト。
+            例えば "ConvertBToV" はバ行をヴァ行に変換し、外国語風の訛りを作る。未指定時は何も適用されない。Defaults to [].
+        fugashi_dict_dir (Path | None, optional): fugashi のシステム辞書のパス。
             未指定時は unidic / unidic-lite パッケージから取得する。Defaults to None.
-        fugashi_user_dict_dir (Path | None, optional): fugashi のユーザー辞書のパス。use_fugashi_unidic が True の場合にのみ有効。
+        fugashi_user_dict_dir (Path | None, optional): fugashi のユーザー辞書のパス。
             Defaults to None.
 
     Returns:
@@ -253,7 +259,7 @@ def improve_yomi_and_accent(
     1. アクセント情報のない IPAdic にアクセント情報を足したもの
       - IPAdic は 2011 年で更新が止まっているがどのバージョンを使用しているのかわからなかった
     2. 上記の辞書と情報の配列が同じ UniDic
-      - OpenJTalk の更新時期 (2018) から推測して unidic-csj-2.3.0 以前
+      - OpenJTalk の最終更新時期 (2018) から推測して unidic-csj-2.3.0 以前
     """
 
     word_list: list[str] = []
@@ -275,18 +281,19 @@ def improve_yomi_and_accent(
         accent_list += cur_accent_list  # type: ignore
         pos_list += cur_pos_list
 
-    # kana_list に対し、yomikata による同形異音語処理を適用
+    # kana_list に対し、yomikata による同形異音語処理の差分を適用
     if use_yomikata == True:
         kana_list = apply_yomikata_diff(word_list, kana_list)
 
-    # kana_list と accent_list に対し、方言ルールを適用
-    if dialect_rules != None:
+    # kana_list と accent_list に対し、方言ルールの差分を適用
+    # 方言が標準語以外、もしくは喋り方ルールが指定されている場合のみ実行
+    if dialect_rule != "Standard" or len(speaking_style_rules) > 0:
         kana_list, accent_list = apply_dialect_diff(
-            kana_list, accent_list, pos_list, dialect_rules
+            kana_list, accent_list, pos_list, dialect_rule, speaking_style_rules
         )
 
-    # accent_list に対し、京阪式アクセント特有のアクセント処理を適用
-    if "KansaiDialect" in dialect_rules:
+    # accent_list に対し、京阪式アクセント特有のアクセント処理の差分を適用
+    if dialect_rule == "Kansai":
         accent_list = apply_keihan_accent_diff(kana_list, accent_list, pos_list)
 
     new_sep_text: list[str] = word_list
@@ -322,8 +329,8 @@ def improve_yomi_and_accent(
         new_phone_tone_list.append([phone, int(accent)])
 
     # 標準語の場合
-    if "Standard" in dialect_rules:
-        # 音素が完全一致して区切った数も一致した場合、OpenJTalk の出力したアクセントを使う。
+    if dialect_rule == "Standard":
+        # 音素が完全一致して区切った数も一致した場合、OpenJTalk の出力したアクセントを使う
         if phone_w_punct == new_phone_w_punct and len(kana_list) == len(sep_kata):
             return sep_text, sep_kata, sep_phonemes, phone_tone_list
 
