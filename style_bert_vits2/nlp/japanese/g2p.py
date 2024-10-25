@@ -26,7 +26,7 @@ def g2p(
     raise_yomi_error: bool = False,
     use_fugashi_unidic: bool = False,
     use_yomikata: bool = False,
-    dialect_rule: DialectRule = "Standard",
+    dialect_rule: DialectRule = DialectRule.Standard,
     speaking_style_rules: list[SpeakingStyleRule] = [],
     fugashi_dict_dir: Path | None = None,
     fugashi_user_dict_dir: Path | None = None,
@@ -47,9 +47,9 @@ def g2p(
         use_yomikata (bool, optional): True の場合、yomikata を利用し同形異音語の読み方を改善する。
             use_fugashi_unidic が True の場合にのみ有効。利用には別途 yomikata の導入が必要。Defaults to False.
         dialect_rule (DialectRule): 適用対象の方言ルール。use_fugashi_unidic が True の場合にのみ有効。
-            例えば "Kansai" 指定時はアクセントが京阪式になる。未指定時は標準語。Defaults to "Standard".
+            例えば DialectRule.Kansai 指定時はアクセントが京阪式になる。未指定時は標準語。Defaults to DialectRule.Standard.
         speaking_style_rules (list[SpeakingStyleRule]): 適用対象の喋り方ルールのリスト。use_fugashi_unidic が True の場合にのみ有効。
-            例えば "ConvertBToV" はバ行をヴァ行に変換し、外国語風の訛りを作る。未指定時は何も適用されない。Defaults to [].
+            例えば SpeakingStyleRule.ConvertBToV はバ行をヴァ行に変換し、外国語風の訛りを作る。未指定時は何も適用されない。Defaults to [].
         fugashi_dict_dir (Path | None, optional): fugashi のシステム辞書のパス。use_fugashi_unidic が True の場合にのみ有効。
             未指定時は unidic / unidic-lite パッケージから取得する。Defaults to None.
         fugashi_user_dict_dir (Path | None, optional): fugashi のユーザー辞書のパス。use_fugashi_unidic が True の場合にのみ有効。
@@ -212,7 +212,7 @@ def improve_yomi_and_accent(
     phone_w_punct: list[str],
     phone_tone_list: list[tuple[str, int]],
     use_yomikata: bool = False,
-    dialect_rule: DialectRule = "Standard",
+    dialect_rule: DialectRule = DialectRule.Standard,
     speaking_style_rules: list[SpeakingStyleRule] = [],
     fugashi_dict_dir: Path | None = None,
     fugashi_user_dict_dir: Path | None = None,
@@ -237,9 +237,9 @@ def improve_yomi_and_accent(
         use_yomikata (bool, optional): True の場合、yomikata を利用し同形異音語の読み方を改善する。
             利用には別途 yomikata の導入が必要。Defaults to False.
         dialect_rule (DialectRule): 適用対象の方言ルール。
-            例えば "Kansai" 指定時はアクセントが京阪式になる。未指定時は標準語。Defaults to "Standard".
+            例えば DialectRule.Kansai 指定時はアクセントが京阪式になる。未指定時は標準語。Defaults to DialectRule.Standard.
         speaking_style_rules (list[SpeakingStyleRule]): 適用対象の喋り方ルールのリスト。
-            例えば "ConvertBToV" はバ行をヴァ行に変換し、外国語風の訛りを作る。未指定時は何も適用されない。Defaults to [].
+            例えば SpeakingStyleRule.ConvertBToV はバ行をヴァ行に変換し、外国語風の訛りを作る。未指定時は何も適用されない。Defaults to [].
         fugashi_dict_dir (Path | None, optional): fugashi のシステム辞書のパス。
             未指定時は unidic / unidic-lite パッケージから取得する。Defaults to None.
         fugashi_user_dict_dir (Path | None, optional): fugashi のユーザー辞書のパス。
@@ -287,13 +287,13 @@ def improve_yomi_and_accent(
 
     # kana_list と accent_list に対し、方言ルールの差分を適用
     # 方言が標準語以外、もしくは喋り方ルールが指定されている場合のみ実行
-    if dialect_rule != "Standard" or len(speaking_style_rules) > 0:
+    if dialect_rule != DialectRule.Standard or len(speaking_style_rules) > 0:
         kana_list, accent_list = apply_dialect_diff(
             kana_list, accent_list, pos_list, dialect_rule, speaking_style_rules
         )
 
     # accent_list に対し、京阪式アクセント特有のアクセント処理の差分を適用
-    if dialect_rule == "Kansai":
+    if dialect_rule == DialectRule.Kansai:
         accent_list = apply_keihan_accent_diff(kana_list, accent_list, pos_list)
 
     new_sep_text: list[str] = word_list
@@ -329,7 +329,7 @@ def improve_yomi_and_accent(
         new_phone_tone_list.append([phone, int(accent)])
 
     # 標準語の場合
-    if dialect_rule == "Standard":
+    if dialect_rule == DialectRule.Standard:
         # 音素が完全一致して区切った数も一致した場合、OpenJTalk の出力したアクセントを使う
         if phone_w_punct == new_phone_w_punct and len(kana_list) == len(sep_kata):
             return sep_text, sep_kata, sep_phonemes, phone_tone_list

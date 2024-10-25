@@ -1,39 +1,43 @@
 import re
-from typing import Literal
+
+from style_bert_vits2.utils.strenum import StrEnum
 
 
-# 実装されている日本語の喋り方ルールの型
-DialectRule = Literal[
-    "Standard",  # 標準語
-    "Kansai",    # 近畿方言 (関西弁)
-    "Kyushu",    # 九州方言
-]
+class DialectRule(StrEnum):
+    """実装されている日本語の喋り方ルール"""
 
-# 実装されている日本語の喋り方ルールの型
-SpeakingStyleRule = Literal[
+    Standard = "Standard"  # 標準語
+    Kansai = "Kansai"  # 近畿方言 (関西弁)
+    Kyushu = "Kyushu"  # 九州方言
+
+
+class SpeakingStyleRule(StrEnum):
+    """実装されている日本語の喋り方ルール"""
+
+    # fmt: off
     # 音素・モーラの置換系
-    "ConvertBToV",          # バ行をヴァ行に変換する
-    "ConvertTToTs",         # タ行をツァ行に変換する
-    "ConvertDToR",          # ダ行をラ行に変換し (ヂを除く) 、アクセントを平型にする
-    "ConvertRToD",          # ラ行をダ行に変換し (リを除く) 、アクセントを頭高型にする
-    "ConvertSToZ",          # サ行をザ行に、シャ行をジャ行に変換し、アクセントを頭高型にする
-    "ConvertToHatsuonbin",  # 単語の先頭以外の "na", "no", "ra", "ru" を "N" に変換する (撥音便化)
+    ConvertBToV = "ConvertBToV"                  # バ行をヴァ行に変換する
+    ConvertTToTs = "ConvertTToTs"                # タ行をツァ行に変換する
+    ConvertDToR = "ConvertDToR"                  # ダ行をラ行に変換し (ヂを除く) 、アクセントを平型にする
+    ConvertRToD = "ConvertRToD"                  # ラ行をダ行に変換し (リを除く) 、アクセントを頭高型にする
+    ConvertSToZ = "ConvertSToZ"                  # サ行をザ行に、シャ行をジャ行に変換し、アクセントを頭高型にする
+    ConvertToHatsuonbin = "ConvertToHatsuonbin"  # 単語の先頭以外の "na", "no", "ra", "ru" を "N" に変換する (撥音便化)
     # 1モーラ目の音韻操作系
-    "ExtendFirstMora",      # 文章の1モーラ目を長音化し、アクセントを頭高型にする
-    "GeminationFirstMora",  # 文章の1モーラ目を促音化し、アクセントを頭高型にする
-    "RemoveFirstMora",      # 文章の1モーラ目を "っ" に変換し、アクセントを平型にする
-    "DiphthongFirstMora",   # 各単語の最初を連母音にし、アクセントを頭高型にする ("e" は "ei", "o" は "ou" になる)
+    ExtendFirstMora = "ExtendFirstMora"          # 文章の1モーラ目を長音化し、アクセントを頭高型にする
+    GeminationFirstMora = "GeminationFirstMora"  # 文章の1モーラ目を促音化し、アクセントを頭高型にする
+    RemoveFirstMora = "RemoveFirstMora"          # 文章の1モーラ目を "っ" に変換し、アクセントを平型にする
+    DiphthongFirstMora = "DiphthongFirstMora"    # 各単語の最初を連母音にし、アクセントを頭高型にする ("e" は "ei", "o" は "ou" になる)
     # アクセント操作系
-    "LastMoraAccentH",      # 最後の単語の終端のモーラをアクセント核にする
-    "LastWordAccent1",      # 最後の単語のアクセントを頭高型にする
+    LastMoraAccentH = "LastMoraAccentH"          # 最後の単語の終端のモーラをアクセント核にする
+    LastWordAccent1 = "LastWordAccent1"          # 最後の単語のアクセントを頭高型にする
     # 拗音追加系
-    "AddYouonA",            # 各単語に最初にア段が出てきた時、"ァ" をつけ "ァ" をアクセント核にする
-    "AddYouonI",            # 各単語に最初にイ段が出てきた時、"ィ" をつけアクセントを頭高型にする
-    "AddYouonE",            # 各単語に最初にエ段が出てきた時、"ェ" をつけ "ェ" をアクセント核にする
-    "AddYouonO",            # 各単語に最初にオ段が出てきた時、"ぉ" をつけアクセントを頭高型にする
+    AddYouonA = "AddYouonA"                      # 各単語に最初にア段が出てきた時、"ァ" をつけ "ァ" をアクセント核にする
+    AddYouonI = "AddYouonI"                      # 各単語に最初にイ段が出てきた時、"ィ" をつけアクセントを頭高型にする
+    AddYouonE = "AddYouonE"                      # 各単語に最初にエ段が出てきた時、"ェ" をつけ "ェ" をアクセント核にする
+    AddYouonO = "AddYouonO"                      # 各単語に最初にオ段が出てきた時、"ぉ" をつけアクセントを頭高型にする
     # 特殊な話し方
-    "BabyTalkStyle",        # "s" を "ch" に変換する (幼児語風)
-]
+    BabyTalkStyle = "BabyTalkStyle"              # "s" を "ch" に変換する (幼児語風)
+    # fmt: on
 
 
 # 事前に正規表現パターンをコンパイル
@@ -62,9 +66,9 @@ def apply_dialect_diff(
         accent_list (list[str]): 単語単位の単語のアクセントのリスト
         pos_list (list[str]): 単語単位の単語の品詞 (Part-Of-Speech) のリスト
         dialect_rule (DialectRule): 適用対象の方言ルール。
-            例えば "Kansai" 指定時はアクセントが京阪式になる。
+            例えば DialectRule.Kansai 指定時はアクセントが京阪式になる。
         speaking_style_rules (list[SpeakingStyleRule]): 適用対象の喋り方ルールのリスト。
-            例えば "ConvertBToV" はバ行をヴァ行に変換し、外国語風の訛りを作る。
+            例えば SpeakingStyleRule.ConvertBToV はバ行をヴァ行に変換し、外国語風の訛りを作る。
 
     Returns:
         tuple[list[str], list[str]]: 修正された kata_list と accent_list
@@ -76,10 +80,10 @@ def apply_dialect_diff(
         - 八丈方言
         - 東部方言
         - 西部方言
-            - 近畿方言 => "Kansai"
-        - 九州方言 => "Kyushu"
+            - 近畿方言 => DialectRule.Kansai
+        - 九州方言 => DialectRule.Kyushu
 
-    以下、厳密でない方言もしくは喋り方の実装。
+    以下、厳密でない方言もしくは喋り方 (SpeakingStyleRule) の実装。
     - ConvertBToV: モーラ "b" を "v" に変換する
     - ConvertTToTs: モーラ "t" を "ts" に変換する
     - ConvertDToR: モーラ "d" を "r" に変換し、アクセントを平型にする
@@ -111,7 +115,7 @@ def apply_dialect_diff(
     """
 
     # 九州方言
-    if dialect_rule == "Kyushu":
+    if dialect_rule == DialectRule.Kyushu:
         for i in range(len(kata_list)):
             # 九州のほぼ全域で "e" を "ye" と発音する: 付録 131p
             kata_list[i] = kata_list[i].replace("エ", "イェ")
@@ -126,7 +130,7 @@ def apply_dialect_diff(
                 kata_list[i] = kata_list[i][: num - 1] + "ン"
 
     # 近畿方言 (関西弁)
-    if dialect_rule == "Kansai":
+    if dialect_rule == DialectRule.Kansai:
         for i in range(len(kata_list)):
             # 1泊の名詞を長音化し2泊で発音する
             if pos_list[i] == "名詞" and len(kata_list[i]) == 1:
@@ -136,7 +140,7 @@ def apply_dialect_diff(
     # ここから特に参考資料はないが表現の幅が広がったり、話者の特性を再現できそうなもの
 
     # バ行をヴァ行に変換する
-    if "ConvertBToV" in speaking_style_rules:
+    if SpeakingStyleRule.ConvertBToV in speaking_style_rules:
         for i in range(len(kata_list)):
             if "バ" in str(kata_list[i]):
                 kata_list[i] = kata_list[i].replace("バ", "ヴァ")
@@ -150,7 +154,7 @@ def apply_dialect_diff(
                 kata_list[i] = kata_list[i].replace("ボ", "ヴォ")
 
     # タ行をツァ行に変換する
-    if "ConvertTToTs" in speaking_style_rules:
+    if SpeakingStyleRule.ConvertTToTs in speaking_style_rules:
         for i in range(len(kata_list)):
             if "タ" in str(kata_list[i]):
                 kata_list[i] = kata_list[i].replace("タ", "ツァ")
@@ -162,7 +166,7 @@ def apply_dialect_diff(
                 kata_list[i] = kata_list[i].replace("ト", "ツォ")
 
     # ダ行をラ行に変換し (ヂを除く) 、アクセントを平型にする
-    if "ConvertDToR" in speaking_style_rules:
+    if SpeakingStyleRule.ConvertDToR in speaking_style_rules:
         for i in range(len(kata_list)):
             if "ダ" in str(kata_list[i]):
                 kata_list[i] = kata_list[i].replace("ダ", "ラ")
@@ -174,7 +178,7 @@ def apply_dialect_diff(
             accent_list[0] = "0"
 
     # ラ行をダ行に変換し (リを除く) 、アクセントを頭高型にする
-    if "ConvertRToD" in speaking_style_rules:
+    if SpeakingStyleRule.ConvertRToD in speaking_style_rules:
         for i in range(len(kata_list)):
             if "ラ" in str(kata_list[i]):
                 kata_list[i] = kata_list[i].replace("ラ", "ダ")
@@ -186,7 +190,7 @@ def apply_dialect_diff(
             accent_list[0] = "1"
 
     # サ行をザ行に、シャ行をジャ行に変換し、アクセントを頭高型にする
-    if "ConvertSToZ" in speaking_style_rules:
+    if SpeakingStyleRule.ConvertSToZ in speaking_style_rules:
         for i in range(len(kata_list)):
             if "サ" in str(kata_list[i]):
                 kata_list[i] = kata_list[i].replace("サ", "ザ")
@@ -212,7 +216,7 @@ def apply_dialect_diff(
             accent_list[0] = "1"
 
     # 単語の先頭以外の "na", "no", "ra", "ru" を "N" に変換する (撥音便化)
-    if "ConvertToHatsuonbin" in speaking_style_rules:
+    if SpeakingStyleRule.ConvertToHatsuonbin in speaking_style_rules:
         for i in range(len(kata_list)):
             # 1文字以外の時
             if len(str(kata_list[i])) != 1:
@@ -228,7 +232,7 @@ def apply_dialect_diff(
                     kata_list[i] = kata_list[i].replace("ラ", "ン")
 
     # "s" を "ch" に変換する (幼児語風)
-    if "BabyTalkStyle" in speaking_style_rules:
+    if SpeakingStyleRule.BabyTalkStyle in speaking_style_rules:
         for i in range(len(kata_list)):
             if "サ" in str(kata_list[i]):
                 kata_list[i] = kata_list[i].replace("サ", "チャ")
@@ -242,7 +246,7 @@ def apply_dialect_diff(
                 kata_list[i] = kata_list[i].replace("ソ", "チョ")
 
     # 各単語に最初にア段が出てきた時、"ァ" をつけ "ァ" をアクセント核にする
-    if "AddYouonA" in speaking_style_rules:
+    if SpeakingStyleRule.AddYouonA in speaking_style_rules:
         for i in range(len(kata_list)):
             pos = __A_DAN_PATTERN.search(str(kata_list[i]))
             if pos:
@@ -254,7 +258,7 @@ def apply_dialect_diff(
                     accent_list[i] = str(pos.end())
 
     # 各単語に最初にイ段が出てきた時、"ィ" をつけアクセントを頭高型にする
-    if "AddYouonI" in speaking_style_rules:
+    if SpeakingStyleRule.AddYouonI in speaking_style_rules:
         for i in range(len(kata_list)):
             pos = __I_DAN_PATTERN.search(str(kata_list[i]))
             if pos:
@@ -279,7 +283,7 @@ def apply_dialect_diff(
                         accent_list[i] = "1"
 
     # 各単語に最初にエ段が出てきた時、"ェ" をつけ "ェ" をアクセント核にする
-    if "AddYouonE" in speaking_style_rules:
+    if SpeakingStyleRule.AddYouonE in speaking_style_rules:
         for i in range(len(kata_list)):
             pos = __E_DAN_PATTERN.search(str(kata_list[i]))
             if pos:
@@ -291,7 +295,7 @@ def apply_dialect_diff(
                     accent_list[i] = str(pos.end())
 
     # 各単語に最初にオ段が出てきた時、"ぉ" をつけアクセントを頭高型にする
-    if "AddYouonO" in speaking_style_rules:
+    if SpeakingStyleRule.AddYouonO in speaking_style_rules:
         for i in range(len(kata_list)):
             pos = __O_DAN_PATTERN.search(str(kata_list[i]))
             if pos:
@@ -303,7 +307,7 @@ def apply_dialect_diff(
                     accent_list[i] = "1"
 
     # 文章の1モーラ目を長音化し、アクセントを頭高型にする
-    if "ExtendFirstMora" in speaking_style_rules:
+    if SpeakingStyleRule.ExtendFirstMora in speaking_style_rules:
         pos = __YOUON_PATTERN.search(str(kata_list[0]))
         if pos:
             # マッチしたパターンが二文字目から(一文字文字以内の場合)
@@ -317,7 +321,7 @@ def apply_dialect_diff(
         accent_list[0] = "1"
 
     # 文章の1モーラ目を促音化し、アクセントを頭高型にする
-    if "GeminationFirstMora" in speaking_style_rules:
+    if SpeakingStyleRule.GeminationFirstMora in speaking_style_rules:
         pos = __YOUON_PATTERN.search(str(kata_list[0]))
         if pos:
             # マッチしたパターンが二文字目から (一文字文字以内の場合)
@@ -331,7 +335,7 @@ def apply_dialect_diff(
         accent_list[0] = "1"
 
     # 文章の1モーラ目を "っ" に変換し、アクセントを平型にする
-    if "RemoveFirstMora" in speaking_style_rules:
+    if SpeakingStyleRule.RemoveFirstMora in speaking_style_rules:
         pos = __YOUON_PATTERN.search(str(kata_list[0]))
         if pos:
             # マッチしたパターンが二文字目からでかつ伸ばす必要がある (一文字文字以内の場合)
@@ -341,7 +345,7 @@ def apply_dialect_diff(
             kata_list[0] = "ッ" + kata_list[0][1:]
 
     # 各単語の最初を連母音にし、アクセントを頭高型にする ("e" は "ei", "o" は "ou" になる)
-    if "DiphthongFirstMora" in speaking_style_rules:
+    if SpeakingStyleRule.DiphthongFirstMora in speaking_style_rules:
         pos = __O_DAN_PATTERN.search(str(kata_list[0]))
         if pos:
             kata_list[0] = kata_list[0][: pos.end()] + "ゥ" + kata_list[0][pos.end() :]
@@ -359,12 +363,12 @@ def apply_dialect_diff(
                     accent_list[0] = "1"
 
     # 最後の単語の終端のモーラをアクセント核にする
-    if "LastMoraAccentH" in speaking_style_rules:
+    if SpeakingStyleRule.LastMoraAccentH in speaking_style_rules:
         last_word = kata_list[len(kata_list) - 1]
         accent_list[len(accent_list) - 1] = str(len(last_word))
 
     # 最後の単語のアクセントを頭高型にする
-    if "LastWordAccent1" in speaking_style_rules:
+    if SpeakingStyleRule.LastWordAccent1 in speaking_style_rules:
         accent_list[len(accent_list) - 1] = "1"
 
     return kata_list, accent_list
