@@ -25,6 +25,7 @@ dependencies = [
     "cmudict",
     "cn2an",
     "g2p_en",
+    "jaconv",
     "jieba",
     "loguru",
     "nltk<=3.8.1",
