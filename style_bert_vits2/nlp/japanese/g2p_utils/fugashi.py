@@ -2,17 +2,27 @@ import os
 import re
 from pathlib import Path
 
+from style_bert_vits2.nlp.japanese.g2p import text_to_sep_kata
+
+
+# 事前に正規表現パターンをコンパイル
+__FEATURE_PATTERN = re.compile(r"\".*,.*\"")
+
 
 def analyze_text_with_fugashi(
-    text: str, dict_path: Path | None = None, user_dict_path: Path | None = None
+    text: str,
+    dict_dir_path: Path | None = None,
+    user_dict_dir_path: Path | None = None,
 ) -> tuple[list[str], list[str], list[str | list[str]], list[str]]:
     """
     fugashi でテキストを解析し、語句ごとの単語、カタカナ読み、アクセント、品詞を取得する。
 
     Args:
         text (str): テキスト
-        dict_path (Path | None, optional): 辞書のパス。Defaults to None.
-        user_dict_path (Path | None, optional): ユーザー辞書のパス。Defaults to None.
+        dict_path (Path | None, optional): fugashi のシステム辞書のパス。
+            未指定時は unidic / unidic-lite パッケージから取得する。Defaults to None.
+        user_dict_path (Path | None, optional): fugashi のユーザー辞書のパス。
+            Defaults to None.
 
     Returns:
         tuple[list[str], list[str], list[str | list[str]], list[str]]:
@@ -25,22 +35,24 @@ def analyze_text_with_fugashi(
         raise ImportError("fugashi package is not installed.")
 
     # ユーザー辞書が指定されている場合
-    if user_dict_path is not None:
+    if user_dict_dir_path is not None:
 
         # ユーザー辞書の保存先ディレクトリ
-        user_dict_path_str: str = str(user_dict_path)
+        user_dict_path_str: str = str(user_dict_dir_path)
 
         # システム辞書が指定されていない場合、unidic パッケージに含まれているシステム辞書を使う
-        if dict_path is None:
+        if dict_dir_path is None:
             dict_path_str = try_import_unidic()
+            if dict_path_str is None:
+                raise ValueError("fugashi system dictionary is not found.")
             dicrc_path = Path(dict_path_str) / "dicrc"
         else:
-            dict_path_str = str(dict_path)
-            dicrc_path = dict_path / "dicrc"
+            dict_path_str = str(dict_dir_path)
+            dicrc_path = dict_dir_path / "dicrc"
 
         # Windows 環境だと \ が途中でエスケープされるバグがあるため二重にする
         if os.name == "nt":
-            user_dict_path_str: str = str(user_dict_path).replace("\\", "\\\\")
+            user_dict_path_str: str = str(user_dict_dir_path).replace("\\", "\\\\")
             dict_path_str: str = dict_path_str.replace("\\", "\\\\")
             dicrc_path_str: str = str(dicrc_path).replace("\\", "\\\\")
             # ユーザー辞書を読ませる場合はシステム辞書も引数で読ませる必要がある
@@ -49,19 +61,19 @@ def analyze_text_with_fugashi(
             )
         else:
             tagger = GenericTagger(
-                f"-r {dicrc_path!s} -Owakati -d {dict_path_str!s} -u {user_dict_path!s}"
+                f"-r {dicrc_path!s} -Owakati -d {dict_path_str!s} -u {user_dict_dir_path!s}"
             )
 
     # ユーザー辞書は指定されていないが、システム辞書は指定されている場合
-    elif dict_path is not None:
-        dicrc_path = dict_path / "dicrc"
+    elif dict_dir_path is not None:
+        dicrc_path = dict_dir_path / "dicrc"
         # Windows 環境だと \ が途中でエスケープされるバグがあるため二重にする
         if os.name == "nt":
-            dict_path_str: str = str(dict_path).replace("\\", "\\\\")
+            dict_path_str: str = str(dict_dir_path).replace("\\", "\\\\")
             dicrc_path_str: str = str(dicrc_path).replace("\\", "\\\\")
             tagger = GenericTagger(f"-r {dicrc_path_str} -Owakati -d {dict_path_str}")
         else:
-            tagger = GenericTagger(f"-r {dicrc_path!s} -Owakati -d {dict_path!s}")
+            tagger = GenericTagger(f"-r {dicrc_path!s} -Owakati -d {dict_dir_path!s}")
 
     # システム辞書もユーザー辞書も指定されていない場合
     else:
@@ -77,13 +89,15 @@ def analyze_text_with_fugashi(
         feature = word.feature_raw
 
         # アクセント核が二つある場合「"*,*"」という風に記述されているので、「,」を「/」に変更し「"」を消す
-        if re.search(r"\".*,.*\"", feature):
-            accStart = re.search(r"\".*,.*\"", feature).start()  # type: ignore
-            accEnd = re.search(r"\".*,.*\"", feature).end()  # type: ignore
+        if __FEATURE_PATTERN.search(feature):
+            accent_start = __FEATURE_PATTERN.search(feature).start()  # type: ignore
+            accent_end = __FEATURE_PATTERN.search(feature).end()  # type: ignore
 
-            accent = feature[accStart:accEnd].replace(",", "/")
+            accent = feature[accent_start:accent_end].replace(",", "/")
 
-            feature = feature[:accStart] + accent.replace('"', "") + feature[accEnd:]
+            feature = (
+                feature[:accent_start] + accent.replace('"', "") + feature[accent_end:]
+            )
 
         feature = feature.split(",")
 

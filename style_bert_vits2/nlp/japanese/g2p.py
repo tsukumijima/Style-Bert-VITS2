@@ -26,8 +26,8 @@ def g2p(
     use_fugashi_unidic: bool = False,
     use_yomikata: bool = False,
     dialect_rules: list[DialectRule] = ["tokyo"],
-    fugashi_dict_path: Path | None = None,
-    fugashi_user_dict_path: Path | None = None,
+    fugashi_dict_dir: Path | None = None,
+    fugashi_user_dict_dir: Path | None = None,
 ) -> tuple[list[str], list[int], list[int]]:
     """
     他で使われるメインの関数。`normalize_text()` で正規化された `norm_text` を受け取り、下記のタプルを返す。
@@ -47,8 +47,10 @@ def g2p(
         dialect_rules (list[DialectRule]): 適用対象の方言ルールのリスト。use_fugashi_unidic が True の場合にのみ有効。
             例えば "kinki" 指定時はアクセントが京阪式になる。"convert2b2v" はモーラ "b" を "v" に変換し、外国語風の訛を作る。
             未指定時は標準語（東京方言）のみ。Defaults to ["tokyo"].
-        fugashi_dict_path (Path | None, optional): fugashi の辞書のパス。use_fugashi_unidic が True の場合にのみ有効。
-        fugashi_user_dict_path (Path | None, optional): fugashi のユーザー辞書のパス。use_fugashi_unidic が True の場合にのみ有効。
+        fugashi_dict_dir (Path | None, optional): fugashi のシステム辞書のパス。use_fugashi_unidic が True の場合にのみ有効。
+            未指定時は unidic / unidic-lite パッケージから取得する。Defaults to None.
+        fugashi_user_dict_dir (Path | None, optional): fugashi のユーザー辞書のパス。use_fugashi_unidic が True の場合にのみ有効。
+            Defaults to None.
 
     Returns:
         tuple[list[str], list[int], list[int]]: 音素のリスト、アクセントのリスト、word2ph のリスト
@@ -88,8 +90,8 @@ def g2p(
             phone_tone_list,
             use_yomikata=use_yomikata,
             dialect_rules=dialect_rules,
-            fugashi_dict_path=fugashi_dict_path,
-            fugashi_user_dict_path=fugashi_user_dict_path,
+            fugashi_dict_dir=fugashi_dict_dir,
+            fugashi_user_dict_dir=fugashi_user_dict_dir,
         )
 
     # logger.debug(f"phone_tone_list:\n{phone_tone_list}")
@@ -207,8 +209,8 @@ def improve_yomi_and_accent(
     phone_tone_list: list[tuple[str, int]],
     use_yomikata: bool = False,
     dialect_rules: list[DialectRule] = ["tokyo"],
-    fugashi_dict_path: Path | None = None,
-    fugashi_user_dict_path: Path | None = None,
+    fugashi_dict_dir: Path | None = None,
+    fugashi_user_dict_dir: Path | None = None,
 ) -> tuple[
     list[str],
     list[str],
@@ -232,8 +234,10 @@ def improve_yomi_and_accent(
         dialect_rules (list[DialectRule]): 適用対象の方言ルールのリスト。use_fugashi_unidic が True の場合にのみ有効。
             例えば "kinki" 指定時はアクセントが京阪式になる。"convert2b2v" はモーラ "b" を "v" に変換し、外国語風の訛を作る。
             未指定時は標準語（東京方言）のみ。Defaults to ["tokyo"].
-        fugashi_dict_path (Path | None, optional): fugashi の辞書のパス。use_fugashi_unidic が True の場合にのみ有効。
-        fugashi_user_dict_path (Path | None, optional): fugashi のユーザー辞書のパス。use_fugashi_unidic が True の場合にのみ有効。
+        fugashi_dict_dir (Path | None, optional): fugashi のシステム辞書のパス。use_fugashi_unidic が True の場合にのみ有効。
+            未指定時は unidic / unidic-lite パッケージから取得する。Defaults to None.
+        fugashi_user_dict_dir (Path | None, optional): fugashi のユーザー辞書のパス。use_fugashi_unidic が True の場合にのみ有効。
+            Defaults to None.
 
     Returns:
         tuple[list[str], list[str],  list[list[str]], list[tuple[str, int]], ]:
@@ -243,7 +247,7 @@ def improve_yomi_and_accent(
     fugashi に対応する UniDic は別パッケージ (unidic / unidic-lite) に分けられている。
     unidic パッケージに含まれる UniDic のバージョンは 3.1.0 (正確には python -m unidic download で明示的なダウンロードが必要) 。
     unidic-lite パッケージに含まれる UniDic のバージョンは 2.1.2 なので、おそらく OpenJTalk 内蔵辞書と同等。
-    fugashi_dict_path に別途ダウンロードした UniDic へのパスが指定されている場合は、そちらを優先して利用する。
+    fugashi_dict_dir に別途ダウンロードした UniDic へのパスが指定されている場合は、そちらを優先して利用する。
 
     OpenJTalk の辞書のバージョンについて:
     1. アクセント情報のない IPAdic にアクセント情報を足したもの
@@ -261,8 +265,8 @@ def improve_yomi_and_accent(
         cur_word_list, cur_kana_list, cur_accent_list, cur_pos_list = (
             analyze_text_with_fugashi(
                 text,
-                dict_path=fugashi_dict_path,
-                user_dict_path=fugashi_user_dict_path,
+                dict_dir_path=fugashi_dict_dir,
+                user_dict_dir_path=fugashi_user_dict_dir,
             )
         )
 
