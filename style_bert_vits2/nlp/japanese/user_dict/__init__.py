@@ -38,6 +38,7 @@ user_dict_path = DEFAULT_USER_DICT_DIR / "user_dict.json"  # ユーザー辞書�
 compiled_dict_path = (
     DEFAULT_USER_DICT_DIR / "user.dic"
 )  # コンパイル済み辞書ファイルのパス
+fugashi_compiled_dict_path = DEFAULT_USER_DICT_DIR / "user_fugashi.dic"
 
 
 # # 同時書き込みの制御
@@ -76,7 +77,8 @@ def update_dict(
     default_dict_path: Path = default_dict_path,
     user_dict_path: Path = user_dict_path,
     compiled_dict_path: Path = compiled_dict_path,
-) -> None:
+    fugashi_compiled_dict_path: Path = fugashi_compiled_dict_path,
+):
     """
     辞書の更新
     Parameters
@@ -86,6 +88,8 @@ def update_dict(
     user_dict_path : Path
         ユーザー辞書ファイルのパス
     compiled_dict_path : Path
+        コンパイル済み辞書ファイルのパス
+    fugashi_compiled_dict_path : Path
         コンパイル済み辞書ファイルのパス
     """
 
@@ -153,6 +157,42 @@ def update_dict(
             # pyopenjtalk.set_user_dict(str(compiled_dict_path.resolve(strict=True)))
             pyopenjtalk.update_global_jtalk_with_user_dict(str(compiled_dict_path))
 
+        # default csvの形式変換
+        fugashi_default_dict_list: list[str] = csv_text.split("\n")
+        old_fugashi_user_dict_list: list[list[str]] = []
+
+        # 終端を削除
+        fugashi_default_dict_list.remove("")
+
+        for i in range(len(fugashi_default_dict_list)):
+            old_fugashi_user_dict_list.append(
+                str(fugashi_default_dict_list[i]).split(",")
+            )
+
+        new_fugashi_user_dict_list: list[str] = []
+        for word in old_fugashi_user_dict_list:
+            converted_word_list: list[str] = (
+                [word[0]]
+                + ["0", "0", "1"]
+                + word[4:10]
+                + ["*"]
+                + word[10:13]
+                + ["*", "*", "*", "*", "*", "*", "*", "*", "*", "*", "*", "*", "*", "*"]
+                + [word[13][0]]
+                + ["*", "*", "*", "*"]
+            )  # [ str(word[13])[0] ] + ["*","*","*","*"]
+            converted_word = ",".join(converted_word_list)
+            new_fugashi_user_dict_list.append(converted_word)
+
+        fugashi_csv_text = "\n".join(new_fugashi_user_dict_list)
+
+        # 辞書データを辞書.csv へ一時保存
+        tmp_csv_path.write_text(fugashi_csv_text, encoding="utf-8")
+
+        pyopenjtalk.fugashi_user_dict(
+            str(fugashi_compiled_dict_path), str(tmp_csv_path)
+        )
+
     except Exception as e:
         print("Error: Failed to update dictionary.", file=sys.stderr)
         traceback.print_exc(file=sys.stderr)
@@ -164,6 +204,8 @@ def update_dict(
             tmp_csv_path.unlink()
         if tmp_compiled_path.exists():
             tmp_compiled_path.unlink()
+
+    return
 
 
 # @mutex_wrapper(mutex_user_dict)
