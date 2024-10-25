@@ -25,7 +25,7 @@ def g2p(
     raise_yomi_error: bool = False,
     use_fugashi_unidic: bool = False,
     use_yomikata: bool = False,
-    dialect_rules: list[DialectRule] = ["tokyo"],
+    dialect_rules: list[DialectRule] = ["Standard"],
     fugashi_dict_dir: Path | None = None,
     fugashi_user_dict_dir: Path | None = None,
 ) -> tuple[list[str], list[int], list[int]]:
@@ -45,8 +45,8 @@ def g2p(
         use_yomikata (bool, optional): True の場合、yomikata を利用し同形異音語の読み方を改善する。
             利用には別途 yomikata の導入が必要。Defaults to False.
         dialect_rules (list[DialectRule]): 適用対象の方言ルールのリスト。use_fugashi_unidic が True の場合にのみ有効。
-            例えば "kinki" 指定時はアクセントが京阪式になる。"convert2b2v" はモーラ "b" を "v" に変換し、外国語風の訛を作る。
-            未指定時は標準語（東京方言）のみ。Defaults to ["tokyo"].
+            例えば "KansaiDialect" 指定時はアクセントが京阪式になる。"ConvertBToV" はモーラ "b" を "v" に変換し、外国語風の訛を作る。
+            未指定時は標準語（東京方言）のみ。Defaults to ["Standard"].
         fugashi_dict_dir (Path | None, optional): fugashi のシステム辞書のパス。use_fugashi_unidic が True の場合にのみ有効。
             未指定時は unidic / unidic-lite パッケージから取得する。Defaults to None.
         fugashi_user_dict_dir (Path | None, optional): fugashi のユーザー辞書のパス。use_fugashi_unidic が True の場合にのみ有効。
@@ -208,7 +208,7 @@ def improve_yomi_and_accent(
     phone_w_punct: list[str],
     phone_tone_list: list[tuple[str, int]],
     use_yomikata: bool = False,
-    dialect_rules: list[DialectRule] = ["tokyo"],
+    dialect_rules: list[DialectRule] = ["Standard"],
     fugashi_dict_dir: Path | None = None,
     fugashi_user_dict_dir: Path | None = None,
 ) -> tuple[
@@ -232,8 +232,8 @@ def improve_yomi_and_accent(
         use_yomikata (bool, optional): True の場合、yomikata を利用し同形異音語の読み方を改善する。
             利用には別途 yomikata の導入が必要。Defaults to False.
         dialect_rules (list[DialectRule]): 適用対象の方言ルールのリスト。use_fugashi_unidic が True の場合にのみ有効。
-            例えば "kinki" 指定時はアクセントが京阪式になる。"convert2b2v" はモーラ "b" を "v" に変換し、外国語風の訛を作る。
-            未指定時は標準語（東京方言）のみ。Defaults to ["tokyo"].
+            例えば "KansaiDialect" 指定時はアクセントが京阪式になる。"ConvertBToV" はモーラ "b" を "v" に変換し、外国語風の訛を作る。
+            未指定時は標準語（東京方言）のみ。Defaults to ["Standard"].
         fugashi_dict_dir (Path | None, optional): fugashi のシステム辞書のパス。use_fugashi_unidic が True の場合にのみ有効。
             未指定時は unidic / unidic-lite パッケージから取得する。Defaults to None.
         fugashi_user_dict_dir (Path | None, optional): fugashi のユーザー辞書のパス。use_fugashi_unidic が True の場合にのみ有効。
@@ -286,7 +286,7 @@ def improve_yomi_and_accent(
         )
 
     # accent_list に対し、京阪式アクセント特有のアクセント処理を適用
-    if "kinki" in dialect_rules:
+    if "KansaiDialect" in dialect_rules:
         accent_list = apply_keihan_accent_diff(kana_list, accent_list, pos_list)
 
     new_sep_text: list[str] = word_list
@@ -322,7 +322,7 @@ def improve_yomi_and_accent(
         new_phone_tone_list.append([phone, int(accent)])
 
     # 標準語の場合
-    if "tokyo" in dialect_rules:
+    if "Standard" in dialect_rules:
         # 音素が完全一致して区切った数も一致した場合、OpenJTalk の出力したアクセントを使う。
         if phone_w_punct == new_phone_w_punct and len(kana_list) == len(sep_kata):
             return sep_text, sep_kata, sep_phonemes, phone_tone_list
