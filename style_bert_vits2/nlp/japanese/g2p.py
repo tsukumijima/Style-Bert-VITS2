@@ -789,7 +789,7 @@ def kata_to_phoneme_list(text: str) -> list[str]:
     原則カタカナの `text` を受け取り、それをそのままいじらずに音素記号のリストに変換する。
     注意点:
     - punctuation かその繰り返しが来た場合、punctuation たちをそのままリストにして返す。
-    - 冒頭に続く「ー」はそのまま「ー」のままにする（`handle_long()` で処理される）
+    - 冒頭に続く「ー」はそのまま「ー」のままにする（`__handle_long()` で処理される）
     - 文中の「ー」は前の音素記号の最後の音素記号に変換される。
     例:
     - `ーーソーナノカーー` → ["ー", "ー", "s", "o", "o", "n", "a", "n", "o", "k", "a", "a", "a"]
@@ -897,3 +897,96 @@ class YomiError(Exception):
     基本的に「学習の前処理のテキスト処理時」には発生させ、そうでない場合は、
     raise_yomi_error=False にしておいて、この例外を発生させないようにする。
     """
+
+
+# Usage: python -m style_bert_vits2.nlp.japanese.g2p "おはようございます"
+if __name__ == "__main__":
+    import argparse
+
+    from style_bert_vits2.nlp.japanese.g2p_utils import phone_tone2kata_tone
+    from style_bert_vits2.nlp.japanese.normalizer import normalize_text
+
+    parser = argparse.ArgumentParser(
+        description="Convert text to phonemes using Japanese G2P"
+    )
+    parser.add_argument("text", help="Input text to convert")
+    parser.add_argument(
+        "--no-jp-extra",
+        action="store_false",
+        dest="use_jp_extra",
+        help='Use "n" instead of "N" for ん',
+    )
+    parser.add_argument(
+        "--raise-yomi-error",
+        action="store_true",
+        help="Raise error when encountering unreadable characters",
+    )
+    parser.add_argument(
+        "--use-fugashi-unidic",
+        action="store_true",
+        help="Use fugashi + UniDic to improve readings and accents",
+    )
+    parser.add_argument(
+        "--use-yomikata",
+        action="store_true",
+        help="Use yomikata to improve readings of homographs (requires --use-fugashi-unidic)",
+    )
+    parser.add_argument(
+        "--dialect",
+        choices=[rule.name for rule in DialectRule],
+        default="Standard",
+        help="Dialect rule to apply (requires --use-fugashi-unidic)",
+    )
+    parser.add_argument(
+        "--speaking-style",
+        nargs="*",
+        choices=[rule.name for rule in SpeakingStyleRule],
+        help="Speaking style rules to apply (requires --use-fugashi-unidic)",
+    )
+    parser.add_argument(
+        "--fugashi-dict-dir",
+        type=Path,
+        help="Path to fugashi system dictionary (requires --use-fugashi-unidic)",
+    )
+    parser.add_argument(
+        "--fugashi-user-dict-dir",
+        type=Path,
+        help="Path to fugashi user dictionary (requires --use-fugashi-unidic)",
+    )
+    args = parser.parse_args()
+
+    # Convert string dialect name to enum
+    dialect_rule = DialectRule[args.dialect]
+
+    # Convert string speaking style names to enum list
+    speaking_style_rules = []
+    if args.speaking_style:
+        speaking_style_rules = [
+            SpeakingStyleRule[style] for style in args.speaking_style
+        ]
+
+    result = g2p(
+        normalize_text(args.text),
+        use_jp_extra=args.use_jp_extra,
+        raise_yomi_error=args.raise_yomi_error,
+        use_fugashi_unidic=args.use_fugashi_unidic,
+        use_yomikata=args.use_yomikata,
+        dialect_rule=dialect_rule,
+        speaking_style_rules=speaking_style_rules,
+        fugashi_dict_dir=args.fugashi_dict_dir,
+        fugashi_user_dict_dir=args.fugashi_user_dict_dir,
+    )
+
+    phone_tone = list(zip(result[0], result[1]))
+    kata_tone = phone_tone2kata_tone(phone_tone)
+    formatted_text = "|"
+    for kata, tone in kata_tone:
+        if kata in PUNCTUATIONS:
+            formatted_text += f"{kata}|"
+        else:
+            arrow = "↓" if tone == 0 else "↑"
+            color = "\033[91m" if tone == 0 else "\033[96m"  # 91: 赤, 96: シアン
+            reset_color = "\033[0m"
+            formatted_text += f"{color}{arrow}{kata}|{reset_color}"
+
+    print(f"{formatted_text}")
