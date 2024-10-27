@@ -1,6 +1,7 @@
 accelerate
 cmudict
 cn2an
+fugashi-plus
 g2p_en
 gradio>=4.32
 jaconv

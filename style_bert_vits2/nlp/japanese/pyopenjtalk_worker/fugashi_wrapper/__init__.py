@@ -2,7 +2,7 @@ import os
 from pathlib import Path
 
 import unidic
-from fugashi import build_dictionary  # type: ignore
+from fugashi import build_dictionary
 
 
 def fugashi_user_dict(compiled_dict_path: str, tmp_csv_path: str):

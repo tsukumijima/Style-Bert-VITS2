@@ -24,6 +24,7 @@ classifiers = [
 dependencies = [
     "cmudict",
     "cn2an",
+    "fugashi-plus",
     "g2p_en",
     "jaconv",
     "jieba",

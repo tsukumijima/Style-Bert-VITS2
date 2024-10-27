@@ -1,6 +1,7 @@
-import os
 import re
 from pathlib import Path
+
+from fugashi import Tagger, try_import_unidic
 
 from style_bert_vits2.nlp.japanese.g2p import text_to_sep_kata
 
@@ -15,7 +16,8 @@ def analyze_text_with_fugashi(
     user_dict_dir_path: Path | None = None,
 ) -> tuple[list[str], list[str], list[str | list[str]], list[str]]:
     """
-    fugashi でテキストを解析し、語句ごとの単語、カタカナ読み、アクセント、品詞を取得する。
+    fugashi (fugashi-plus) でテキストを解析し、語句ごとの単語、カタカナ読み、アクセント、品詞を取得する。
+    fugashi-plus でないと Windows 環境で辞書へのパスを正しく指定できない。
 
     Args:
         text (str): テキスト
@@ -29,55 +31,29 @@ def analyze_text_with_fugashi(
         語句ごとの単語のリスト、カタカナ読みのリスト、アクセントのリスト、品詞のリスト
     """
 
-    try:
-        from fugashi import GenericTagger, Tagger, try_import_unidic
-    except ImportError:
-        raise ImportError("fugashi package is not installed.")
+    # システム辞書が指定されていない場合、unidic / unidic-lite パッケージがインストールされていれば、
+    # 内蔵されているシステム辞書を使う
+    if dict_dir_path is None:
+        dict_dir_path_str = try_import_unidic()
+        if dict_dir_path_str is None:
+            raise ValueError("fugashi system dictionary is not found.")
+        dict_dir_path = Path(dict_dir_path_str)
+
+    # システム辞書ディレクトリのパス・システム辞書の mecabrc ファイルのパスを取得
+    # 念のため、パス区切り文字は OS に関わらず通常のスラッシュとしている
+    dict_dir_path_str = dict_dir_path.as_posix()
+    dicrc_path_str = (dict_dir_path / "dicrc").as_posix()
 
     # ユーザー辞書が指定されている場合
     if user_dict_dir_path is not None:
+        user_dict_dir_path_str = user_dict_dir_path.as_posix()
+        # パスをダブルクオートで囲わないと、空白の入ったパスでエラーになる
+        tagger = Tagger(f'-Owakati -r "{dicrc_path_str}" -d "{dict_dir_path_str}" -u "{user_dict_dir_path_str}"')  # fmt: skip
 
-        # ユーザー辞書の保存先ディレクトリ
-        user_dict_path_str: str = str(user_dict_dir_path)
-
-        # システム辞書が指定されていない場合、unidic パッケージに含まれているシステム辞書を使う
-        if dict_dir_path is None:
-            dict_path_str = try_import_unidic()
-            if dict_path_str is None:
-                raise ValueError("fugashi system dictionary is not found.")
-            dicrc_path = Path(dict_path_str) / "dicrc"
-        else:
-            dict_path_str = str(dict_dir_path)
-            dicrc_path = dict_dir_path / "dicrc"
-
-        # Windows 環境だと \ が途中でエスケープされるバグがあるため二重にする
-        if os.name == "nt":
-            user_dict_path_str: str = str(user_dict_dir_path).replace("\\", "\\\\")
-            dict_path_str: str = dict_path_str.replace("\\", "\\\\")
-            dicrc_path_str: str = str(dicrc_path).replace("\\", "\\\\")
-            # ユーザー辞書を読ませる場合はシステム辞書も引数で読ませる必要がある
-            tagger = GenericTagger(
-                f"-r {dicrc_path_str} -Owakati -d {dict_path_str} -u {user_dict_path_str}"
-            )
-        else:
-            tagger = GenericTagger(
-                f"-r {dicrc_path!s} -Owakati -d {dict_path_str!s} -u {user_dict_dir_path!s}"
-            )
-
-    # ユーザー辞書は指定されていないが、システム辞書は指定されている場合
-    elif dict_dir_path is not None:
-        dicrc_path = dict_dir_path / "dicrc"
-        # Windows 環境だと \ が途中でエスケープされるバグがあるため二重にする
-        if os.name == "nt":
-            dict_path_str: str = str(dict_dir_path).replace("\\", "\\\\")
-            dicrc_path_str: str = str(dicrc_path).replace("\\", "\\\\")
-            tagger = GenericTagger(f"-r {dicrc_path_str} -Owakati -d {dict_path_str}")
-        else:
-            tagger = GenericTagger(f"-r {dicrc_path!s} -Owakati -d {dict_dir_path!s}")
-
-    # システム辞書もユーザー辞書も指定されていない場合
+    # ユーザー辞書が指定されていない場合
     else:
-        tagger = Tagger("-Owakati")
+        # パスをダブルクオートで囲わないと、空白の入ったパスでエラーになる
+        tagger = Tagger(f'-Owakati -r "{dicrc_path_str}" -d "{dict_dir_path_str}"')
 
     word_list: list[str] = []
     kana_list: list[str] = []

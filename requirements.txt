@@ -2,6 +2,7 @@ accelerate
 cmudict
 cn2an
 faster-whisper==0.10.1
+fugashi-plus
 g2p_en
 GPUtil
 gradio>=4.32
