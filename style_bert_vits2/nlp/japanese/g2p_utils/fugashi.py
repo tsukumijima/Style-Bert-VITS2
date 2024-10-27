@@ -3,8 +3,6 @@ from pathlib import Path
 
 from fugashi import Tagger, try_import_unidic
 
-from style_bert_vits2.nlp.japanese.g2p import text_to_sep_kata
-
 
 # 事前に正規表現パターンをコンパイル
 __FEATURE_PATTERN = re.compile(r"\".*,.*\"")
@@ -30,6 +28,9 @@ def analyze_text_with_fugashi(
         tuple[list[str], list[str], list[str | list[str]], list[str]]:
         語句ごとの単語のリスト、カタカナ読みのリスト、アクセントのリスト、品詞のリスト
     """
+
+    # 循環インポートを回避
+    from style_bert_vits2.nlp.japanese.g2p import text_to_sep_kata
 
     # システム辞書が指定されていない場合、unidic / unidic-lite パッケージがインストールされていれば、
     # 内蔵されているシステム辞書を使う

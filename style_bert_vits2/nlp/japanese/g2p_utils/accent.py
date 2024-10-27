@@ -1,7 +1,5 @@
 import re
 
-from style_bert_vits2.nlp.japanese.g2p import kata_to_phoneme_list
-
 
 # 事前に正規表現パターンをコンパイル
 __YOUON_PATTERN = re.compile("[ァィゥェォャュョヮ]+")
@@ -26,6 +24,9 @@ def convert_accent2hl(kana: str, accent: str) -> list[str]:
             各要素は '0' (Low) または '1' (High) の文字列。
             リストの長さは kata_to_phoneme_list(kana) の返り値の長さと一致する。
     """
+
+    # 循環インポートを回避
+    from style_bert_vits2.nlp.japanese.g2p import kata_to_phoneme_list
 
     # 0 or 1 のトーンのリスト
     accent_hl_list: list[str] = []
