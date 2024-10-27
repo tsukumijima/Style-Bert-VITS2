@@ -3,6 +3,8 @@ from pathlib import Path
 
 from fugashi import Tagger, try_import_unidic
 
+from style_bert_vits2.nlp.symbols import PUNCTUATIONS
+
 
 # 事前に正規表現パターンをコンパイル
 __FEATURE_PATTERN = re.compile(r"\".*,.*\"")
@@ -99,8 +101,8 @@ def analyze_text_with_fugashi(
             if kana == "*":
                 kana = "'"
 
-            # 感嘆符か疑問符の場合
-            if re.match(r"[!?]+", str(word)):
+            # 記号の場合
+            if str(word) in PUNCTUATIONS:
                 kana = str(word)
 
             word_list.append(str(word))
