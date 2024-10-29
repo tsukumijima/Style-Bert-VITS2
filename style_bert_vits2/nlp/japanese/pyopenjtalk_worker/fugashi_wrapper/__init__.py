@@ -33,7 +33,7 @@ def fugashi_user_dict(compiled_dict_path: str, tmp_csv_path: str):
         )
     else:
         build_dictionary(
-            f"-d {unidic_path_str} -u {compiled_dict_path} -f utf8 -t utf8 {tmp_csv_path}"
+            f"-r{dicrc_path_str} -d {unidic_path_str} -u {compiled_dict_path} -f utf8 -t utf8 {tmp_csv_path}"
         )
 
     # システム辞書が間違った情報でコンパイルされているのでユーザー辞書も間違った情報に合わせる

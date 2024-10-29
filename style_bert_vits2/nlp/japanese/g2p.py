@@ -330,11 +330,24 @@ def improve_yomi_and_accent(
 
     # 標準語の場合
     if dialect_rule == DialectRule.Standard:
-        # 音素が完全一致して区切った数も一致した場合、OpenJTalk の出力したアクセントを使う
-        if phone_w_punct == new_phone_w_punct and len(kana_list) == len(sep_kata):
+        # 音素が完全一致した場合、OpenJTalk の出力したアクセントを使う
+        if phone_w_punct == new_phone_w_punct:
             return sep_text, sep_kata, sep_phonemes, phone_tone_list
-
+    
     # そうでない場合は区切り方が間違っているので新しいものを使う
+    # アクセントは古いものを継承する
+    for i in range(len(new_phone_tone_list)):
+        if i > len(phone_tone_list)-1:
+            break
+
+        phone = new_phone_tone_list[i][0]
+
+        old_phone = new_phone_tone_list[i][0]
+        old_tone = new_phone_tone_list[i][1]
+
+        if old_phone == phone:
+            new_phone_tone_list[i] = (phone, old_tone)
+
     return new_sep_text, new_sep_kata, new_sep_phonemes, new_phone_tone_list
 
 

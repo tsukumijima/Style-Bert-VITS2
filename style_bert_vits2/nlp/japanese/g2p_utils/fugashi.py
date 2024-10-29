@@ -138,7 +138,7 @@ def analyze_text_with_fugashi(
             accent_list[i] = "0"
 
         # アクセントの種類が 2 つ以上の場合、先頭のものを使う
-        elif len(accent_list[i]) == 3:
+        elif len(accent_list[i]) >= 3:
             accent_list[i] = str(accent_list[i]).split("/")[0]
 
     return word_list, kana_list, accent_list, pos_list
