@@ -78,7 +78,7 @@ class TTSModel:
         self.onnx_providers: Sequence[Union[str, tuple[str, dict[str, Any]]]] = onnx_providers  # fmt: skip
 
         # ONNX 形式のモデルかどうか
-        if self.model_path.suffix == ".onnx":
+        if self.model_path.suffix in [".onnx", ".aivmx"]:
             self.is_onnx_model = True
         else:
             self.is_onnx_model = False
@@ -611,9 +611,10 @@ class TTSModelHolder:
         for model_dir in model_dirs:
             if model_dir.name.startswith("."):
                 continue
-            suffixes = [".pth", ".pt", ".safetensors"]
+            suffixes = [".pth", ".pt", ".safetensors", ".aivm"]
             if self.ignore_onnx is False:
                 suffixes.append(".onnx")
+                suffixes.append(".aivmx")
             model_files = sorted(
                 [
                     f
