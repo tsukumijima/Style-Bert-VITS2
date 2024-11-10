@@ -243,7 +243,6 @@ __FRACTION_PATTERN = re.compile(r"(\d+)/(\d+)")
 __EXPONENT_PATTERN = re.compile(r"(\d+(?:\.\d+)?)[eE]([-+]?\d+)")
 
 # __convert_english_to_katakana() で使う正規表現パターン
-__SUB_WORDS_PATTERN = re.compile(r"[A-Z]?[a-z0-9]+|[A-Z]+(?=[A-Z][a-z0-9]|\d|\W|$)|\d+")
 __ENGLISH_WORD_PATTERN = re.compile(r"[a-zA-Z0-9]")
 
 
@@ -280,13 +279,14 @@ def normalize_text(text: str) -> str:
     res = __replace_symbols(text)
 
     res = unicodedata.normalize("NFKC", res)  # ここでアルファベットは半角になる
+
+    res = __convert_english_to_katakana(res)  # 英単語をカタカナに変換
+
     res = __convert_numbers_to_words(res)  # 「100円」→「百円」等
     # 「～」と「〜」と「~」も長音記号として扱う
     res = res.replace("~", "ー")
     res = res.replace("～", "ー")
     res = res.replace("〜", "ー")
-
-    res = __convert_english_to_katakana(res)  # 英単語をカタカナに変換
 
     res = replace_punctuation(res)  # 句読点等正規化、読めない文字を削除
 
@@ -382,21 +382,55 @@ def __convert_numbers_to_words(text: str) -> str:
 def __convert_english_to_katakana(text: str) -> str:
     """
     テキスト中の英単語をカタカナに変換する。
-    Language-Specific のような複数の英単語がハイフンで連結されている単語や、
-    ApplePencil のようなキャメルケースの複合語にも対応する。
-    英単語は大文字・小文字を区別せず、変換マップに存在しない場合は元の単語をそのまま返す。
+    複合語や略語、記号を含む単語など、様々なパターンに対応する。
+    ただし、誤変換を防ぐため、確実に変換できるパターンのみを処理する。
 
     Args:
-        text (str): 変換するテキスト (例: "なぜかVSCodeのSyntax Highlightingが効かない")
+        text (str): 変換するテキスト
 
     Returns:
-        str: 変換されたテキスト (例: "なぜかブイエスコードのシンタックスハイライティングが効かない")
+        str: 変換されたテキスト
     """
+
+    def split_camel_case(word: str) -> list[str]:
+        """
+        CamelCase の単語を分割する。
+        大文字が連続する場合はそれを一つの部分として扱う。
+
+        Args:
+            word (str): 分割する単語
+
+        Returns:
+            list[str]: 分割された部分文字列のリスト
+        """
+
+        parts = []
+        current = word[0]
+        prev_is_upper = word[0].isupper()
+
+        for char in word[1:]:
+            is_upper = char.isupper()
+
+            # 小文字から大文字への変化、または大文字から小文字への変化を検出
+            if (is_upper and not prev_is_upper) or (
+                not is_upper and prev_is_upper and len(current) > 1
+            ):
+                parts.append(current)
+                current = char
+            else:
+                current += char
+
+            prev_is_upper = is_upper
+
+        if current:
+            parts.append(current)
+
+        return parts
 
     def process_english_word(word: str) -> str:
         """
-        英単語をカタカナに変換する。
-        ハイフンで連結された単語や、キャメルケースの複合語に対応する。
+        英単語をカタカナに変換する。確実に変換できるパターンのみを処理し、
+        不確実な場合は元の単語をそのまま返す (pyopenjtalk 側でアルファベット読みされる)。
 
         Args:
             word (str): 変換する英単語
@@ -405,40 +439,66 @@ def __convert_english_to_katakana(text: str) -> str:
             str: カタカナに変換された単語
         """
 
-        # まず、単語全体でカタカナ変換を試みる
+        # 1. 小文字に変換した上で完全一致での変換を試みる（最も信頼できる変換）
         katakana_word = KATAKANA_MAP.get(word.lower())
         if katakana_word:
             return katakana_word
 
-        # ハイフンで分割して処理
-        if "-" in word:
-            sub_words = word.split("-")
-            katakana_sub_words = [
-                KATAKANA_MAP.get(sub.lower(), sub) for sub in sub_words
-            ]
-            return "-".join(katakana_sub_words)
+        # 2. 末尾のピリオドを除去して再試行
+        if word.endswith("."):
+            katakana_word = KATAKANA_MAP.get(word[:-1].lower())
+            if katakana_word:
+                return katakana_word
 
-        # キャメルケースの複合語を分割して処理
-        sub_words = __SUB_WORDS_PATTERN.findall(word)
-        if len(sub_words) > 1:
-            katakana_sub_words = []
-            for sub in sub_words:
-                katakana_sub = KATAKANA_MAP.get(sub.lower())
-                if katakana_sub:
-                    katakana_sub_words.append(katakana_sub)
+        # 3. 所有格の処理（確実なパターン）
+        if word.lower().endswith(("'s", "’s")):
+            base_word = word[:-2]
+            katakana_word = KATAKANA_MAP.get(base_word.lower())
+            if katakana_word:
+                return katakana_word + "ズ"
+
+        # 4. 記号で区切られた複合語の処理（部分的な変換を許可）
+        for separator, join_word in [
+            ("&", "アンド"),
+            ("-", ""),
+            (".", ""),
+            ("+", "プラス"),
+        ]:
+            if separator in word:
+                sub_words = word.split(separator)
+                katakana_sub_words = []
+
+                for sub in sub_words:
+                    # 辞書にある場合はカタカナに変換、ない場合は元の単語をそのまま使用
+                    sub_katakana = KATAKANA_MAP.get(sub.lower(), sub)
+                    katakana_sub_words.append(sub_katakana)
+
+                return join_word.join(katakana_sub_words)
+
+        # 5. CamelCase の複合語を処理
+        if any(c.isupper() for c in word[1:]):  # 2文字目以降に大文字が含まれる
+            parts = split_camel_case(word)
+            result_parts = []
+
+            for part in parts:
+                # 大文字のみで構成される部分はそのまま（アルファベット読みされる）
+                if all(c.isupper() for c in part):
+                    result_parts.append(part)
                 else:
-                    return word  # 一つでも変換できない部分があれば、元の単語を返す
-            return "".join(katakana_sub_words)
+                    # それ以外は辞書で変換を試みる
+                    result_parts.append(KATAKANA_MAP.get(part.lower(), part))
 
-        # 上記のいずれにも該当しない場合は元の単語を返す
+            return "".join(result_parts)
+
+        # 上記以外は元の単語を返す (pyopenjtalk 側でアルファベット読みされる)
         return word
 
     words = []
     current_word = ""
 
     for char in text:
-        # 英数字であれば current_word に追加
-        if __ENGLISH_WORD_PATTERN.match(char) is not None or char in "-.'+":
+        # 英数字または特定の記号であれば current_word に追加
+        if __ENGLISH_WORD_PATTERN.match(char) is not None or char in "-&+.'":
             current_word += char
         else:
             # 英単語が終了したらカタカナに変換して words に追加
