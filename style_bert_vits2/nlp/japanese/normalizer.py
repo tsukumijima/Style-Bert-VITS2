@@ -351,7 +351,7 @@ def __replace_symbols(text: str) -> str:
 
     # 分数の処理
     text = __FRACTION_PATTERN.sub(
-        lambda m: f'{num2words(m.group(1), lang="ja")}分の{num2words(m.group(2), lang="ja")}',
+        lambda m: f'{num2words(m.group(2), lang="ja")}分の{num2words(m.group(1), lang="ja")}',
         text,
     )
 
