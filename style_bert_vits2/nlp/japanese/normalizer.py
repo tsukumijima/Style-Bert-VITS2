@@ -244,6 +244,7 @@ __EXPONENT_PATTERN = re.compile(r"(\d+(?:\.\d+)?)[eE]([-+]?\d+)")
 
 # __convert_english_to_katakana() で使う正規表現パターン
 __ENGLISH_WORD_PATTERN = re.compile(r"[a-zA-Z0-9]")
+__ENGLISH_WORD_WITH_NUMBER_PATTERN = re.compile(r"^([a-zA-Z]+)([0-9]{1,2})$")
 
 
 def normalize_text(text: str) -> str:
@@ -322,8 +323,13 @@ def __replace_symbols(text: str) -> str:
         try:
             # 2桁の年を4桁に拡張する処理 (Y/m/d or Y-m-d の時のみ)
             if __DATE_EXPAND_PATTERN.match(date_str):
-                if len(date_str.split("/")[0]) == 2 or len(date_str.split("-")[0]) == 2:
-                    date_str = "20" + date_str
+                # スラッシュまたはハイフンで分割して年部分を取得
+                year_str = date_str.split("/")[0] if "/" in date_str else date_str.split("-")[0]
+                if len(year_str) == 2:
+                    # 50 以降は 1900 年代、49 以前は 2000 年代として扱う
+                    # 98/04/11 → 1998/04/11 / 36-01-01 → 2036-01-01
+                    year_prefix = "19" if int(year_str) >= 50 else "20"
+                    date_str = year_prefix + date_str
 
             # Y/m/d, Y-m-d, m/d のパターンを試す
             for fmt in ["%Y/%m/%d", "%Y-%m-%d", "%m/%d"]:
@@ -439,6 +445,20 @@ def __convert_english_to_katakana(text: str) -> str:
             str: カタカナに変換された単語
         """
 
+        # 英単語の末尾に2桁以下の数字がつく場合の処理
+        number_match = __ENGLISH_WORD_WITH_NUMBER_PATTERN.match(word)
+        if number_match:
+            base_word = number_match.group(1)
+            number = number_match.group(2)
+            # まず base_word をカタカナに変換できるか確認
+            base_katakana = KATAKANA_MAP.get(base_word.lower())
+            if base_katakana:
+                # 数字を英語表現に変換し、それをカタカナに変換
+                number_in_english = num2words(int(number), lang="en")
+                number_katakana = process_english_word(number_in_english)
+                if number_katakana:
+                    return base_katakana + number_katakana
+
         # 1. 小文字に変換した上で完全一致での変換を試みる（最も信頼できる変換）
         katakana_word = KATAKANA_MAP.get(word.lower())
         if katakana_word:
@@ -465,6 +485,23 @@ def __convert_english_to_katakana(text: str) -> str:
             ("+", "プラス"),
         ]:
             if separator in word:
+                # "." の場合は、小数点かどうかをチェック
+                if separator == ".":
+                    parts = word.split(".")
+                    # 隣接する部分が両方数字の場合は次のセパレータへ
+                    should_skip = False
+                    for i in range(len(parts) - 1):
+                        if (
+                            parts[i]
+                            and parts[i][-1].isdigit()
+                            and parts[i + 1]
+                            and parts[i + 1][0].isdigit()
+                        ):
+                            should_skip = True
+                            break
+                    if should_skip:
+                        continue
+
                 sub_words = word.split(separator)
                 katakana_sub_words = []
 
@@ -474,6 +511,10 @@ def __convert_english_to_katakana(text: str) -> str:
                     katakana_sub_words.append(sub_katakana)
 
                 return join_word.join(katakana_sub_words)
+
+        # 5. の処理を行う前に、先行して単位系の変換を終わらせておく
+        # さもなければ「MiB」が分割されてしまう
+        word = __UNIT_PATTERN.sub(lambda m: m[1] + __UNIT_MAP.get(m[2], m[2]), word)
 
         # 5. CamelCase の複合語を処理
         if any(c.isupper() for c in word[1:]):  # 2文字目以降に大文字が含まれる
@@ -489,6 +530,30 @@ def __convert_english_to_katakana(text: str) -> str:
                     result_parts.append(KATAKANA_MAP.get(part.lower(), part))
 
             return "".join(result_parts)
+
+        # 6. 数字（小数点含む）が含まれる場合、数字部分とそれ以外の部分に分割して処理
+        if any(c.isdigit() for c in word):
+
+            # 数字（小数点含む）とそれ以外の部分を分割
+            parts = []
+            last_end = 0
+
+            for match in __NUMBER_PATTERN.finditer(word):
+                # 数字の前の部分を処理
+                if match.start() > last_end:
+                    non_number = word[last_end : match.start()]
+                    parts.append(process_english_word(non_number))
+
+                # 数字部分をそのまま追加
+                parts.append(match.group())
+                last_end = match.end()
+
+            # 最後の非数字部分を処理
+            if last_end < len(word):
+                non_number = word[last_end:]
+                parts.append(process_english_word(non_number))
+
+            return "".join(parts)
 
         # 上記以外は元の単語を返す (pyopenjtalk 側でアルファベット読みされる)
         return word
