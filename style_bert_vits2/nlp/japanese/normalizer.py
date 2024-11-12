@@ -279,6 +279,11 @@ def normalize_text(text: str) -> str:
     # 最初でないと ℃ が unicodedata.normalize() で分割されてしまう
     res = __replace_symbols(text)
 
+    # 自然な日本語テキスト読み上げのために、全角スペースは句点に変換
+    # 半角スペースが入る箇所で止めて読むかはケースバイケースなため、変換は行わない
+    # Unicode 正規化でスペースが全て半角に変換される前に実行する必要がある
+    res = res.replace("\u3000", "。")
+
     res = unicodedata.normalize("NFKC", res)  # ここでアルファベットは半角になる
 
     res = __convert_english_to_katakana(res)  # 英単語をカタカナに変換
@@ -560,17 +565,35 @@ def __convert_english_to_katakana(text: str) -> str:
 
     words = []
     current_word = ""
+    prev_char = ""
 
-    for char in text:
+    for i, char in enumerate(text):
+        next_char = text[i + 1] if i < len(text) - 1 else ""
+
         # 英数字または特定の記号であれば current_word に追加
-        if __ENGLISH_WORD_PATTERN.match(char) is not None or char in "-&+.'":
+        if __ENGLISH_WORD_PATTERN.match(char) is not None or char in "-&+'":
             current_word += char
+        # ピリオドの特別処理
+        elif char == ".":
+            # 前後が英数字の場合は単語の一部として扱う (例: Node.js)
+            if (current_word and next_char and
+                (__ENGLISH_WORD_PATTERN.match(prev_char) is not None and
+                 __ENGLISH_WORD_PATTERN.match(next_char) is not None)):
+                current_word += char
+            # それ以外は文の区切りとして扱う (例: I'm fine.)
+            else:
+                if current_word:
+                    words.append(process_english_word(current_word))
+                    current_word = ""
+                words.append(char)
         else:
             # 英単語が終了したらカタカナに変換して words に追加
             if current_word:
                 words.append(process_english_word(current_word))
                 current_word = ""
             words.append(char)
+
+        prev_char = char
 
     # 最後の単語を処理
     if current_word:
