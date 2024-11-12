@@ -7,6 +7,7 @@ from num2words import num2words
 
 from style_bert_vits2.nlp.japanese.katakana_map import KATAKANA_MAP
 from style_bert_vits2.nlp.symbols import PUNCTUATIONS
+from style_bert_vits2.nlp.japanese.romkan import to_katakana
 
 
 # 記号類の正規化マップ
@@ -245,6 +246,7 @@ __EXPONENT_PATTERN = re.compile(r"(\d+(?:\.\d+)?)[eE]([-+]?\d+)")
 # __convert_english_to_katakana() で使う正規表現パターン
 __ENGLISH_WORD_PATTERN = re.compile(r"[a-zA-Z0-9]")
 __ENGLISH_WORD_WITH_NUMBER_PATTERN = re.compile(r"^([a-zA-Z]+)([0-9]{1,2})$")
+__ALPHABET_PATTERN = re.compile(r"[a-zA-Z]")
 
 
 def normalize_text(text: str) -> str:
@@ -442,14 +444,14 @@ def __convert_english_to_katakana(text: str) -> str:
 
         return parts
 
-    def process_english_word(word: str) -> str:
+    def process_english_word(word: str, enable_romaji: bool = False) -> str:
         """
         英単語をカタカナに変換する。確実に変換できるパターンのみを処理し、
         不確実な場合は元の単語をそのまま返す (pyopenjtalk 側でアルファベット読みされる)。
 
         Args:
             word (str): 変換する英単語
-
+            enable_romaji (bool): ローマ字変換を有効にするかどうか
         Returns:
             str: カタカナに変換された単語
         """
@@ -543,9 +545,11 @@ def __convert_english_to_katakana(text: str) -> str:
                     result_parts.append(part)
                 else:
                     # それ以外は辞書で変換を試みる
-                    result_parts.append(KATAKANA_MAP.get(part.lower(), part))
+                    converted = process_english_word(part)
+                    result_parts.append(converted)
 
-            return "".join(result_parts)
+            # ここでは戻らず、値の上書きのみにとどめる
+            word = "".join(result_parts)
 
         # 7. 数字（小数点含む）が含まれる場合、数字部分とそれ以外の部分に分割して処理
         if any(c.isdigit() for c in word):
@@ -570,6 +574,13 @@ def __convert_english_to_katakana(text: str) -> str:
                 parts.append(process_english_word(non_number))
 
             return "".join(parts)
+
+        # 8. アルファベットが含まれる場合、ローマ字 -> カタカナ変換を試みる
+        if any(__ALPHABET_PATTERN.match(c) for c in word) and enable_romaji:
+            katakana = to_katakana(word)
+            # 全文字を完全にカタカナに変換できた場合のみ採用
+            if not any(__ALPHABET_PATTERN.match(c) for c in katakana):
+                return katakana
 
         # 上記以外は元の単語を返す (pyopenjtalk 側でアルファベット読みされる)
         return word
@@ -599,13 +610,13 @@ def __convert_english_to_katakana(text: str) -> str:
             # それ以外は文の区切りとして扱う (例: I'm fine.)
             else:
                 if current_word:
-                    words.append(process_english_word(current_word))
+                    words.append(process_english_word(current_word, enable_romaji=True))
                     current_word = ""
                 words.append(char)
         else:
             # 英単語が終了したらカタカナに変換して words に追加
             if current_word:
-                words.append(process_english_word(current_word))
+                words.append(process_english_word(current_word, enable_romaji=True))
                 current_word = ""
             words.append(char)
 
@@ -613,7 +624,7 @@ def __convert_english_to_katakana(text: str) -> str:
 
     # 最後の単語を処理
     if current_word:
-        words.append(process_english_word(current_word))
+        words.append(process_english_word(current_word, enable_romaji=True))
 
     return "".join(words)
 
