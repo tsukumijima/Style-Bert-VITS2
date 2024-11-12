@@ -329,7 +329,11 @@ def __replace_symbols(text: str) -> str:
             # 2桁の年を4桁に拡張する処理 (Y/m/d or Y-m-d の時のみ)
             if __DATE_EXPAND_PATTERN.match(date_str):
                 # スラッシュまたはハイフンで分割して年部分を取得
-                year_str = date_str.split("/")[0] if "/" in date_str else date_str.split("-")[0]
+                year_str = (
+                    date_str.split("/")[0]
+                    if "/" in date_str
+                    else date_str.split("-")[0]
+                )
                 if len(year_str) == 2:
                     # 50 以降は 1900 年代、49 以前は 2000 年代として扱う
                     # 98/04/11 → 1998/04/11 / 36-01-01 → 2036-01-01
@@ -583,9 +587,14 @@ def __convert_english_to_katakana(text: str) -> str:
         # ピリオドの特別処理
         elif char == ".":
             # 前後が英数字の場合は単語の一部として扱う (例: Node.js)
-            if (current_word and next_char and
-                (__ENGLISH_WORD_PATTERN.match(prev_char) is not None and
-                 __ENGLISH_WORD_PATTERN.match(next_char) is not None)):
+            if (
+                current_word
+                and next_char
+                and (
+                    __ENGLISH_WORD_PATTERN.match(prev_char) is not None
+                    and __ENGLISH_WORD_PATTERN.match(next_char) is not None
+                )
+            ):
                 current_word += char
             # それ以外は文の区切りとして扱う (例: I'm fine.)
             else:
