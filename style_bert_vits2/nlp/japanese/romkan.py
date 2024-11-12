@@ -63,6 +63,8 @@ KUNREITAB = """ァ       xa      ア       a       ィ       xi      イ       i
 ク       ku      グ       gu      ケ       ke      ゲ       ge      コ       ko
 ゴ       go
 
+カ       ca       シ       ci       ク       cu       コ       co
+
 サ       sa      ザ       za      シ       si      シャ      sya     シュ      syu
 ショ      syo     シェ    sye
 ジ       zi      ジャ      zya     ジュ      zyu     ジョ      zyo
@@ -123,6 +125,9 @@ KUNREITAB = """ァ       xa      ア       a       ィ       xi      イ       i
 ラ       ra      リ       ri      リャ      rya     リュ      ryu     リョ      ryo
 ル       ru      レ       re      ロ       ro
 
+ラ       la      リ       li      リャ      lya     リュ      lyu     リョ      lyo
+ル       lu      レ       le      ロ       lo
+
 ヮ       xwa     ワ       wa      ウィ    wi      ヰ wi      ヱ       we      ウェ      we
 ヲ       wo      ウォ    wo      ン n
 
@@ -142,6 +147,8 @@ KUNREITAB_H = """ぁ      xa      あ      a      ぃ      xi      い      i   
 きょ      kyo      ぎ      gi      ぎゃ      gya      ぎゅ      gyu      ぎょ      gyo
 く      ku      ぐ      gu      け      ke      げ      ge      こ      ko
 ご      go
+
+か      ca      し      ci      く      cu      こ      co
 
 さ      sa      ざ      za      し      si      しゃ      sya      しゅ      syu
 しょ      syo      じ      zi      じゃ      zya      じゅ      zyu      じょ      zyo
@@ -198,6 +205,9 @@ KUNREITAB_H = """ぁ      xa      あ      a      ぃ      xi      い      i   
 
 ら      ra      り      ri      りゃ      rya      りゅ      ryu      りょ      ryo
 る      ru      れ      re      ろ      ro
+
+ら      la      り      li      りゃ      lya     りゅ      lyu     りょ      lyo
+る      lu      れ      le      ろ      lo
 
 ゎ      xwa      わ      wa      ゐ      wi      ゑ      we
 を      wo      ん      n
