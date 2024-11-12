@@ -482,7 +482,14 @@ def __convert_english_to_katakana(text: str) -> str:
             if katakana_word:
                 return katakana_word + "ズ"
 
-        # 4. 記号で区切られた複合語の処理（部分的な変換を許可）
+        # 4. 複数形の処理
+        if word.endswith("s"):
+            base_word = word[:-1]
+            katakana_word = KATAKANA_MAP.get(base_word.lower())
+            if katakana_word:
+                return katakana_word + "ズ"
+
+        # 5. 記号で区切られた複合語の処理（部分的な変換を許可）
         for separator, join_word in [
             ("&", "アンド"),
             ("-", ""),
@@ -517,11 +524,11 @@ def __convert_english_to_katakana(text: str) -> str:
 
                 return join_word.join(katakana_sub_words)
 
-        # 5. の処理を行う前に、先行して単位系の変換を終わらせておく
+        # 6. の処理を行う前に、先行して単位系の変換を終わらせておく
         # さもなければ「MiB」が分割されてしまう
         word = __UNIT_PATTERN.sub(lambda m: m[1] + __UNIT_MAP.get(m[2], m[2]), word)
 
-        # 5. CamelCase の複合語を処理
+        # 6. CamelCase の複合語を処理
         if any(c.isupper() for c in word[1:]):  # 2文字目以降に大文字が含まれる
             parts = split_camel_case(word)
             result_parts = []
@@ -536,7 +543,7 @@ def __convert_english_to_katakana(text: str) -> str:
 
             return "".join(result_parts)
 
-        # 6. 数字（小数点含む）が含まれる場合、数字部分とそれ以外の部分に分割して処理
+        # 7. 数字（小数点含む）が含まれる場合、数字部分とそれ以外の部分に分割して処理
         if any(c.isdigit() for c in word):
 
             # 数字（小数点含む）とそれ以外の部分を分割
