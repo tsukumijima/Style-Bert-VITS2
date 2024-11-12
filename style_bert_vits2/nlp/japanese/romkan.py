@@ -41,6 +41,7 @@ import sys
 from functools import cmp_to_key
 from typing import Iterator, Union
 
+
 #
 # Ruby/Romkan - a Romaji <-> Kana conversion library for Ruby.
 #
@@ -492,6 +493,9 @@ def normalize_double_n(str: str) -> str:
     """
     Normalize double n.
     """
+
+    # First handle m -> n conversion before p/b/m
+    str = re.sub(r"m(?=[pbm])", "n", str)
 
     # Replace double n with n'
     str = re.sub("nn", "n'", str)
