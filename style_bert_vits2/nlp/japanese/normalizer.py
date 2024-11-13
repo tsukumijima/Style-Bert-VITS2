@@ -6,8 +6,8 @@ from datetime import datetime
 from num2words import num2words
 
 from style_bert_vits2.nlp.japanese.katakana_map import KATAKANA_MAP
-from style_bert_vits2.nlp.symbols import PUNCTUATIONS
 from style_bert_vits2.nlp.japanese.romkan import to_katakana
+from style_bert_vits2.nlp.symbols import PUNCTUATIONS
 
 
 # 記号類の正規化マップ
@@ -470,7 +470,12 @@ def __convert_english_to_katakana(text: str) -> str:
                 if number_katakana:
                     return base_katakana + number_katakana
 
-        # 1. 小文字に変換した上で完全一致での変換を試みる（最も信頼できる変換）
+        # 1. 完全一致での変換を試みる（最も信頼できる変換）
+        # 1.1 まず元の文字列で試す（辞書に大文字で登録されている頭字語はここで変換される）
+        katakana_word = KATAKANA_MAP.get(word)
+        if katakana_word:
+            return katakana_word
+        # 1.2 小文字に変換した上で試す
         katakana_word = KATAKANA_MAP.get(word.lower())
         if katakana_word:
             return katakana_word
@@ -540,9 +545,10 @@ def __convert_english_to_katakana(text: str) -> str:
             result_parts = []
 
             for part in parts:
-                # 大文字のみで構成される部分はそのまま（アルファベット読みされる）
+                # 大文字のみで構成される部分
+                # 辞書になければそのまま、pyopenjtalk でアルファベット読みされる
                 if all(c.isupper() for c in part):
-                    result_parts.append(part)
+                    result_parts.append(KATAKANA_MAP.get(part, part))
                 else:
                     # それ以外は辞書で変換を試みる
                     converted = process_english_word(part)
@@ -576,7 +582,12 @@ def __convert_english_to_katakana(text: str) -> str:
             return "".join(parts)
 
         # 8. アルファベットが含まれる場合、ローマ字 -> カタカナ変換を試みる
-        if any(__ALPHABET_PATTERN.match(c) for c in word) and enable_romaji:
+        # 2文字以上の場合のみ変換を試みる (I -> イ のような1文字変換を防ぐ)
+        if (
+            len(word) >= 2
+            and any(__ALPHABET_PATTERN.match(c) for c in word)
+            and enable_romaji
+        ):
             katakana = to_katakana(word)
             # 全文字を完全にカタカナに変換できた場合のみ採用
             if not any(__ALPHABET_PATTERN.match(c) for c in katakana):
