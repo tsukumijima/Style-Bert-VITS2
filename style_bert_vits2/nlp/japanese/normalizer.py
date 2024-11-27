@@ -230,6 +230,8 @@ __UNIT_PATTERN = re.compile(
 __PUNCTUATION_CLEANUP_PATTERN = re.compile(
     # ↓ ひらがな、カタカナ、漢字
     r"[^\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF\u3400-\u4DBF\u3005"
+    # ↓ 半角数字
+    + r"\u0030-\u0039"
     # ↓ 半角アルファベット（大文字と小文字）
     + r"\u0041-\u005A\u0061-\u007A"
     # ↓ 全角アルファベット（大文字と小文字）
@@ -293,7 +295,8 @@ __DATE_EXPAND_PATTERN = re.compile(r"\d{2}[-/]\d{1,2}[-/]\d{1,2}")
 __DATE_PATTERN = re.compile(
     r"\d{4}[-/]\d{1,2}[-/]\d{1,2}|\d{2}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}/\d{1,2}"
 )
-__FRACTION_PATTERN = re.compile(r"(\d+)/(\d+)")
+__FRACTION_PATTERN = re.compile(r"(\d+)[/／](\d+)")
+__ASPECT_PATTERN = re.compile(r"(\d+)[:：](\d+)")
 __EXPONENT_PATTERN = re.compile(r"(\d+(?:\.\d+)?)[eE]([-+]?\d+)")
 
 # __convert_english_to_katakana() で使う正規表現パターン
@@ -309,6 +312,7 @@ def normalize_text(text: str) -> str:
     - ひらがな
     - カタカナ（全角長音記号「ー」が入る！）
     - 漢字
+    - 半角数字
     - 半角アルファベット（大文字と小文字）
     - ギリシャ文字
     - `.` （句点`。`や`…`の一部や改行等）
@@ -320,7 +324,6 @@ def normalize_text(text: str) -> str:
 
     注意点:
     - 三点リーダー`…`は`...`に変換される（`なるほど…。` → `なるほど....`）
-    - 数字は漢字に変換される（`1,100円` → `千百円`、`52.34` → `五十二点三四`）
     - 読点や疑問符等の位置・個数等は保持される（`??あ、、！！！` → `??あ,,!!!`）
 
     Args:
@@ -374,7 +377,7 @@ def __replace_symbols(text: str) -> str:
 
     # 数式の読み方を改善
     text = __NUMBER_MATH_PATTERN.sub(
-        lambda m: f'{num2words(m.group(1), lang="ja")}{__SYMBOL_YOMI_MAP.get(m.group(2), m.group(2))}{num2words(m.group(3), lang="ja")}イコール{num2words(m.group(4), lang="ja")}',
+        lambda m: f"{m.group(1)}{__SYMBOL_YOMI_MAP.get(m.group(2), m.group(2))}{m.group(3)}イコール{m.group(4)}",
         text,
     )
 
@@ -419,6 +422,12 @@ def __replace_symbols(text: str) -> str:
         text,
     )
 
+    # アスペクト比の処理
+    text = __ASPECT_PATTERN.sub(
+        lambda m: f'{num2words(m.group(1), lang="ja")}たい{num2words(m.group(2), lang="ja")}',
+        text,
+    )
+
     # 指数表記の処理
     text = __EXPONENT_PATTERN.sub(
         lambda m: f'{num2words(float(m.group(0)), lang="ja")}', text
@@ -432,7 +441,8 @@ def __replace_symbols(text: str) -> str:
 
 def __convert_numbers_to_words(text: str) -> str:
     """
-    記号や数字を日本語の文字表現に変換する。
+    記号を日本語の文字表現に変換する。
+    以前は数字を漢数字表現に変換していたが、pyopenjtalk 側の変換処理の方が優秀なため撤去した。
 
     Args:
         text (str): 変換するテキスト
@@ -444,7 +454,6 @@ def __convert_numbers_to_words(text: str) -> str:
     res = __UNIT_PATTERN.sub(lambda m: m[1] + __UNIT_MAP.get(m[2], m[2]), text)
     res = __NUMBER_WITH_SEPARATOR_PATTERN.sub(lambda m: m[0].replace(",", ""), res)
     res = __CURRENCY_PATTERN.sub(lambda m: m[2] + __CURRENCY_MAP.get(m[1], m[1]), res)
-    res = __NUMBER_PATTERN.sub(lambda m: num2words(m[0], lang="ja"), res)
 
     return res
 
@@ -696,7 +705,7 @@ def __convert_english_to_katakana(text: str) -> str:
 def replace_punctuation(text: str) -> str:
     """
     句読点等を「.」「,」「!」「?」「'」「-」に正規化し、OpenJTalk で読みが取得できるもののみ残す：
-    漢字・平仮名・カタカナ、アルファベット、ギリシャ文字
+    漢字・平仮名・カタカナ、数字、アルファベット、ギリシャ文字
 
     Args:
         text (str): 正規化するテキスト

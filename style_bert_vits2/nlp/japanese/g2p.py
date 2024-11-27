@@ -734,7 +734,14 @@ class YomiError(Exception):
 
 
 if __name__ == "__main__":
+    from style_bert_vits2.nlp.japanese.g2p_utils import phone_tone2kata_tone
+    from style_bert_vits2.nlp.japanese.normalizer import normalize_text
+
     if len(sys.argv) != 2:
         print(f"Usage: python -m style_bert_vits2.nlp.japanese.g2p <text>")
         sys.exit(1)
-    print(g2p(sys.argv[1]))
+    phones, tones, word2ph, sep_kata_with_joshi = g2p(normalize_text(sys.argv[1]))
+    phone_tones = phone_tone2kata_tone(list(zip(phones, tones)))
+    print(f"phone_tones: {phone_tones}")
+    print(f"word2ph: {word2ph}")
+    print(f"sep_kata_with_joshi: {sep_kata_with_joshi}")
