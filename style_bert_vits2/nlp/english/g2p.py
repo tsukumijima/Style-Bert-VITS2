@@ -86,7 +86,6 @@ _g2p = G2p()
 eng_dict = get_dict()
 short_form_dict = get_shortform_dict()
 
-
 def g2p(text: str) -> tuple[list[str], list[int], list[int]]:
     phones = []
     tones = []
@@ -195,7 +194,10 @@ def __distribute_phone(n_phone: int, n_word: int) -> list[int]:
 
 
 def __text_to_words(text: str) -> list[list[str]]:
+    model = bert_models.load_model(Languages.EN)
     tokenizer = bert_models.load_tokenizer(Languages.EN)
+    tokenizer.add_tokens(["TeamIma", "teamIma" , "ima", "Ima" , "IMA"])
+    model.resize_token_embeddings(len(tokenizer))
     tokens = tokenizer.tokenize(text)
     words = []
     for idx, t in enumerate(tokens):
