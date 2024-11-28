@@ -196,7 +196,7 @@ def __distribute_phone(n_phone: int, n_word: int) -> list[int]:
 def __text_to_words(text: str) -> list[list[str]]:
     model = bert_models.load_model(Languages.EN)
     tokenizer = bert_models.load_tokenizer(Languages.EN)
-    tokenizer.add_tokens(["TeamIma", "teamIma" , "ima", "Ima" , "IMA"])
+    tokenizer.add_tokens(["TeamIma", "teamIma" , "ima", "Ima" , "IMA", "Animator" , "Animators" , "animator" , "animators"])
     model.resize_token_embeddings(len(tokenizer))
     tokens = tokenizer.tokenize(text)
     words = []
