@@ -25,10 +25,16 @@ __SYMBOL_REPLACE_MAP = {
     "・・・": "...",
     "/": ".",
     "／": ".",
+    "\\": ".",
+    "＼": ".",
     "·": ",",
     "・": ",",
     "、": ",",
     "$": ".",
+    ":": ",",
+    "：": ",",
+    ";": ",",
+    "；": ",",
     "“": "'",
     "”": "'",
     '"': "'",
@@ -38,6 +44,8 @@ __SYMBOL_REPLACE_MAP = {
     "）": "'",
     "(": "'",
     ")": "'",
+    "「": "'",
+    "」": "'",
     "《": "'",
     "》": "'",
     "【": "'",
@@ -62,8 +70,6 @@ __SYMBOL_REPLACE_MAP = {
     "\u2e3b": "\u002d",  # ⸻, Three-Em Dash
     # "～": "-",  # これは長音記号「ー」として扱うよう変更
     # "~": "-",  # これも長音記号「ー」として扱うよう変更
-    "「": "'",
-    "」": "'",
 }
 # 記号類の正規化パターン
 __SYMBOL_REPLACE_PATTERN = re.compile(
@@ -77,11 +83,11 @@ __SYMBOL_YOMI_MAP = {
     "＋": "プラス",
     "➕": "プラス",
     "➖": "マイナス",  # 絵文字以外のハイフンは伸ばす棒と区別がつかないので記述していない
-    "×": "掛ける",
-    "✖": "掛ける",
-    "⨯": "掛ける",
-    "÷": "割る",
-    "➗": "割る",
+    "×": "かける",
+    "✖": "かける",
+    "⨯": "かける",
+    "÷": "わる",
+    "➗": "わる",
     # 等号・不等号
     "=": "イコール",
     "＝": "イコール",
@@ -232,6 +238,8 @@ __PUNCTUATION_CLEANUP_PATTERN = re.compile(
     r"[^\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF\u3400-\u4DBF\u3005"
     # ↓ 半角数字
     + r"\u0030-\u0039"
+    # ↓ 全角数字
+    + r"\uFF10-\uFF19"
     # ↓ 半角アルファベット（大文字と小文字）
     + r"\u0041-\u005A\u0061-\u007A"
     # ↓ 全角アルファベット（大文字と小文字）
@@ -290,10 +298,10 @@ __NUMBER_WITH_SEPARATOR_PATTERN = re.compile("[0-9]{1,3}(,[0-9]{3})+")
 
 # __replace_symbols() で使う正規表現パターン
 __NUMBER_RANGE_PATTERN = re.compile(r"(\d+)\s*[〜~～]\s*(\d+)")
-__NUMBER_MATH_PATTERN = re.compile(r"(\d+)\s*([+\-×÷])\s*(\d+)\s*=\s*(\d+)")
+__NUMBER_MATH_PATTERN = re.compile(r"(\d+)\s*([+＋➕\-−－ー➖×✖⨯÷➗*＊])\s*(\d+)\s*=\s*(\d+)")
 __DATE_EXPAND_PATTERN = re.compile(r"\d{2}[-/]\d{1,2}[-/]\d{1,2}")
 __DATE_PATTERN = re.compile(
-    r"\d{4}[-/]\d{1,2}[-/]\d{1,2}|\d{2}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}/\d{1,2}"
+    r"(?<!\d)(?:\d{4}[-/]\d{1,2}[-/]\d{1,2}|\d{2}[-/]\d{1,2}[-/]\d{1,2}|(?:[1-9]|1[0-2])/(?:[1-9]|[12][0-9]|3[01]))(?!\d)"
 )
 __FRACTION_PATTERN = re.compile(r"(\d+)[/／](\d+)")
 __ASPECT_PATTERN = re.compile(r"(\d+)[:：](\d+)")
@@ -375,9 +383,16 @@ def __replace_symbols(text: str) -> str:
     # 数字と数字に挟まれた「〜」を「から」に置換
     text = __NUMBER_RANGE_PATTERN.sub(lambda m: f"{m.group(1)}から{m.group(2)}", text)
 
+    def get_symbol_yomi(symbol: str) -> str:
+        if symbol in ("-", "−", "－", "ー"):
+            return "マイナス"
+        if symbol in ("*", "＊"):
+            return "かける"
+        return __SYMBOL_YOMI_MAP.get(symbol, symbol)
+
     # 数式の読み方を改善
     text = __NUMBER_MATH_PATTERN.sub(
-        lambda m: f"{m.group(1)}{__SYMBOL_YOMI_MAP.get(m.group(2), m.group(2))}{m.group(3)}イコール{m.group(4)}",
+        lambda m: f"{m.group(1)}{get_symbol_yomi(m.group(2))}{m.group(3)}イコール{m.group(4)}",
         text,
     )
 
@@ -418,7 +433,7 @@ def __replace_symbols(text: str) -> str:
 
     # 分数の処理
     text = __FRACTION_PATTERN.sub(
-        lambda m: f'{num2words(m.group(2), lang="ja")}分の{num2words(m.group(1), lang="ja")}',
+        lambda m: f'{num2words(m.group(2), lang="ja")}ぶんの{num2words(m.group(1), lang="ja")}',
         text,
     )
 
@@ -435,6 +450,11 @@ def __replace_symbols(text: str) -> str:
 
     # 記号類を辞書で置換
     text = __SYMBOL_YOMI_PATTERN.sub(lambda x: __SYMBOL_YOMI_MAP[x.group()], text)
+
+    # 数字の前のバックスラッシュを円記号に変換
+    ## pyopenjtalk は「¥100」を「100円」と自動で読み替えるが、円記号としてバックスラッシュ (U+005C) が使われているとうまく動作しないため
+    ## ref: https://ja.wikipedia.org/wiki/%E5%86%86%E8%A8%98%E5%8F%B7
+    text = re.sub(r"\\(?=\d)", "¥", text)
 
     return text
 
@@ -571,8 +591,9 @@ def __convert_english_to_katakana(text: str) -> str:
         ]:
             if separator in word:
                 # "." の場合は、小数点かどうかをチェック
-                if separator == ".":
-                    parts = word.split(".")
+                # "-" の場合は、数値の区切りかどうかをチェック
+                if separator in [".", "-"]:
+                    parts = word.split(separator)
                     # 隣接する部分が両方数字の場合は次のセパレータへ
                     should_skip = False
                     for i in range(len(parts) - 1):
@@ -621,6 +642,11 @@ def __convert_english_to_katakana(text: str) -> str:
 
         # 7. 数字（小数点含む）が含まれる場合、数字部分とそれ以外の部分に分割して処理
         if any(c.isdigit() for c in word):
+            # ハイフンで区切られた数字の場合はそのまま返す (例: 33-4)
+            if '-' in word:
+                parts = word.split('-')
+                if all(part.isdigit() for part in parts):
+                    return word
 
             # 数字（小数点含む）とそれ以外の部分を分割
             parts = []
