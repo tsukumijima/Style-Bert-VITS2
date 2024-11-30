@@ -7,6 +7,7 @@ from urllib.parse import unquote
 
 import GPUtil
 import modal
+import modal.gpu
 import psutil
 import torch
 from fastapi import FastAPI, HTTPException, Query, Request, status
@@ -67,7 +68,7 @@ image = (
 model_loading_sequence = ["ima_004_whisperE001", "ima_blend_004_tsukuE015", "ima_blend_004_tsukuN004"]
 
 
-@app.function(image=image, gpu="any")
+@app.function(image=image, gpu=[modal.gpu.A10G()], keep_warm=2, container_idle_timeout=1800)
 @modal.asgi_app()
 def create_app():
     config = get_config()
