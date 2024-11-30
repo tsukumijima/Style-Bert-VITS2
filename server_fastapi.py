@@ -68,7 +68,7 @@ image = (
 model_loading_sequence = ["ima_004_whisperE001", "ima_blend_004_tsukuE015", "ima_blend_004_tsukuN004"]
 
 
-@app.function(image=image, gpu=[modal.gpu.A10G()], keep_warm=2, container_idle_timeout=1800)
+@app.function(image=image, gpu=[modal.gpu.H100()], keep_warm=2, container_idle_timeout=1800)
 @modal.asgi_app()
 def create_app():
     config = get_config()
