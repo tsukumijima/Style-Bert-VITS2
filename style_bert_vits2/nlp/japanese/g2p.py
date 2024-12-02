@@ -18,13 +18,13 @@ def g2p(
     他で使われるメインの関数。`normalize_text()` で正規化された `norm_text` を受け取り、
     - phones: 音素のリスト（ただし `!` や `,` や `.` など punctuation が含まれうる）
     - tones: アクセントのリスト、0（低）と1（高）からなり、phones と同じ長さ
-    - word2ph: 元のテキストの各文字に音素が何個割り当てられるかを表すリスト
+    - word2ph: 正規化済みテキストの各文字に音素が何個割り当てられるかを表すリスト
     - sep_kata_with_joshi: 単語単位の単語のカタカナ読みのリスト (助詞を直前の単語に連結している)
     のタプルを返す。
     ただし `phones` と `tones` の最初と終わりに `_` が入り、応じて `word2ph` の最初と最後に 1 が追加される。
 
     Args:
-        norm_text (str): 正規化されたテキスト
+        norm_text (str): 正規化済みテキスト
         use_jp_extra (bool, optional): False の場合、「ん」の音素を「N」ではなく「n」とする。Defaults to True.
         raise_yomi_error (bool, optional): False の場合、読めない文字が「'」として発音される。Defaults to False.
 
@@ -108,7 +108,7 @@ def text_to_sep_kata(
     ["私", "は", "そう", "思う", "!", "って", "感じ", "?"], ["ワタシ", "ワ", "ソー", "オモウ", "!", "ッテ", "カンジ", "?"]
 
     Args:
-        norm_text (str): 正規化されたテキスト
+        norm_text (str): 正規化済みテキスト
         raise_yomi_error (bool, optional): False の場合、読めない文字が「'」として発音される。Defaults to False.
 
     Returns:
@@ -189,7 +189,7 @@ def adjust_word2ph(
     アクセントへの影響を最低限に抑えつつ word2ph の合計値を given_phone の長さ (音素数) に一致させる。
 
     Args:
-        word2ph (list[int]): 単語ごとの音素の数のリスト
+        word2ph (list[int]): 正規化済みテキストの各文字に音素が何個割り当てられるかを表すリスト
         generated_phone (list[str]): 生成された音素のリスト
         given_phone (list[str]): 与えられた音素のリスト
 
@@ -227,14 +227,14 @@ def adjust_word2ph(
             """
             m, n = len(X), len(Y)
             L = [[0] * (n + 1) for _ in range(m + 1)]
-            # LCSの長さを構築
+            # LCS の長さを構築
             for i in range(1, m + 1):
                 for j in range(1, n + 1):
                     if X[i - 1] == Y[j - 1]:
                         L[i][j] = L[i - 1][j - 1] + 1
                     else:
                         L[i][j] = max(L[i - 1][j], L[i][j - 1])
-            # LCSを逆方向にトレースしてインデックスのペアを取得
+            # LCS を逆方向にトレースしてインデックスのペアを取得
             index_pairs = []
             i, j = m, n
             while i > 0 and j > 0:
@@ -329,9 +329,6 @@ def adjust_word2ph(
             # 処理中の generated_phone のインデックスを進める
             current_generated_index += 1
 
-    # この時点で given_phone の長さと adjusted_word2ph に記録されている音素数の合計が一致しているはず
-    assert len(given_phone) == sum(adjusted_word2ph), f"{len(given_phone)} != {sum(adjusted_word2ph)}"  # fmt: skip
-
     # generated_phone から given_phone の間で音素が減った場合 (例: a, sh, i, t, a -> a, s, u) 、
     # adjusted_word2ph の要素の値が 1 未満になることがあるので、1 になるように値を増やす
     ## この時、adjusted_word2ph に記録されている音素数の合計を変えないために、
@@ -379,8 +376,72 @@ def adjust_word2ph(
                         break
 
     # この時点で given_phone の長さと adjusted_word2ph に記録されている音素数の合計が一致していない場合、
-    # 正規化された読み上げテキストと given_phone が著しく乖離していることを示す
-    # このとき、この関数の呼び出し元の get_text() にて InvalidPhoneError が送出される
+    # 乖離が大きすぎて調整しきれなかったことを意味する
+    # この場合、なるべく正確性を維持できるよう、以下のように調整して無理やり辻褄を合わせる
+    total_phonemes = sum(adjusted_word2ph)
+    target_total_phonemes = len(given_phone)
+    if total_phonemes != target_total_phonemes:
+        # 音素数が多すぎる場合は、大きい値から順に減らしていく
+        if total_phonemes > target_total_phonemes:
+            diff = total_phonemes - target_total_phonemes
+            # 要素の値が大きい順にインデックスを取得
+            indices = sorted(
+                range(len(adjusted_word2ph)),
+                key=lambda i: adjusted_word2ph[i],
+                reverse=True,
+            )
+            # まずは1以上6以下の制限内で調整を試みる
+            for i in indices:
+                if adjusted_word2ph[i] > 1 and diff > 0:
+                    reduce = min(adjusted_word2ph[i] - 1, diff)
+                    adjusted_word2ph[i] -= reduce
+                    diff -= reduce
+                if diff == 0:
+                    break
+            # それでも調整できない場合は、制限を解除して強制的に調整
+            if diff > 0:
+                # 残りの差分を要素数で割って、各要素から均等に引く
+                per_element = diff // len(adjusted_word2ph)
+                remainder = diff % len(adjusted_word2ph)
+                for i in range(len(adjusted_word2ph)):
+                    if i < remainder:
+                        adjusted_word2ph[i] = max(
+                            1, adjusted_word2ph[i] - (per_element + 1)
+                        )
+                    else:
+                        adjusted_word2ph[i] = max(1, adjusted_word2ph[i] - per_element)
+
+        # 音素数が少なすぎる場合は、小さい値から順に増やしていく
+        else:
+            diff = target_total_phonemes - total_phonemes
+            # 要素の値が小さい順にインデックスを取得
+            indices = sorted(
+                range(len(adjusted_word2ph)),
+                key=lambda i: adjusted_word2ph[i],
+            )
+            # まずは1以上6以下の制限内で調整を試みる
+            for i in indices:
+                if adjusted_word2ph[i] < 6 and diff > 0:
+                    increase = min(6 - adjusted_word2ph[i], diff)
+                    adjusted_word2ph[i] += increase
+                    diff -= increase
+                if diff == 0:
+                    break
+            # それでも調整できない場合は、制限を解除して強制的に調整
+            if diff > 0:
+                # 残りの差分を要素数で割って、各要素に均等に足す
+                per_element = diff // len(adjusted_word2ph)
+                remainder = diff % len(adjusted_word2ph)
+                for i in range(len(adjusted_word2ph)):
+                    if i < remainder:
+                        adjusted_word2ph[i] += per_element + 1
+                    else:
+                        adjusted_word2ph[i] += per_element
+
+    # この時点で given_phone の長さと adjusted_word2ph に記録されている音素数の合計が一致しているはず
+    # それでも一致しないとしたら、len(generated_phone) に比べて len(given_phone) があまりに少なすぎて、
+    # 各文字ごとに最低 1 以上の音素を割り当てることが不可能だったことを意味する
+    assert len(given_phone) == sum(adjusted_word2ph), f"{len(given_phone)} != {sum(adjusted_word2ph)}"  # fmt: skip
 
     # 最初に削除した前後のダミー要素を追加して返す
     return [1] + adjusted_word2ph + [1]

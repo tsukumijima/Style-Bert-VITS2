@@ -193,7 +193,9 @@ def clean_text_with_given_phone_tone(
                 # clean_text() から取得した word2ph を調整結果で上書き
                 word2ph = adjust_word2ph(word2ph, phone, given_phone)
                 # 上記処理により word2ph の合計が given_phone の長さと一致するはず
-                # それでも一致しない場合、大半は読み上げテキストと given_phone が著しく乖離していて調整し切れなかったことを意味する
+                # それでも一致しないとしたら、len(generated_phone) に比べて len(given_phone) があまりに少なすぎて、
+                # 各文字ごとに最低 1 以上の音素を割り当てることが不可能だったことを意味する
+                # 通常無理やりにでも辻褄を合わせるため発生しないはずだが、どうしても一致しない場合はエラーとする
                 if len(given_phone) != sum(word2ph):
                     raise InvalidPhoneError(
                         f"Length of given_phone ({len(given_phone)}) != sum of word2ph ({sum(word2ph)})"

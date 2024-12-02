@@ -298,7 +298,9 @@ __NUMBER_WITH_SEPARATOR_PATTERN = re.compile("[0-9]{1,3}(,[0-9]{3})+")
 
 # __replace_symbols() で使う正規表現パターン
 __NUMBER_RANGE_PATTERN = re.compile(r"(\d+)\s*[〜~～]\s*(\d+)")
-__NUMBER_MATH_PATTERN = re.compile(r"(\d+)\s*([+＋➕\-−－ー➖×✖⨯÷➗*＊])\s*(\d+)\s*=\s*(\d+)")
+__NUMBER_MATH_PATTERN = re.compile(
+    r"(\d+)\s*([+＋➕\-−－ー➖×✖⨯÷➗*＊])\s*(\d+)\s*=\s*(\d+)"
+)
 __DATE_EXPAND_PATTERN = re.compile(r"\d{2}[-/]\d{1,2}[-/]\d{1,2}")
 __DATE_PATTERN = re.compile(
     r"(?<!\d)(?:\d{4}[-/]\d{1,2}[-/]\d{1,2}|\d{2}[-/]\d{1,2}[-/]\d{1,2}|(?:[1-9]|1[0-2])/(?:[1-9]|[12][0-9]|3[01]))(?!\d)"
@@ -643,8 +645,8 @@ def __convert_english_to_katakana(text: str) -> str:
         # 7. 数字（小数点含む）が含まれる場合、数字部分とそれ以外の部分に分割して処理
         if any(c.isdigit() for c in word):
             # ハイフンで区切られた数字の場合はそのまま返す (例: 33-4)
-            if '-' in word:
-                parts = word.split('-')
+            if "-" in word:
+                parts = word.split("-")
                 if all(part.isdigit() for part in parts):
                     return word
 
