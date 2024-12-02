@@ -157,6 +157,9 @@ def text_to_sep_kata(
             else:
                 # yomi は元の記号のままに変更
                 yomi = word
+        elif yomi == "！":
+            assert word == "!", f"yomi `！` comes from: {word}"
+            yomi = "!"
         elif yomi == "？":
             assert word == "?", f"yomi `？` comes from: {word}"
             yomi = "?"
