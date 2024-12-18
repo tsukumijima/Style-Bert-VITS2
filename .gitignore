@@ -43,5 +43,6 @@ safetensors.ipynb
 # pyopenjtalk's dictionary
 *.dic
 
+.DS_Store
 playground.ipynb
 playgrounds/

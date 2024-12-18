@@ -4,7 +4,7 @@ from g2p_en import G2p
 
 from style_bert_vits2.constants import Languages
 from style_bert_vits2.nlp import bert_models
-from style_bert_vits2.nlp.english.cmudict import get_dict
+from style_bert_vits2.nlp.english.cmudict import get_dict, get_shortform_dict
 from style_bert_vits2.nlp.symbols import PUNCTUATIONS, SYMBOLS
 
 
@@ -84,6 +84,7 @@ ARPA = {
 }
 _g2p = G2p()
 eng_dict = get_dict()
+short_form_dict = get_shortform_dict()
 
 
 def g2p(text: str) -> tuple[list[str], list[int], list[int]]:
@@ -102,7 +103,11 @@ def g2p(text: str) -> tuple[list[str], list[int], list[int]]:
                 temp_phones.append(w)
                 temp_tones.append(0)
                 continue
-            if w.upper() in eng_dict:
+            if w.isupper() and w in short_form_dict:
+                phns, tns = __refine_syllables(short_form_dict[w])
+                temp_phones += [__post_replace_ph(i) for i in phns]
+                temp_tones += tns
+            elif w.upper() in eng_dict:
                 phns, tns = __refine_syllables(eng_dict[w.upper()])
                 temp_phones += [__post_replace_ph(i) for i in phns]
                 temp_tones += tns
