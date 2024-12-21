@@ -40,7 +40,7 @@ __loaded_tokenizers: dict[
 def load_model(
     language: Languages,
     pretrained_model_name_or_path: Optional[str] = None,
-    onnx_providers: Sequence[Union[str, tuple[str, dict[str, Any]]]] = ["CPUExecutionProvider"],
+    onnx_providers: Sequence[Union[str, tuple[str, dict[str, Any]]]] = [("CPUExecutionProvider", {"arena_extend_strategy": "kSameAsRequested"})],
     cache_dir: Optional[str] = None,
     revision: str = "main",
 ) -> onnxruntime.InferenceSession:  # fmt: skip
@@ -82,15 +82,24 @@ def load_model(
         model_path = Path(
             hf_hub_download(
                 repo_id=pretrained_model_name_or_path,
-                filename="model.onnx",
+                filename="model_fp16.onnx",
                 cache_dir=cache_dir,
                 revision=revision,
             )
         )
+        # 英語用 BERT のみ、spm.model もダウンロードする
+        # Fast 版の BERT トークナイザーでは不要なはずだが、念のため
+        if language == Languages.EN:
+            hf_hub_download(
+                repo_id=pretrained_model_name_or_path,
+                filename="spm.model",
+                cache_dir=cache_dir,
+                revision=revision,
+            )
     # pretrained_model_name_or_path にファイルパスが指定された場合:
     # 既にダウンロード済みという前提のもと、モデルへのローカルパスを model_path に格納する
     else:
-        model_path = Path(pretrained_model_name_or_path).resolve() / "model.onnx"
+        model_path = Path(pretrained_model_name_or_path).resolve() / "model_fp16.onnx"
 
     start_time = time.time()
     sess_options = onnxruntime.SessionOptions()
@@ -138,7 +147,7 @@ def load_tokenizer(
         revision (str): モデルの Hugging Face 上の Git リビジョン。指定しない場合は最新の main ブランチの内容が利用される (デフォルト: None)
 
     Returns:
-        Union[PreTrainedTokenizer, PreTrainedTokenizerFast, DebertaV2Tokenizer]: ロード済みの BERT トークナイザー
+        Union[PreTrainedTokenizer, PreTrainedTokenizerFast, DebertaV2TokenizerFast]: ロード済みの BERT トークナイザー
     """
 
     # すでにロード済みの場合はそのまま返す
