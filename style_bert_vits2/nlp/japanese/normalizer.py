@@ -77,6 +77,7 @@ __SYMBOL_REPLACE_PATTERN = re.compile(
 )
 
 # 記号などの読み正規化マップ
+# 一度リストアップしたがユースケース上不要な記号はコメントアウトされている
 __SYMBOL_YOMI_MAP = {
     # 算術演算子
     "+": "プラス",
@@ -98,14 +99,16 @@ __SYMBOL_YOMI_MAP = {
     "≡": "合同",
     "≢": "合同でない",
     # 比較演算子
-    "<": "未満",
-    "＜": "未満",
-    ">": "より大きい",
-    "＞": "より大きい",
-    "≤": "以下",
-    "≦": "以下",
-    "≥": "以上",
-    "≧": "以上",
+    "<": "小なり",
+    "＜": "小なり",
+    ">": "大なり",
+    "＞": "大なり",
+    "≤": "小なりイコール",
+    "≦": "小なりイコール",
+    "⩽": "小なりイコール",
+    "≥": "大なりイコール",
+    "≧": "大なりイコール",
+    "⩾": "大なりイコール",
     # 単位・数値記号
     "%": "パーセント",
     "％": "パーセント",
@@ -124,20 +127,20 @@ __SYMBOL_YOMI_MAP = {
     "№": "ナンバー",
     "℡": "テレフォン",
     "℠": "エスエム",
-    "™": "ティーエム",
+    # "™": "ティーエム",
     "©": "コピーライト",
-    "®": "アールマーク",
+    # "®": "アールマーク",
     "💲": "ドル",
     # 一般記号
     "@": "アットマーク",
     "＠": "アットマーク",
-    "#": "ハッシュ",
-    "＃": "ハッシュ",
-    "#️⃣": "ハッシュ",
+    "#": "シャープ",
+    "＃": "シャープ",
+    "#️⃣": "シャープ",
     "&": "アンド",
     "＆": "アンド",
-    "*": "アスタリスク",
-    "＊": "アスタリスク",
+    # "*": "アスタリスク",
+    # "＊": "アスタリスク",
     "†": "ダガー",
     "‡": "ダブルダガー",
     "§": "セクション",
@@ -297,6 +300,8 @@ __NUMBER_PATTERN = re.compile(r"[0-9]+(\.[0-9]+)?")
 __NUMBER_WITH_SEPARATOR_PATTERN = re.compile("[0-9]{1,3}(,[0-9]{3})+")
 
 # __replace_symbols() で使う正規表現パターン
+__URL_PATTERN = re.compile(r'https?://[-a-zA-Z0-9.]+(?:/[-a-zA-Z0-9._~:/?#\[\]@!$&\'()*+,;=]*)?')
+__EMAIL_PATTERN = re.compile(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}')
 __NUMBER_RANGE_PATTERN = re.compile(r"(\d+)\s*[〜~～]\s*(\d+)")
 __NUMBER_MATH_PATTERN = re.compile(
     r"(\d+)\s*([+＋➕\-−－ー➖×✖⨯÷➗*＊])\s*(\d+)\s*=\s*(\d+)"
@@ -382,6 +387,41 @@ def __replace_symbols(text: str) -> str:
         str: 正規化されたテキスト
     """
 
+    def convert_url_symbols(match: re.Match[str]) -> str:
+        url = match.group(0)
+        # 記号を日本語に変換
+        url = url.replace('https://', 'エイチティーティーピーエス,')
+        url = url.replace('http://', 'エイチティーティーピー,')
+        url = url.replace('.', 'ドット')
+        url = url.replace('/', ',スラッシュ,')
+        url = url.replace('?', ',クエスチョン,')
+        url = url.replace('&', ',アンド,')
+        url = url.replace('=', 'イコール')
+        url = url.replace('_', 'アンダーバー')
+        url = url.replace('-', 'ハイフン')
+        url = url.replace('#', 'シャープ')
+        url = url.replace('@', 'アットマーク')
+        url = url.replace(':', 'コロン')
+        url = url.replace('~', 'チルダ')
+        url = url.replace('+', 'プラス')
+        return url
+
+    # URL パターンの処理
+    text = __URL_PATTERN.sub(convert_url_symbols, text)
+
+    def convert_email_symbols(match: re.Match[str]) -> str:
+        email = match.group(0)
+        # 記号を日本語に変換
+        email = email.replace('@', ',アットマーク')
+        email = email.replace('.', 'ドット')
+        email = email.replace('-', 'ハイフン')
+        email = email.replace('_', 'アンダーバー')
+        email = email.replace('+', 'プラス')
+        return email
+
+    # メールアドレスパターンの処理
+    text = __EMAIL_PATTERN.sub(convert_email_symbols, text)
+
     # 数字と数字に挟まれた「〜」を「から」に置換
     text = __NUMBER_RANGE_PATTERN.sub(lambda m: f"{m.group(1)}から{m.group(2)}", text)
 
@@ -439,9 +479,19 @@ def __replace_symbols(text: str) -> str:
         text,
     )
 
-    # アスペクト比の処理
+    # 時刻またはアスペクト比の処理
+    # 時刻は 00:00 から 27:59 までの範囲であれば、漢数字に変換して「十四時五分」「二十四時」と読み上げる (「零分」は省略)
+    # それ以外ならアスペクト比と判断し「十六たい九」と読み上げる (「対」にすると「つい」と読んでしまう場合がある)
     text = __ASPECT_PATTERN.sub(
-        lambda m: f'{num2words(m.group(1), lang="ja")}たい{num2words(m.group(2), lang="ja")}',
+        lambda m: (
+            f'{num2words(int(m.group(1)), lang="ja")}時{num2words(int(m.group(2)), lang="ja")}分'.replace("零分", "")
+            if (
+                0 <= int(m.group(1)) <= 27
+                and 0 <= int(m.group(2)) <= 59
+                and len(m.group(2)) == 2
+            )
+            else f'{num2words(m.group(1), lang="ja")}たい{num2words(m.group(2), lang="ja")}'
+        ),
         text,
     )
 
