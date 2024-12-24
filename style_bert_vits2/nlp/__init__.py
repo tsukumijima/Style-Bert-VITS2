@@ -221,6 +221,58 @@ def clean_text_with_given_phone_tone(
             )
         tone = given_tone
 
+    # 日本語のみ、g2p 処理では対応しているが現行モデルでは対応していない特定音素を変換 (フォールバック)
+    if language == Languages.JP:
+
+        # 音素変換マップ
+        PHONE_CONVERSION_MAP = {
+            'kw': ('k', 'u', 'w'),  # 「クヮ」→「クワ」
+            'gw': ('g', 'u', 'w'),  # 「グヮ」→「グワ」
+            'fy': ('hy',),          # 「フュ」→「ヒュ」
+        }
+
+        # 変換が必要な音素のインデックスを収集
+        conversion_indices: list[tuple[int, str]] = []
+        for i, p in enumerate(phone):
+            if p in PHONE_CONVERSION_MAP:
+                conversion_indices.append((i, p))
+
+        # 音素変換が必要な場合のみ処理を実行
+        if conversion_indices:
+
+            # インデックスは後ろから処理することで、
+            # 前の変換による位置ずれの影響を受けないようにする
+            for orig_idx, orig_phone in reversed(conversion_indices):
+
+                # 変換後の音素を取得
+                converted_phones = PHONE_CONVERSION_MAP[orig_phone]
+
+                # phone リストの更新
+                ## スライスで置換すると要素数が変化する
+                phone[orig_idx:orig_idx + 1] = list(converted_phones)
+
+                # tone リストの更新
+                ## 元の音素のトーンを、変換後の音素全てに適用
+                orig_tone = tone[orig_idx]
+                tone[orig_idx:orig_idx + 1] = [orig_tone] * len(converted_phones)
+
+                # word2ph リストの更新
+                ## 元の音素が属していた文字のインデックスを特定
+                char_idx = 0
+                phone_count = 0
+                for i, count in enumerate(word2ph):
+                    if phone_count + count > orig_idx:
+                        char_idx = i
+                        break
+                    phone_count += count
+
+                # 該当する文字の音素数を更新
+                ## 1つの音素が3つの音素に変換されるので、2つ増える
+                word2ph[char_idx] += len(converted_phones) - 1
+
+        # ここでは必ず音素数が一致するはず
+        assert len(phone) == len(tone) == sum(word2ph)
+
     return norm_text, phone, tone, word2ph
 
 
