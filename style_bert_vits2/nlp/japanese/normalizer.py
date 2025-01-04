@@ -496,9 +496,13 @@ def __replace_symbols(text: str) -> str:
     )
 
     # 指数表記の処理
-    text = __EXPONENT_PATTERN.sub(
-        lambda m: f'{num2words(float(m.group(0)), lang="ja")}', text
-    )
+    ## 稀にランダムな英数字 ID にマッチしたことで OverflowError が発生するが、続行に支障はないため無視する
+    try:
+        text = __EXPONENT_PATTERN.sub(
+            lambda m: f'{num2words(float(m.group(0)), lang="ja")}', text
+        )
+    except OverflowError:
+        pass
 
     # 記号類を辞書で置換
     text = __SYMBOL_YOMI_PATTERN.sub(lambda x: __SYMBOL_YOMI_MAP[x.group()], text)
