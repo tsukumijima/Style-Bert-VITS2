@@ -300,8 +300,10 @@ __NUMBER_PATTERN = re.compile(r"[0-9]+(\.[0-9]+)?")
 __NUMBER_WITH_SEPARATOR_PATTERN = re.compile("[0-9]{1,3}(,[0-9]{3})+")
 
 # __replace_symbols() で使う正規表現パターン
-__URL_PATTERN = re.compile(r'https?://[-a-zA-Z0-9.]+(?:/[-a-zA-Z0-9._~:/?#\[\]@!$&\'()*+,;=]*)?')
-__EMAIL_PATTERN = re.compile(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}')
+__URL_PATTERN = re.compile(
+    r"https?://[-a-zA-Z0-9.]+(?:/[-a-zA-Z0-9._~:/?#\[\]@!$&\'()*+,;=]*)?"
+)
+__EMAIL_PATTERN = re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")
 __NUMBER_RANGE_PATTERN = re.compile(r"(\d+)\s*[〜~～]\s*(\d+)")
 __NUMBER_MATH_PATTERN = re.compile(
     r"(\d+)\s*([+＋➕\-−－ー➖×✖⨯÷➗*＊])\s*(\d+)\s*=\s*(\d+)"
@@ -390,20 +392,20 @@ def __replace_symbols(text: str) -> str:
     def convert_url_symbols(match: re.Match[str]) -> str:
         url = match.group(0)
         # 記号を日本語に変換
-        url = url.replace('https://', 'エイチティーティーピーエス,')
-        url = url.replace('http://', 'エイチティーティーピー,')
-        url = url.replace('.', 'ドット')
-        url = url.replace('/', ',スラッシュ,')
-        url = url.replace('?', ',クエスチョン,')
-        url = url.replace('&', ',アンド,')
-        url = url.replace('=', 'イコール')
-        url = url.replace('_', 'アンダーバー')
-        url = url.replace('-', 'ハイフン')
-        url = url.replace('#', 'シャープ')
-        url = url.replace('@', 'アットマーク')
-        url = url.replace(':', 'コロン')
-        url = url.replace('~', 'チルダ')
-        url = url.replace('+', 'プラス')
+        url = url.replace("https://", "エイチティーティーピーエス,")
+        url = url.replace("http://", "エイチティーティーピー,")
+        url = url.replace(".", "ドット")
+        url = url.replace("/", ",スラッシュ,")
+        url = url.replace("?", ",クエスチョン,")
+        url = url.replace("&", ",アンド,")
+        url = url.replace("=", "イコール")
+        url = url.replace("_", "アンダーバー")
+        url = url.replace("-", "ハイフン")
+        url = url.replace("#", "シャープ")
+        url = url.replace("@", "アットマーク")
+        url = url.replace(":", "コロン")
+        url = url.replace("~", "チルダ")
+        url = url.replace("+", "プラス")
         return url
 
     # URL パターンの処理
@@ -412,11 +414,11 @@ def __replace_symbols(text: str) -> str:
     def convert_email_symbols(match: re.Match[str]) -> str:
         email = match.group(0)
         # 記号を日本語に変換
-        email = email.replace('@', ',アットマーク')
-        email = email.replace('.', 'ドット')
-        email = email.replace('-', 'ハイフン')
-        email = email.replace('_', 'アンダーバー')
-        email = email.replace('+', 'プラス')
+        email = email.replace("@", ",アットマーク")
+        email = email.replace(".", "ドット")
+        email = email.replace("-", "ハイフン")
+        email = email.replace("_", "アンダーバー")
+        email = email.replace("+", "プラス")
         return email
 
     # メールアドレスパターンの処理
@@ -484,7 +486,7 @@ def __replace_symbols(text: str) -> str:
     # それ以外ならアスペクト比と判断し「十六たい九」と読み上げる (「対」にすると「つい」と読んでしまう場合がある)
     text = __ASPECT_PATTERN.sub(
         lambda m: (
-            f'{num2words(int(m.group(1)), lang="ja")}時{num2words(int(m.group(2)), lang="ja")}分'.replace("零分", "")
+            f'{num2words(int(m.group(1)), lang="ja")}時{num2words(int(m.group(2)), lang="ja")}分'.replace("零分", "")  # fmt: skip
             if (
                 0 <= int(m.group(1)) <= 27
                 and 0 <= int(m.group(2)) <= 59

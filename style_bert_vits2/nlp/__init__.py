@@ -226,9 +226,9 @@ def clean_text_with_given_phone_tone(
 
         # 音素変換マップ
         PHONE_CONVERSION_MAP = {
-            'kw': ('k', 'u', 'w'),  # 「クヮ」→「クワ」
-            'gw': ('g', 'u', 'w'),  # 「グヮ」→「グワ」
-            'fy': ('hy',),          # 「フュ」→「ヒュ」
+            "kw": ("k", "u", "w"),  # 「クヮ」→「クワ」
+            "gw": ("g", "u", "w"),  # 「グヮ」→「グワ」
+            "fy": ("hy",),  # 「フュ」→「ヒュ」
         }
 
         # 変換が必要な音素のインデックスを収集
@@ -249,12 +249,12 @@ def clean_text_with_given_phone_tone(
 
                 # phone リストの更新
                 ## スライスで置換すると要素数が変化する
-                phone[orig_idx:orig_idx + 1] = list(converted_phones)
+                phone[orig_idx : orig_idx + 1] = list(converted_phones)
 
                 # tone リストの更新
                 ## 元の音素のトーンを、変換後の音素全てに適用
                 orig_tone = tone[orig_idx]
-                tone[orig_idx:orig_idx + 1] = [orig_tone] * len(converted_phones)
+                tone[orig_idx : orig_idx + 1] = [orig_tone] * len(converted_phones)
 
                 # word2ph リストの更新
                 ## 元の音素が属していた文字のインデックスを特定
