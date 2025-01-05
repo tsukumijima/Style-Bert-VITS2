@@ -744,7 +744,7 @@ def __align_tones(
 
     result: list[tuple[str, int]] = []
     tone_index = 0
-    for phone in phones_with_punct:
+    for i, phone in enumerate(phones_with_punct):
         if tone_index >= len(phone_tone_list):
             # 余った punctuation がある場合 → (punctuation, 0) を追加
             result.append((phone, 0))
@@ -753,8 +753,28 @@ def __align_tones(
             result.append((phone, phone_tone_list[tone_index][1]))
             # 探す index を1つ進める
             tone_index += 1
+            # 促音の後に長音記号が来る場合、phone_tone_list では促音が複数回連続で出現するため、
+            # 次の音素が長音記号で、かつ現在の音素が促音だった場合は、長音記号の数だけ index を進める
+            if phone == "q":
+                # 現在位置から連続する長音記号の数を数える
+                long_count = 0
+                pos = i + 1
+                while pos < len(phones_with_punct) and phones_with_punct[pos] == "-":
+                    long_count += 1
+                    pos += 1
+                # 長音記号の数だけ、phone_tone_list の中の余分な促音をスキップ
+                while (
+                    long_count > 0
+                    and tone_index < len(phone_tone_list)
+                    and phone_tone_list[tone_index][0] == "q"
+                ):
+                    tone_index += 1
+                    long_count -= 1
         elif phone in PUNCTUATIONS:
             # phone が punctuation の場合 → (phone, 0) を追加
+            result.append((phone, 0))
+        elif phone == "-" and i > 0 and phones_with_punct[i - 1] == "q":
+            # 促音「っ」の後の長音記号「ー」の場合は、そのまま tone 0 で追加
             result.append((phone, 0))
         else:
             logger.debug(f"phones: {phones_with_punct}")
