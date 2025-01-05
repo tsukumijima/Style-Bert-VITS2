@@ -300,6 +300,22 @@ __NUMBER_PATTERN = re.compile(r"[0-9]+(\.[0-9]+)?")
 __NUMBER_WITH_SEPARATOR_PATTERN = re.compile("[0-9]{1,3}(,[0-9]{3})+")
 
 # __replace_symbols() で使う正規表現パターン
+__DATE_ZERO_PADDING_PATTERN = re.compile(r"(?<!\d)0(\d)(?=月|日)")
+__WEEKDAY_PATTERN = re.compile(
+    r'('  # 日付部分をキャプチャ開始
+    r'(?:\d{4}年\s*)?'  # 4桁の年 + 年（省略可）
+    r'(?:\d{1,2}月\s*)?'  # 1-2桁の月 + 月（省略可）
+    r'\d{1,2}日'  # 1-2桁の日 + 日（必須）
+    r')'  # 日付部分をキャプチャ終了
+    r'\s*[（(]([月火水木金土日])[)）]'  # 全角/半角括弧で囲まれた曜日漢字
+    r'|'  # または
+    r'('  # 日付部分をキャプチャ開始
+    r'(?:\d{4}[-/]\s*)?'  # 4桁の年 + 区切り（省略可）
+    r'(?:\d{1,2}[-/]\s*)?'  # 1-2桁の月 + 区切り（省略可）
+    r'\d{1,2}'  # 1-2桁の日（必須）
+    r')'  # 日付部分をキャプチャ終了
+    r'\s*[（(]([月火水木金土日])[)）]'  # 全角/半角括弧で囲まれた曜日漢字
+)
 __URL_PATTERN = re.compile(
     r"https?://[-a-zA-Z0-9.]+(?:/[-a-zA-Z0-9._~:/?#\[\]@!$&\'()*+,;=]*)?"
 )
@@ -310,7 +326,7 @@ __NUMBER_MATH_PATTERN = re.compile(
 )
 __DATE_EXPAND_PATTERN = re.compile(r"\d{2}[-/]\d{1,2}[-/]\d{1,2}")
 __DATE_PATTERN = re.compile(
-    r"(?<!\d)(?:\d{4}[-/]\d{1,2}[-/]\d{1,2}|\d{2}[-/]\d{1,2}[-/]\d{1,2}|(?:[1-9]|1[0-2])/(?:[1-9]|[12][0-9]|3[01]))(?!\d)"
+    r"(?<!\d)(?:\d{4}[-/][0-9]{1,2}[-/][0-9]{1,2}|\d{2}[-/][0-9]{1,2}[-/][0-9]{1,2}|[0-9]{1,2}/[0-9]{1,2})(?!\d)"
 )
 __FRACTION_PATTERN = re.compile(r"(\d+)[/／](\d+)")
 __ASPECT_PATTERN = re.compile(r"(\d+)[:：](\d+)")
@@ -388,6 +404,12 @@ def __replace_symbols(text: str) -> str:
     Returns:
         str: 正規化されたテキスト
     """
+
+    # 年月日のゼロ埋めを除去
+    text = __DATE_ZERO_PADDING_PATTERN.sub(r'\1', text)
+
+    # 括弧内の曜日表記を変換（日付の後にある場合のみ）
+    text = __WEEKDAY_PATTERN.sub(lambda m: f'{m.group(1) or m.group(3)}{m.group(2) or m.group(4)}曜日', text)
 
     def convert_url_symbols(match: re.Match[str]) -> str:
         url = match.group(0)
