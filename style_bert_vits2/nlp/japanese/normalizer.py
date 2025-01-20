@@ -300,7 +300,9 @@ __NUMBER_PATTERN = re.compile(r"[0-9]+(\.[0-9]+)?")
 __NUMBER_WITH_SEPARATOR_PATTERN = re.compile("[0-9]{1,3}(,[0-9]{3})+")
 
 # __replace_symbols() で使う正規表現パターン
-__DATE_ZERO_PADDING_PATTERN = re.compile(r"(?<!\d)0(\d)(?=月|日)")
+__DATE_ZERO_PADDING_PATTERN = re.compile(r"(?<!\d)0(\d)(?=月|日|時|分|秒)")
+__TIME_PATTERN = re.compile(r"(\d+)時(\d+)分(?:(\d+)秒)?")
+__ASPECT_PATTERN = re.compile(r"(\d+)[:：](\d+)(?:[:：](\d+))?")
 __WEEKDAY_PATTERN = re.compile(
     r"("  # 日付部分をキャプチャ開始
     r"(?:\d{4}年\s*)?"  # 4桁の年 + 年（省略可）
@@ -329,7 +331,6 @@ __DATE_PATTERN = re.compile(
     r"(?<!\d)(?:\d{4}[-/][0-9]{1,2}[-/][0-9]{1,2}|\d{2}[-/][0-9]{1,2}[-/][0-9]{1,2}|[0-9]{1,2}/[0-9]{1,2})(?!\d)"
 )
 __FRACTION_PATTERN = re.compile(r"(\d+)[/／](\d+)")
-__ASPECT_PATTERN = re.compile(r"(\d+)[:：](\d+)")
 __EXPONENT_PATTERN = re.compile(r"(\d+(?:\.\d+)?)[eE]([-+]?\d+)")
 
 # __convert_english_to_katakana() で使う正規表現パターン
@@ -505,21 +506,76 @@ def __replace_symbols(text: str) -> str:
         text,
     )
 
+    # 時刻の処理（漢字で書かれた時分秒）
+    def convert_time(match: re.Match[str]) -> str:
+        hours = int(match.group(1))
+        minutes = int(match.group(2))
+        seconds = int(match.group(3)) if match.group(3) else None
+
+        # 時刻として処理
+        result = f'{num2words(hours, lang="ja")}時'
+
+        # 分の処理：0分で秒がない場合は省略、秒がある場合は零分を追加
+        if minutes == 0:
+            if seconds is not None:
+                result += "零分"
+        elif 0 <= minutes <= 59:
+            result += f'{num2words(minutes, lang="ja")}分'
+        else:
+            result += f'{num2words(minutes, lang="ja")}'
+
+        # 秒の処理
+        if seconds is not None:
+            if 0 <= seconds <= 59:
+                result += f'{num2words(seconds, lang="ja")}秒'
+            else:
+                result += f'{num2words(seconds, lang="ja")}'
+        return result
+
     # 時刻またはアスペクト比の処理
-    # 時刻は 00:00 から 27:59 までの範囲であれば、漢数字に変換して「十四時五分」「二十四時」と読み上げる (「零分」は省略)
-    # それ以外ならアスペクト比と判断し「十六たい九」と読み上げる (「対」にすると「つい」と読んでしまう場合がある)
-    text = __ASPECT_PATTERN.sub(
-        lambda m: (
-            f'{num2words(int(m.group(1)), lang="ja")}時{num2words(int(m.group(2)), lang="ja")}分'.replace("零分", "")  # fmt: skip
-            if (
-                0 <= int(m.group(1)) <= 27
-                and 0 <= int(m.group(2)) <= 59
-                and len(m.group(2)) == 2
-            )
-            else f'{num2words(m.group(1), lang="ja")}たい{num2words(m.group(2), lang="ja")}'
-        ),
-        text,
-    )
+    # 時刻は 00:00:00 から 27:59:59 までの範囲であれば、漢数字に変換して「十四時五分三十秒」「二十四時」のように読み上げる
+    # それ以外ならアスペクト比と判断し「十六タイ九」のように読み上げる (「対」にすると「つい」と読んでしまう場合がある)
+    def convert_time_or_aspect(match: re.Match[str]) -> str:
+        hours = int(match.group(1))
+        minutes = int(match.group(2))
+        seconds = int(match.group(3)) if match.group(3) else None
+
+        # 時刻として処理する条件をチェック
+        # 時刻らしさを判定：時が0-27の範囲で、分が2桁で表現されている
+        looks_like_time = 0 <= hours <= 27 and len(match.group(2)) == 2
+
+        if looks_like_time:
+            # 時刻として処理
+            result = f'{num2words(hours, lang="ja")}時'
+
+            # 分の処理：0分で秒がない場合は省略、秒がある場合は零分を追加
+            if minutes == 0:
+                if seconds is not None:
+                    result += "零分"
+            elif 0 <= minutes <= 59:
+                result += f'{num2words(minutes, lang="ja")}分'
+            else:
+                result += f'{num2words(minutes, lang="ja")}'
+
+            # 秒の処理
+            if seconds is not None:
+                if 0 <= seconds <= 59:
+                    result += f'{num2words(seconds, lang="ja")}秒'
+                else:
+                    result += f'{num2words(seconds, lang="ja")}'
+            return result
+        else:
+            # アスペクト比として処理
+            result = f'{num2words(match.group(1), lang="ja")}タイ{num2words(match.group(2), lang="ja")}'
+            if seconds is not None:
+                result += f'タイ{num2words(seconds, lang="ja")}'
+            return result
+
+    # 時刻パターンの処理（漢字で書かれた時分秒）
+    text = __TIME_PATTERN.sub(convert_time, text)
+
+    # 時刻またはアスペクト比パターンの処理（コロンで区切られた時分秒）
+    text = __ASPECT_PATTERN.sub(convert_time_or_aspect, text)
 
     # 指数表記の処理
     ## 稀にランダムな英数字 ID にマッチしたことで OverflowError が発生するが、続行に支障はないため無視する
