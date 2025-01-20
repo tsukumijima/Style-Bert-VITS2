@@ -32,9 +32,7 @@ __SYMBOL_REPLACE_MAP = {
     "、": ",",
     "$": ".",
     ":": ",",
-    "：": ",",
     ";": ",",
-    "；": ",",
     "“": "'",
     "”": "'",
     '"': "'",
@@ -204,7 +202,8 @@ __SYMBOL_YOMI_MAP = {
 __SYMBOL_YOMI_PATTERN = re.compile("|".join(re.escape(p) for p in __SYMBOL_YOMI_MAP))
 
 # 単位の正規化マップ
-# 単位は OpenJTalk 側でも変換してくれるので、単位が1文字で読み間違いが発生しやすい L, m, g, B とその関連単位のみ変換する
+# 単位は OpenJTalk 側で変換してくれるものもあるため、単位が1文字で読み間違いが発生しやすい L, m, g, B と、
+# OpenJTalk では変換できない単位のみ変換する
 __UNIT_MAP = {
     "kL": "キロリットル",
     "L": "リットル",
@@ -229,10 +228,17 @@ __UNIT_MAP = {
     "kB": "キロバイト",
     "KiB": "キビバイト",
     "B": "バイト",
+    "t": "トン",
+    "d": "日",
+    "h": "時間",
+    "s": "秒",
+    "ms": "ミリ秒",
+    "μs": "マイクロ秒",
+    "ns": "ナノ秒",
 }
 # 単位の正規化パターン
 __UNIT_PATTERN = re.compile(
-    r"([0-9.]*[0-9])\s*((k|d|m)?L|(k|c|m)?m|(k|m)?g|PB|PiB|TB|TiB|GB|GiB|MB|MiB|KB|kB|KiB|B)(?=[^a-zA-Z]|$)"
+    r"([0-9.]*[0-9])\s*((k|d|m)?L|(k|c|m)?m|(k|m)?g|PB|PiB|TB|TiB|GB|GiB|MB|MiB|KB|kB|KiB|B|t|d|h|s|ms|μs|ns)(?=[^a-zA-Z]|$)"
 )
 
 # 句読点等の正規化パターン
@@ -891,6 +897,6 @@ def replace_punctuation(text: str) -> str:
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
-        print(f"Usage: python -m style_bert_vits2.nlp.japanese.normalizer <text>")
+        print("Usage: python -m style_bert_vits2.nlp.japanese.normalizer <text>")
         sys.exit(1)
     print(normalize_text(sys.argv[1]))
