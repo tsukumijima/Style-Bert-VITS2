@@ -111,10 +111,7 @@ __SYMBOL_YOMI_MAP = {
     "≡": "合同",
     "≢": "合同でない",
     # 比較演算子
-    "<": "小なり",
-    "＜": "小なり",
-    ">": "大なり",
-    "＞": "大なり",
+    # 山括弧は装飾的に使われることも多いため、別途数式や比較演算子として使われる場合のみ読み上げる
     "≤": "小なりイコール",
     "≦": "小なりイコール",
     "⩽": "小なりイコール",
@@ -138,6 +135,8 @@ __SYMBOL_YOMI_MAP = {
     "∓": "マイナスプラス",
     "№": "ナンバー",
     "℡": "電話番号",
+    "〒": "郵便番号",
+    "〶": "郵便番号",
     "㏍": "株式会社",
     "℠": "エスエム",
     # "™": "ティーエム",
@@ -380,6 +379,9 @@ __NUMBER_RANGE_PATTERN = re.compile(r"(\d+)\s*[〜~～]\s*(\d+)")
 __NUMBER_MATH_PATTERN = re.compile(
     r"(\d+)\s*([+＋➕\-−－ー➖×✖⨯÷➗*＊])\s*(\d+)\s*=\s*(\d+)"
 )
+__NUMBER_COMPARISON_PATTERN = re.compile(
+    r"(\d+)\s*([<＜>＞])\s*(\d+)"
+)
 __DATE_EXPAND_PATTERN = re.compile(r"\d{2}[-/]\d{1,2}[-/]\d{1,2}")
 __DATE_PATTERN = re.compile(
     r"(?<!\d)(?:\d{4}[-/][0-9]{1,2}[-/][0-9]{1,2}|\d{2}[-/][0-9]{1,2}[-/][0-9]{1,2}|[0-9]{1,2}/[0-9]{1,2})(?!\d)"
@@ -473,6 +475,12 @@ def __replace_symbols(text: str) -> str:
         # 記号を日本語に変換
         url = url.replace("https://", "エイチティーティーピーエス,")
         url = url.replace("http://", "エイチティーティーピー,")
+        url = url.replace(".com", "ドットコム,")
+        url = url.replace(".net", "ドットネット,")
+        url = url.replace(".org", "ドットオーグ,")
+        url = url.replace(".info", "ドットインフォ,")
+        url = url.replace(".jp", "ドットジェイピー,")
+        url = url.replace(".co.jp", "ドットシーオードットジェイピー,")
         url = url.replace(".", "ドット")
         url = url.replace("/", ",スラッシュ,")
         url = url.replace("?", ",クエスチョン,")
@@ -507,6 +515,7 @@ def __replace_symbols(text: str) -> str:
     text = __NUMBER_RANGE_PATTERN.sub(lambda m: f"{m.group(1)}から{m.group(2)}", text)
 
     def get_symbol_yomi(symbol: str) -> str:
+        # 読み間違いを防ぐため、数式の間に挟まれた場合にのみ下記の通り読み上げる
         if symbol in ("-", "−", "－", "ー"):
             return "マイナス"
         if symbol in ("*", "＊"):
@@ -516,6 +525,20 @@ def __replace_symbols(text: str) -> str:
     # 数式の読み方を改善
     text = __NUMBER_MATH_PATTERN.sub(
         lambda m: f"{m.group(1)}{get_symbol_yomi(m.group(2))}{m.group(3)}イコール{m.group(4)}",
+        text,
+    )
+
+    def get_comparison_yomi(symbol: str) -> str:
+        # 比較演算子の読み方を定義
+        if symbol in ("<", "＜"):
+            return "小なり"
+        if symbol in (">", "＞"):
+            return "大なり"
+        return symbol
+
+    # 数字に挟まれた比較演算子の読み方を改善
+    text = __NUMBER_COMPARISON_PATTERN.sub(
+        lambda m: f"{m.group(1)}{get_comparison_yomi(m.group(2))}{m.group(3)}",
         text,
     )
 
