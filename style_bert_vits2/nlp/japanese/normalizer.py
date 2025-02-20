@@ -5,6 +5,7 @@ from datetime import datetime
 
 from num2words import num2words
 
+from style_bert_vits2.logging import logger
 from style_bert_vits2.nlp.japanese.katakana_map import KATAKANA_MAP
 from style_bert_vits2.nlp.japanese.romkan import to_katakana
 from style_bert_vits2.nlp.symbols import PUNCTUATIONS
@@ -379,9 +380,7 @@ __NUMBER_RANGE_PATTERN = re.compile(r"(\d+)\s*[〜~～]\s*(\d+)")
 __NUMBER_MATH_PATTERN = re.compile(
     r"(\d+)\s*([+＋➕\-−－ー➖×✖⨯÷➗*＊])\s*(\d+)\s*=\s*(\d+)"
 )
-__NUMBER_COMPARISON_PATTERN = re.compile(
-    r"(\d+)\s*([<＜>＞])\s*(\d+)"
-)
+__NUMBER_COMPARISON_PATTERN = re.compile(r"(\d+)\s*([<＜>＞])\s*(\d+)")
 __DATE_EXPAND_PATTERN = re.compile(r"\d{2}[-/]\d{1,2}[-/]\d{1,2}")
 __DATE_PATTERN = re.compile(
     r"(?<!\d)(?:\d{4}[-/][0-9]{1,2}[-/][0-9]{1,2}|\d{2}[-/][0-9]{1,2}[-/][0-9]{1,2}|[0-9]{1,2}/[0-9]{1,2})(?!\d)"
@@ -706,6 +705,59 @@ def __convert_english_to_katakana(text: str) -> str:
         str: 変換されたテキスト
     """
 
+    def try_split_convert(word: str) -> str | None:
+        """
+        単語を2つに分割してカタカナ変換を試みる。
+        中央から開始して左右に分割位置を移動しながら、両方の部分が辞書に存在する分割を探す。
+
+        Args:
+            word (str): 変換する単語
+
+        Returns:
+            str | None: 変換に成功した場合はカタカナ文字列、失敗した場合は None
+        """
+
+        # 単語を小文字に変換
+        word = word.lower()
+        n = len(word)
+
+        # 分割位置の候補を生成（中央から左右に広がる順）
+        center = n // 2
+        # 中央から左右に移動する分割位置のリストを生成
+        # 例: 長さ6の単語の場合、[3, 2, 4, 1, 5] の順で試す
+        positions = []
+        left = center
+        right = center + 1
+        while left > 0 or right < n:
+            if left > 0:
+                positions.append(left)
+                left -= 1
+            if right < n:
+                positions.append(right)
+                right += 1
+
+        # 各分割位置で試行
+        for pos in positions:
+            part1 = word[:pos]
+            part2 = word[pos:]
+
+            # 両方の部分が辞書に存在するかチェック
+            kata1 = KATAKANA_MAP.get(part1)
+            if kata1 is None:
+                continue
+
+            kata2 = KATAKANA_MAP.get(part2)
+            if kata2 is None:
+                continue
+
+            # 両方見つかった場合、カタカナを連結して返す
+            logger.debug(
+                f"Split conversion succeeded: {word} -> {part1}({kata1}) + {part2}({kata2})"
+            )
+            return kata1 + kata2
+
+        return None
+
     def split_camel_case(word: str) -> list[str]:
         """
         CamelCase の単語を分割する。
@@ -895,6 +947,12 @@ def __convert_english_to_katakana(text: str) -> str:
             # 全文字を完全にカタカナに変換できた場合のみ採用
             if not any(__ALPHABET_PATTERN.match(c) for c in katakana):
                 return katakana
+
+        # 9. 最終手段として、2単語への分割を試みる
+        if len(word) >= 4:  # 最低4文字以上の単語のみを対象とする
+            split_result = try_split_convert(word)
+            if split_result is not None:
+                return split_result
 
         # 上記以外は元の単語を返す (pyopenjtalk 側でアルファベット読みされる)
         return word
