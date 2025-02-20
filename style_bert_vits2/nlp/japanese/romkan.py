@@ -502,8 +502,8 @@ def normalize_double_n(str: str) -> str:
     # Remove unnecessary apostrophes
     str = re.sub("n'(?=[^aiueoyn]|$)", "n", str)
 
-    # Convert non-initial 'h' to long vowel mark
-    str = re.sub(r"(?<!^)([aiueo])h", r"\1ー", str)
+    # Convert non-initial 'h' to long vowel mark only if not followed by a vowel
+    str = re.sub(r"(?<!^)([aiueo])h(?![aiueo])", r"\1ー", str)
 
     return str
 
