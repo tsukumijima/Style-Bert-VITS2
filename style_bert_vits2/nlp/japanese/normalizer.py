@@ -5,7 +5,6 @@ from datetime import datetime
 
 from num2words import num2words
 
-from style_bert_vits2.logging import logger
 from style_bert_vits2.nlp.japanese.katakana_map import KATAKANA_MAP
 from style_bert_vits2.nlp.japanese.romkan import to_katakana
 from style_bert_vits2.nlp.symbols import PUNCTUATIONS
@@ -879,9 +878,9 @@ def __convert_english_to_katakana(text: str) -> str:
                 continue
 
             # 両方見つかった場合、カタカナを連結して返す
-            logger.debug(
-                f"Split conversion succeeded: {word} -> {part1}({kata1}) + {part2}({kata2})"
-            )
+            # print(
+            #     f"Split conversion succeeded: {word} -> {part1}({kata1}) + {part2}({kata2})"
+            # )
             return kata1 + kata2
 
         return None
