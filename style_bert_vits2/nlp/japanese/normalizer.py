@@ -24,8 +24,8 @@ __SYMBOL_REPLACE_MAP = {
     "…": "...",
     "···": "...",
     "・・・": "...",
-    "/": ".",
-    "／": ".",
+    "/": "/",  # スラッシュは pyopenjtalk での形態素解析処理で重要なので正規化後も残す
+    "／": "/",  # スラッシュは pyopenjtalk での形態素解析処理で重要なので正規化後も残す
     "\\": ".",
     "＼": ".",
     "·": ",",
@@ -246,13 +246,12 @@ __SYMBOL_YOMI_PATTERN = re.compile("|".join(re.escape(p) for p in __SYMBOL_YOMI_
 # OpenJTalk では変換できない単位のみ変換する
 __UNIT_MAP = {
     "kL": "キロリットル",
-    "L": "リットル",
     "dL": "デシリットル",
     "mL": "ミリリットル",
+    "L": "リットル",
     "km": "キロメートル",
     "km2": "平方キロメートル",
     "km3": "立方キロメートル",
-    "m": "メートル",
     "m2": "平方メートル",
     "m3": "立方メートル",
     "cm": "センチメートル",
@@ -261,9 +260,10 @@ __UNIT_MAP = {
     "mm": "ミリメートル",
     "mm2": "平方ミリメートル",
     "mm3": "立方ミリメートル",
+    "m": "メートル",
     "kg": "キログラム",
-    "g": "グラム",
     "mg": "ミリグラム",
+    "g": "グラム",
     "PB": "ペタバイト",
     "PiB": "ペビバイト",
     "TB": "テラバイト",
@@ -286,10 +286,10 @@ __UNIT_MAP = {
 }
 # 単位の正規化パターン
 __UNIT_PATTERN = re.compile(
-    r"([0-9.]*[0-9])\s*((k|d|m)?L|(?:k|c|m)m[23]?|m[23]?|(k|m)?g|PB|PiB|TB|TiB|GB|GiB|MB|MiB|KB|kB|KiB|B|t|d|h|s|ms|μs|ns)(?=[^a-zA-Z]|$)"
+    r"([0-9.]*[0-9](?:[eE][-+]?[0-9]+)?)\s*((k|d|m)?L|(?:k|c|m)m[23]?|m[23]?|m(?![a-zA-Z])|(?:k|m)?g|PB|PiB|TB|TiB|GB|GiB|MB|MiB|KB|kB|KiB|B|t|d|h|s|ms|μs|ns)(?=[^a-zA-Z]|$)"
 )
 
-# 句読点等の正規化パターン
+# 正規化後に残す文字種を表すパターン
 __PUNCTUATION_CLEANUP_PATTERN = re.compile(
     # ↓ ひらがな、カタカナ、漢字
     r"[^\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF\u3400-\u4DBF\u3005"
@@ -304,7 +304,8 @@ __PUNCTUATION_CLEANUP_PATTERN = re.compile(
     # ↓ ギリシャ文字
     + r"\u0370-\u03FF\u1F00-\u1FFF"
     # ↓ "!", "?", "…", ",", ".", "'", "-", 但し`…`はすでに`...`に変換されている
-    + "".join(PUNCTUATIONS) + r"]+",  # fmt: skip
+    # スラッシュは pyopenjtalk での形態素解析処理で重要なので、例外的に正規化後も残す (g2p 処理内で "." に変換される)
+    + "".join(re.escape(p) for p in (PUNCTUATIONS + ["/"])) + r"]+"  # fmt: skip
 )
 
 # 数字・通貨記号の正規化パターン
@@ -348,7 +349,7 @@ __CURRENCY_MAP = {
     "₾": "ラリ",  # ジョージア・ラリ
 }
 __CURRENCY_PATTERN = re.compile(
-    r"([$¥€£₩₹₽₺฿₱₴₫₪₦₡₿﷼₠₢₣₤₥₧₨₭₮₯₰₲₳₵₶₷₸₻₼₾])([0-9.]*[0-9])"
+    r"([$¥€£₩₹₽₺฿₱₴₫₪₦₡₿﷼₠₢₣₤₥₧₨₭₮₯₰₲₳₵₶₷₸₻₼₾])([0-9.]*[0-9])|([0-9.]*[0-9])([$¥€£₩₹₽₺฿₱₴₫₪₦₡₿﷼₠₢₣₤₥₧₨₭₮₯₰₲₳₵₶₷₸₻₼₾])"
 )
 __NUMBER_PATTERN = re.compile(r"[0-9]+(\.[0-9]+)?")
 __NUMBER_WITH_SEPARATOR_PATTERN = re.compile("[0-9]{1,3}(,[0-9]{3})+")
@@ -376,14 +377,17 @@ __URL_PATTERN = re.compile(
     r"https?://[-a-zA-Z0-9.]+(?:/[-a-zA-Z0-9._~:/?#\[\]@!$&\'()*+,;=]*)?"
 )
 __EMAIL_PATTERN = re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")
-__NUMBER_RANGE_PATTERN = re.compile(r"(\d+)\s*[〜~～]\s*(\d+)")
+__NUMBER_RANGE_PATTERN = re.compile(
+    r"(\d+(?:\.\d+)?(?:\s*[a-zA-Z]+)?)\s*[〜~～ー]\s*(\d+(?:\.\d+)?(?:\s*[a-zA-Z]+)?)"
+)
 __NUMBER_MATH_PATTERN = re.compile(
     r"(\d+)\s*([+＋➕\-−－ー➖×✖⨯÷➗*＊])\s*(\d+)\s*=\s*(\d+)"
 )
 __NUMBER_COMPARISON_PATTERN = re.compile(r"(\d+)\s*([<＜>＞])\s*(\d+)")
-__DATE_EXPAND_PATTERN = re.compile(r"\d{2}[-/]\d{1,2}[-/]\d{1,2}")
+__YEAR_MONTH_PATTERN = re.compile(r"(?<!\d)(18|19|20|21|22)(\d{2})/([0-1]?\d)(?!\d)")
+__DATE_EXPAND_PATTERN = re.compile(r"\d{2}[-/\.]\d{1,2}[-/\.]\d{1,2}")
 __DATE_PATTERN = re.compile(
-    r"(?<!\d)(?:\d{4}[-/][0-9]{1,2}[-/][0-9]{1,2}|\d{2}[-/][0-9]{1,2}[-/][0-9]{1,2}|[0-9]{1,2}/[0-9]{1,2})(?!\d)"
+    r"(?<!\d)(?:\d{4}[-/\.][0-9]{1,2}[-/\.][0-9]{1,2}|\d{2}[-/\.][0-9]{1,2}[-/\.][0-9]{1,2}|[0-9]{1,2}/[0-9]{1,2}|\d{4}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01]))(?!\d)"
 )
 __FRACTION_PATTERN = re.compile(r"(\d+)[/／](\d+)")
 __EXPONENT_PATTERN = re.compile(r"(\d+(?:\.\d+)?)[eE]([-+]?\d+)")
@@ -410,6 +414,7 @@ def normalize_text(text: str) -> str:
     - `!` （感嘆符`！`）
     - `'` （`「`や`」`等）
     - `-` （`―`（ダッシュ、長音記号ではない）や`-`等）
+    - `/` （スラッシュは pyopenjtalk での形態素解析処理で重要なので、例外的に正規化後も残し、g2p 処理内で "." に変換される）
 
     注意点:
     - 三点リーダー`…`は`...`に変換される（`なるほど…。` → `なるほど....`）
@@ -430,6 +435,9 @@ def normalize_text(text: str) -> str:
     # 半角スペースが入る箇所で止めて読むかはケースバイケースなため、変換は行わない
     # Unicode 正規化でスペースが全て半角に変換される前に実行する必要がある
     res = res.replace("\u3000", "。")
+
+    # ゼロ幅スペースを削除
+    res = res.replace("\u200b", "")
 
     res = unicodedata.normalize("NFKC", res)  # ここでアルファベットは半角になる
 
@@ -453,6 +461,8 @@ def normalize_text(text: str) -> str:
 def __replace_symbols(text: str) -> str:
     """
     記号類の読みを適切に変換する。
+    この関数は正規化処理の最初に実行する必要がある（さもなければ英数字のカタカナ変換処理の影響を受けてしまう）。
+    処理順序によって結果が変わるので無闇に並び替えてはいけない。
 
     Args:
         text (str): 正規化するテキスト
@@ -472,15 +482,16 @@ def __replace_symbols(text: str) -> str:
     def convert_url_symbols(match: re.Match[str]) -> str:
         url = match.group(0)
         # 記号を日本語に変換
+        # コンマの位置は実際に読み上げた際にちょうど良いテンポ感になるように意図的につけたりつけなかったりしている
         url = url.replace("https://", "エイチティーティーピーエス,")
         url = url.replace("http://", "エイチティーティーピー,")
         url = url.replace(".com", "ドットコム,")
         url = url.replace(".net", "ドットネット,")
         url = url.replace(".org", "ドットオーグ,")
         url = url.replace(".info", "ドットインフォ,")
-        url = url.replace(".jp", "ドットジェイピー,")
         url = url.replace(".co.jp", "ドットシーオードットジェイピー,")
-        url = url.replace(".", "ドット")
+        url = url.replace(".jp", "ドットジェイピー,")
+        url = url.replace(".", "ドット,")
         url = url.replace("/", ",スラッシュ,")
         url = url.replace("?", ",クエスチョン,")
         url = url.replace("&", ",アンド,")
@@ -488,11 +499,11 @@ def __replace_symbols(text: str) -> str:
         url = url.replace("_", "アンダーバー")
         url = url.replace("-", "ハイフン")
         url = url.replace("#", "シャープ")
-        url = url.replace("@", "アットマーク")
+        url = url.replace("@", ",アットマーク,")
         url = url.replace(":", "コロン")
         url = url.replace("~", "チルダ")
         url = url.replace("+", "プラス")
-        return url
+        return url.rstrip(",").replace(",,", ",")
 
     # URL パターンの処理
     text = __URL_PATTERN.sub(convert_url_symbols, text)
@@ -500,18 +511,38 @@ def __replace_symbols(text: str) -> str:
     def convert_email_symbols(match: re.Match[str]) -> str:
         email = match.group(0)
         # 記号を日本語に変換
-        email = email.replace("@", ",アットマーク")
+        # コンマの位置は実際に読み上げた際にちょうど良いテンポ感になるように意図的につけたりつけなかったりしている
+        email = email.replace("@", ",アットマーク,")
+        email = email.replace(".com", "ドットコム")
+        email = email.replace(".net", "ドットネット")
+        email = email.replace(".org", "ドットオーグ")
+        email = email.replace(".info", "ドットインフォ")
+        email = email.replace(".co.jp", "ドットシーオードットジェイピー")
+        email = email.replace(".jp", "ドットジェイピー")
         email = email.replace(".", "ドット")
         email = email.replace("-", "ハイフン")
         email = email.replace("_", "アンダーバー")
         email = email.replace("+", "プラス")
-        return email
+        return email.rstrip(",").replace(",,", ",")
 
     # メールアドレスパターンの処理
     text = __EMAIL_PATTERN.sub(convert_email_symbols, text)
 
-    # 数字と数字に挟まれた「〜」を「から」に置換
-    text = __NUMBER_RANGE_PATTERN.sub(lambda m: f"{m.group(1)}から{m.group(2)}", text)
+    # 数字の範囲を処理
+    def convert_range(match: re.Match[str]) -> str:
+        start = match.group(1)
+        end = match.group(2)
+        # 単位を含む場合は単位も含めて変換
+        # __UNIT_MAP の単位に対応
+        for unit_abbr, unit_full in __UNIT_MAP.items():
+            if unit_abbr in start or unit_full in start:
+                # 省略形から完全な形に変換
+                converted_start = start.replace(unit_abbr, unit_full)
+                converted_end = end.replace(unit_abbr, unit_full)
+                return f"{converted_start}から{converted_end}"
+        return f"{start}から{end}"
+
+    text = __NUMBER_RANGE_PATTERN.sub(convert_range, text)
 
     def get_symbol_yomi(symbol: str) -> str:
         # 読み間違いを防ぐため、数式の間に挟まれた場合にのみ下記の通り読み上げる
@@ -521,12 +552,6 @@ def __replace_symbols(text: str) -> str:
             return "かける"
         return __SYMBOL_YOMI_MAP.get(symbol, symbol)
 
-    # 数式の読み方を改善
-    text = __NUMBER_MATH_PATTERN.sub(
-        lambda m: f"{m.group(1)}{get_symbol_yomi(m.group(2))}{m.group(3)}イコール{m.group(4)}",
-        text,
-    )
-
     def get_comparison_yomi(symbol: str) -> str:
         # 比較演算子の読み方を定義
         if symbol in ("<", "＜"):
@@ -535,22 +560,48 @@ def __replace_symbols(text: str) -> str:
             return "大なり"
         return symbol
 
-    # 数字に挟まれた比較演算子の読み方を改善
-    text = __NUMBER_COMPARISON_PATTERN.sub(
-        lambda m: f"{m.group(1)}{get_comparison_yomi(m.group(2))}{m.group(3)}",
-        text,
+    # 数式の処理（括弧内の数式も含む）
+    def process_math_expression(text: str) -> str:
+        # 数式を処理
+        text = __NUMBER_MATH_PATTERN.sub(
+            lambda m: f"{m.group(1)}{get_symbol_yomi(m.group(2))}{m.group(3)}イコール{m.group(4)}",
+            text,
+        )
+        # 比較演算子を処理
+        text = __NUMBER_COMPARISON_PATTERN.sub(
+            lambda m: f"{m.group(1)}{get_comparison_yomi(m.group(2))}{m.group(3)}", text
+        )
+        return text
+
+    # 括弧内の数式を処理
+    text = re.sub(
+        r"\(([^()]*)\)", lambda m: f"'{process_math_expression(m.group(1))}'", text
     )
+    # 括弧外の数式も処理
+    text = process_math_expression(text)
 
     def date_to_words(match: re.Match[str]) -> str:
         date_str = match.group(0)
         try:
-            # 2桁の年を4桁に拡張する処理 (Y/m/d or Y-m-d の時のみ)
+            # 連続した数字形式（YYYYMMDD）の場合
+            if len(date_str) == 8 and date_str.isdigit():
+                try:
+                    date = datetime.strptime(date_str, "%Y%m%d")
+                    return f"{date.year}年{date.month}月{date.day}日"
+                except ValueError:
+                    pass
+
+            # 2桁の年を4桁に拡張する処理 (Y/m/d or Y-m-d or Y.m.d の時のみ)
             if __DATE_EXPAND_PATTERN.match(date_str):
-                # スラッシュまたはハイフンで分割して年部分を取得
+                # スラッシュまたはハイフンまたはドットで分割して年部分を取得
                 year_str = (
                     date_str.split("/")[0]
                     if "/" in date_str
-                    else date_str.split("-")[0]
+                    else (
+                        date_str.split("-")[0]
+                        if "-" in date_str
+                        else date_str.split(".")[0]
+                    )
                 )
                 if len(year_str) == 2:
                     # 50 以降は 1900 年代、49 以前は 2000 年代として扱う
@@ -558,8 +609,8 @@ def __replace_symbols(text: str) -> str:
                     year_prefix = "19" if int(year_str) >= 50 else "20"
                     date_str = year_prefix + date_str
 
-            # Y/m/d, Y-m-d, m/d のパターンを試す
-            for fmt in ["%Y/%m/%d", "%Y-%m-%d", "%m/%d"]:
+            # Y/m/d, Y-m-d, Y.m.d, m/d のパターンを試す
+            for fmt in ["%Y/%m/%d", "%Y-%m-%d", "%Y.%m.%d", "%m/%d"]:
                 try:
                     date = datetime.strptime(date_str, fmt)
                     if fmt == "%m/%d":
@@ -576,11 +627,29 @@ def __replace_symbols(text: str) -> str:
     # 日付パターンの変換
     text = __DATE_PATTERN.sub(date_to_words, text)
 
+    # 年/月形式の処理（1800-2200年の範囲で、かつ月が1-12の場合のみ）
+    def convert_year_month(match: re.Match[str]) -> str:
+        year = int(f"{match.group(1)}{match.group(2)}")
+        month = int(match.group(3))
+        # 月が1-12の範囲外の場合は分数として処理するため、元の文字列を返す
+        if not 1 <= month <= 12:
+            return match.group(0)
+        return f"{year}年{month}月"
+
+    # 年/月パターンの変換
+    text = __YEAR_MONTH_PATTERN.sub(convert_year_month, text)
+
     # 分数の処理
-    text = __FRACTION_PATTERN.sub(
-        lambda m: f'{num2words(m.group(2), lang="ja")}ぶんの{num2words(m.group(1), lang="ja")}',
-        text,
-    )
+    def convert_fraction(match: re.Match[str]) -> str:
+        try:
+            numerator = int(match.group(1))
+            denominator = int(match.group(2))
+            return f"{num2words(denominator, lang='ja')}ぶんの{num2words(numerator, lang='ja')}"
+        except ValueError:
+            return match.group(0)
+
+    # 分数パターンの変換
+    text = __FRACTION_PATTERN.sub(convert_fraction, text)
 
     # 時刻の処理（漢字で書かれた時分秒）
     def convert_time(match: re.Match[str]) -> str:
@@ -607,6 +676,9 @@ def __replace_symbols(text: str) -> str:
             else:
                 result += f'{num2words(seconds, lang="ja")}'
         return result
+
+    # 時刻パターンの処理（漢字で書かれた時分秒）
+    text = __TIME_PATTERN.sub(convert_time, text)
 
     # 時刻またはアスペクト比の処理
     # 時刻は 00:00:00 から 27:59:59 までの範囲であれば、漢数字に変換して「十四時五分三十秒」「二十四時」のように読み上げる
@@ -647,9 +719,6 @@ def __replace_symbols(text: str) -> str:
                 result += f'タイ{num2words(seconds, lang="ja")}'
             return result
 
-    # 時刻パターンの処理（漢字で書かれた時分秒）
-    text = __TIME_PATTERN.sub(convert_time, text)
-
     # 時刻またはアスペクト比パターンの処理（コロンで区切られた時分秒）
     text = __ASPECT_PATTERN.sub(convert_time_or_aspect, text)
 
@@ -685,9 +754,39 @@ def __convert_numbers_to_words(text: str) -> str:
         str: 変換されたテキスト
     """
 
-    res = __UNIT_PATTERN.sub(lambda m: m[1] + __UNIT_MAP.get(m[2], m[2]), text)
+    # 単位の変換（平方メートルなどの特殊な単位も含む）
+    def convert_unit(match: re.Match[str]) -> str:
+        number = match.group(1)
+        unit = match.group(2)
+        # 特殊な単位の処理
+        if unit.endswith("2"):
+            base_unit = unit[:-1]
+            if base_unit in __UNIT_MAP:
+                return f"{number}平方{__UNIT_MAP[base_unit]}"
+        elif unit.endswith("3"):
+            base_unit = unit[:-1]
+            if base_unit in __UNIT_MAP:
+                return f"{number}立方{__UNIT_MAP[base_unit]}"
+        # 指数表記の場合も単位変換を適用
+        if "e" in str(number).lower():
+            try:
+                num_str = num2words(float(number), lang="ja")
+                unit_str = __UNIT_MAP.get(unit, unit)
+                return f"{num_str}{unit_str}"
+            except (ValueError, OverflowError):
+                pass
+        return f"{number}{__UNIT_MAP.get(unit, unit)}"
+
+    res = __UNIT_PATTERN.sub(convert_unit, text)
     res = __NUMBER_WITH_SEPARATOR_PATTERN.sub(lambda m: m[0].replace(",", ""), res)
-    res = __CURRENCY_PATTERN.sub(lambda m: m[2] + __CURRENCY_MAP.get(m[1], m[1]), res)
+    res = __CURRENCY_PATTERN.sub(
+        lambda m: (
+            (m[2] + __CURRENCY_MAP.get(m[1], m[1]))
+            if m[1]
+            else (m[3] + __CURRENCY_MAP.get(m[4], m[4]))
+        ),
+        res,
+    )
 
     return res
 
@@ -949,7 +1048,8 @@ def __convert_english_to_katakana(text: str) -> str:
                 return katakana
 
         # 9. 最終手段として、2単語への分割を試みる
-        if len(word) >= 4:  # 最低4文字以上の単語のみを対象とする
+        # 最低4文字以上の単語のみ対象とし、全て大文字の単語の場合はこの処理を実行しない
+        if len(word) >= 4 and not word.isupper():
             split_result = try_split_convert(word)
             if split_result is not None:
                 return split_result

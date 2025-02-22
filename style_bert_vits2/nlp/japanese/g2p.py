@@ -141,8 +141,13 @@ def text_to_sep_kata(
         """
         assert yomi != "", f"Empty yomi: {word}"
         if yomi == "、":
+            # スラッシュは pyopenjtalk での形態素解析処理で重要なので例外的に正規化後の残しており、
+            # ここでスラッシュが返ってきている場合はスラッシュを含めた辞書エントリに引っ掛からなかったということなので、
+            # 通常通り "/" を "." 扱いで処理する
+            if word == "/":
+                yomi = "."
             # word は正規化されているので、`.`, `,`, `!`, `'`, `-`, `--` のいずれか
-            if not set(word).issubset(set(PUNCTUATIONS)):  # 記号繰り返しか判定
+            elif not set(word).issubset(set(PUNCTUATIONS)):  # 記号繰り返しか判定
                 # ここは pyopenjtalk が読めない文字等のときに起こる
                 ## 例外を送出する場合
                 if raise_yomi_error:
@@ -822,7 +827,7 @@ if __name__ == "__main__":
     from style_bert_vits2.nlp.japanese.normalizer import normalize_text
 
     if len(sys.argv) != 2:
-        print(f"Usage: python -m style_bert_vits2.nlp.japanese.g2p <text>")
+        print("Usage: python -m style_bert_vits2.nlp.japanese.g2p <text>")
         sys.exit(1)
     phones, tones, word2ph, sep_kata_with_joshi = g2p(normalize_text(sys.argv[1]))
     phone_tones = phone_tone2kata_tone(list(zip(phones, tones)))
