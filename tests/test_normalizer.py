@@ -24,17 +24,29 @@ def test_normalize_text_units():
     """単位関連の正規化のテスト"""
     # 基本的な単位
     assert normalize_text("100m") == "100メートル"
+    assert normalize_text("100cm") == "100センチメートル"
+    assert normalize_text("1000.19mm") == "1000.19ミリメートル"
     assert normalize_text("1km") == "1キロメートル"
     assert normalize_text("500mL") == "500ミリリットル"
     assert normalize_text("1L") == "1リットル"
+    assert normalize_text("1000.19kL") == "1000.19キロリットル"
+    assert normalize_text("1000.19mg") == "1000.19ミリグラム"
     assert normalize_text("100g") == "100グラム"
     assert normalize_text("2kg") == "2キログラム"
+    # スラッシュ付き単位（変換しない）
+    assert normalize_text("100m/s") == "100m/s"
+    assert normalize_text("100kL/m") == "100kL/m"
+    assert normalize_text("100g/㎥") == "100g/m3"
+    assert normalize_text("100km/h") == "100km/h"
     # データ容量
     assert normalize_text("1B") == "1バイト"
     assert normalize_text("1KB") == "1キロバイト"
     assert normalize_text("1MB") == "1メガバイト"
     assert normalize_text("1GB") == "1ギガバイト"
     assert normalize_text("1TB") == "1テラバイト"
+    assert normalize_text("1000.11MiB") == "1000.11メビバイト"
+    assert normalize_text("1000.11GiB") == "1000.11ギビバイト"
+    assert normalize_text("1000.11TiB") == "1000.11テビバイト"
     # 面積・体積
     assert normalize_text("100m2") == "100平方メートル"
     assert normalize_text("1km2") == "1平方キロメートル"
@@ -394,7 +406,9 @@ def test_normalize_text_english():
     assert normalize_text("YouTube") == "ユーチューブ"
     # 辞書にない単語の変換
     assert normalize_text("windsurfeditor") == "ウインドサーフエディター"
-    assert normalize_text("WINDSURFEDITOR") == "WINDSURFEDITOR"  # 全て大文字の場合は変換しない
+    assert (
+        normalize_text("WINDSURFEDITOR") == "WINDSURFEDITOR"
+    )  # 全て大文字の場合は変換しない
     assert normalize_text("DevinProgrammerAgents") == "デビンプログラマーエージェンツ"
 
 

@@ -286,7 +286,7 @@ __UNIT_MAP = {
 }
 # 単位の正規化パターン
 __UNIT_PATTERN = re.compile(
-    r"([0-9.]*[0-9](?:[eE][-+]?[0-9]+)?)\s*((k|d|m)?L|(?:k|c|m)m[23]?|m[23]?|m(?![a-zA-Z])|(?:k|m)?g|PB|PiB|TB|TiB|GB|GiB|MB|MiB|KB|kB|KiB|B|t|d|h|s|ms|μs|ns)(?=[^a-zA-Z]|$)"
+    r"([0-9.]*[0-9](?:[eE][-+]?[0-9]+)?)\s*((k|d|m)?L|(?:k|c|m)m[23]?|m[23]?|m(?![a-zA-Z])|(?:k|m)?g|PB|PiB|TB|TiB|GB|GiB|MB|MiB|KB|kB|KiB|B|t|d|h|s|ms|μs|ns)(?=[^a-zA-Z/]|$)"
 )
 
 # 正規化後に残す文字種を表すパターン
@@ -396,6 +396,11 @@ __EXPONENT_PATTERN = re.compile(r"(\d+(?:\.\d+)?)[eE]([-+]?\d+)")
 __ENGLISH_WORD_PATTERN = re.compile(r"[a-zA-Z0-9]")
 __ENGLISH_WORD_WITH_NUMBER_PATTERN = re.compile(r"^([a-zA-Z]+)([0-9]{1,2})$")
 __ALPHABET_PATTERN = re.compile(r"[a-zA-Z]")
+
+# CamelCase 分割から保護する単位パターン
+__PROTECTED_UNIT_PATTERN = re.compile(
+    r'^(\d+(?:\.\d+)?)?([KMGTPE]i?B|[kMGTPE]B)$'  # バイト単位系、小数点を含む数値にも対応
+)
 
 
 def normalize_text(text: str) -> str:
@@ -904,6 +909,22 @@ def __convert_english_to_katakana(text: str) -> str:
             str: カタカナに変換された単語
         """
 
+        # 保護対象の単位パターンをチェック
+        protected_match = __PROTECTED_UNIT_PATTERN.match(word)
+        if protected_match:
+            number = protected_match.group(1)
+            unit = protected_match.group(2)
+            # 単位を変換
+            unit_katakana = __UNIT_MAP.get(unit)
+            if unit_katakana:
+                if number:
+                    return f"{number}{unit_katakana}"
+                return unit_katakana
+            # 単位が辞書にない場合は元の単位をそのまま使用
+            if number:
+                return f"{number}{unit}"
+            return unit
+
         # 英単語の末尾に2桁以下の数字がつく場合の処理
         number_match = __ENGLISH_WORD_WITH_NUMBER_PATTERN.match(word)
         if number_match:
@@ -984,10 +1005,6 @@ def __convert_english_to_katakana(text: str) -> str:
 
                 return join_word.join(katakana_sub_words)
 
-        # 6. の処理を行う前に、先行して単位系の変換を終わらせておく
-        # さもなければ「MiB」が分割されてしまう
-        word = __UNIT_PATTERN.sub(lambda m: m[1] + __UNIT_MAP.get(m[2], m[2]), word)
-
         # 6. CamelCase の複合語を処理
         if any(c.isupper() for c in word[1:]):  # 2文字目以降に大文字が含まれる
             parts = split_camel_case(word)
@@ -1061,7 +1078,35 @@ def __convert_english_to_katakana(text: str) -> str:
     current_word = ""
     prev_char = ""
 
-    for i, char in enumerate(text):
+    # 敬称のパターンを定義（ピリオド付きと無しの両方）
+    title_patterns = [
+        (r'Mrs\.?', 'ミセス'),
+        (r'Mr\.?', 'ミスター'),
+        (r'Ms\.?', 'ミズ'),
+        (r'Mx\.?', 'ミクス'),
+        (r'Dr\.?', 'ドクター'),
+        (r'Esq\.?', 'エスク'),
+        (r'Jr\.?', 'ジュニア'),
+        (r'Sr\.?', 'シニア'),
+    ]
+
+    i = 0
+    while i < len(text):
+        # 敬称パターンのマッチを試みる
+        matched = False
+        for pattern, replacement in title_patterns:
+            match = re.match(pattern, text[i:])
+            if match:
+                words.append(replacement)
+                i += len(match.group(0))
+                matched = True
+                current_word = ""
+                break
+
+        if matched:
+            continue
+
+        char = text[i]
         next_char = text[i + 1] if i < len(text) - 1 else ""
 
         # 英数字または特定の記号であれば current_word に追加
@@ -1093,6 +1138,7 @@ def __convert_english_to_katakana(text: str) -> str:
             words.append(char)
 
         prev_char = char
+        i += 1
 
     # 最後の単語を処理
     if current_word:
