@@ -385,11 +385,13 @@ __NUMBER_MATH_PATTERN = re.compile(
 )
 __NUMBER_COMPARISON_PATTERN = re.compile(r"(\d+)\s*([<＜>＞])\s*(\d+)")
 __YEAR_MONTH_PATTERN = re.compile(r"(?<!\d)(18|19|20|21|22)(\d{2})/([0-1]?\d)(?!\d)")
+__FRACTION_PATTERN = re.compile(r"(\d+)[/／](\d+)")
+__ZERO_HOUR_PATTERN = re.compile(r"(?<![0-9])(午前|午後)?0時(?![0-9分]|間)")
+__WAREKI_PATTERN = re.compile(r"([RHS])(\d{1,2})\.(\d{1,2})\.(\d{1,2})")
 __DATE_EXPAND_PATTERN = re.compile(r"\d{2}[-/\.]\d{1,2}[-/\.]\d{1,2}")
 __DATE_PATTERN = re.compile(
     r"(?<!\d)(?:\d{4}[-/\.][0-9]{1,2}[-/\.][0-9]{1,2}|\d{2}[-/\.][0-9]{1,2}[-/\.][0-9]{1,2}|[0-9]{1,2}/[0-9]{1,2}|\d{4}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01]))(?!\d)"
 )
-__FRACTION_PATTERN = re.compile(r"(\d+)[/／](\d+)")
 __EXPONENT_PATTERN = re.compile(r"(\d+(?:\.\d+)?)[eE]([-+]?\d+)")
 
 # __convert_english_to_katakana() で使う正規表現パターン
@@ -399,7 +401,7 @@ __ALPHABET_PATTERN = re.compile(r"[a-zA-Z]")
 
 # CamelCase 分割から保護する単位パターン
 __PROTECTED_UNIT_PATTERN = re.compile(
-    r'^(\d+(?:\.\d+)?)?([KMGTPE]i?B|[kMGTPE]B)$'  # バイト単位系、小数点を含む数値にも対応
+    r"^(\d+(?:\.\d+)?)?([KMGTPE]i?B|[kMGTPE]B)$"  # バイト単位系、小数点を含む数値にも対応
 )
 
 
@@ -476,7 +478,7 @@ def __replace_symbols(text: str) -> str:
         str: 正規化されたテキスト
     """
 
-    # 年月日のゼロ埋めを除去
+    # 月・日・時・分・秒のゼロ埋めを除去
     text = __DATE_ZERO_PADDING_PATTERN.sub(r"\1", text)
 
     # 括弧内の曜日表記を変換（日付の後にある場合のみ）
@@ -565,25 +567,44 @@ def __replace_symbols(text: str) -> str:
             return "大なり"
         return symbol
 
-    # 数式の処理（括弧内の数式も含む）
-    def process_math_expression(text: str) -> str:
-        # 数式を処理
-        text = __NUMBER_MATH_PATTERN.sub(
-            lambda m: f"{m.group(1)}{get_symbol_yomi(m.group(2))}{m.group(3)}イコール{m.group(4)}",
-            text,
-        )
-        # 比較演算子を処理
-        text = __NUMBER_COMPARISON_PATTERN.sub(
-            lambda m: f"{m.group(1)}{get_comparison_yomi(m.group(2))}{m.group(3)}", text
-        )
-        return text
-
-    # 括弧内の数式を処理
-    text = re.sub(
-        r"\(([^()]*)\)", lambda m: f"'{process_math_expression(m.group(1))}'", text
+    # 数式を処理
+    text = __NUMBER_MATH_PATTERN.sub(
+        lambda m: f"{m.group(1)}{get_symbol_yomi(m.group(2))}{m.group(3)}イコール{m.group(4)}",
+        text,
     )
-    # 括弧外の数式も処理
-    text = process_math_expression(text)
+    # 比較演算子を処理
+    text = __NUMBER_COMPARISON_PATTERN.sub(
+        lambda m: f"{m.group(1)}{get_comparison_yomi(m.group(2))}{m.group(3)}", text
+    )
+
+    # 和暦の省略表記を変換
+    def convert_wareki(match: re.Match[str]) -> str:
+        era = match.group(1)  # R/H/S
+        year = int(match.group(2))  # 年
+        month = int(match.group(3))  # 月
+        day = int(match.group(4))  # 日
+        # 年の範囲チェック（1-99）
+        if not 1 <= year <= 99:
+            return match.group(0)
+        # 月の範囲チェック（1-12）
+        if not 1 <= month <= 12:
+            return match.group(0)
+        # 日の範囲チェック（1-31）
+        if not 1 <= day <= 31:
+            return match.group(0)
+        # 和暦の変換
+        era_map = {
+            "R": "令和",
+            "H": "平成",
+            "S": "昭和",
+        }
+        if era in era_map:
+            return f"{era_map[era]}{year}年{month}月{day}日"
+        return match.group(0)
+
+    # 和暦の省略表記のパターン
+    # R6.1.1, H31.4.30, S64.1.7 などにマッチ
+    text = __WAREKI_PATTERN.sub(convert_wareki, text)
 
     def date_to_words(match: re.Match[str]) -> str:
         date_str = match.group(0)
@@ -655,6 +676,9 @@ def __replace_symbols(text: str) -> str:
 
     # 分数パターンの変換
     text = __FRACTION_PATTERN.sub(convert_fraction, text)
+
+    # 単独の0時を零時に変換
+    text = __ZERO_HOUR_PATTERN.sub(lambda m: f'{m.group(1) or ""}零時', text)
 
     # 時刻の処理（漢字で書かれた時分秒）
     def convert_time(match: re.Match[str]) -> str:
@@ -1080,14 +1104,14 @@ def __convert_english_to_katakana(text: str) -> str:
 
     # 敬称のパターンを定義（ピリオド付きと無しの両方）
     title_patterns = [
-        (r'Mrs\.?', 'ミセス'),
-        (r'Mr\.?', 'ミスター'),
-        (r'Ms\.?', 'ミズ'),
-        (r'Mx\.?', 'ミクス'),
-        (r'Dr\.?', 'ドクター'),
-        (r'Esq\.?', 'エスク'),
-        (r'Jr\.?', 'ジュニア'),
-        (r'Sr\.?', 'シニア'),
+        (r"Mrs\.?", "ミセス"),
+        (r"Mr\.?", "ミスター"),
+        (r"Ms\.?", "ミズ"),
+        (r"Mx\.?", "ミクス"),
+        (r"Dr\.?", "ドクター"),
+        (r"Esq\.?", "エスク"),
+        (r"Jr\.?", "ジュニア"),
+        (r"Sr\.?", "シニア"),
     ]
 
     i = 0

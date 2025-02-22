@@ -164,6 +164,28 @@ def test_normalize_text_dates():
     # 区切り文字のバリエーション
     assert normalize_text("2024.01.01") == "2024年1月1日"
     assert normalize_text("20240101") == "2024年1月1日"
+    assert normalize_text("19640820") == "1964年8月20日"
+    # 省略表記の和暦
+    assert normalize_text("R6.1.1") == "令和6年1月1日"
+    assert normalize_text("R6.01.01") == "令和6年1月1日"
+    assert normalize_text("H31.4.30") == "平成31年4月30日"
+    assert normalize_text("H31.04.30") == "平成31年4月30日"
+    assert normalize_text("S64.1.7") == "昭和64年1月7日"
+    assert normalize_text("S64.01.07") == "昭和64年1月7日"
+    assert normalize_text("S47.12.31") == "昭和47年12月31日"
+    # 零時チェック
+    assert normalize_text("午前00時") == "午前零時"
+    assert normalize_text("午後00時") == "午後零時"
+    assert normalize_text("午前00時00分") == "午前零時"
+    assert normalize_text("午後00時00分") == "午後零時"
+    assert normalize_text("午前00時00分00秒") == "午前零時零分零秒"
+    assert normalize_text("午後00時00分00秒") == "午後零時零分零秒"
+    assert normalize_text("今日は0時に就寝します") == "今日は零時に就寝します"
+    assert normalize_text("今日は00時に就寝します") == "今日は零時に就寝します"
+    assert (
+        normalize_text("今日は0時間勉強した") == "今日は0時間勉強した"
+    )  # 変換されない
+    assert normalize_text("1000時間勉強した") == "1000時間勉強した"  # 変換されない
     # 異常な日付
     assert (
         normalize_text("2024/13/01") == "十三ぶんの二千二十四/01"
@@ -229,6 +251,14 @@ def test_normalize_text_dates():
     assert normalize_text("05年01月には") == "05年1月には"
     assert normalize_text("09-01-03 24:34") == "2009年1月3日二十四時三十四分"
     assert normalize_text("87-01-03 24:34") == "1987年1月3日二十四時三十四分"
+    assert normalize_text("明治45年07月30日") == "明治45年7月30日"
+    assert normalize_text("大正15年12月25日") == "大正15年12月25日"
+    assert normalize_text("昭和64年01月07日") == "昭和64年1月7日"
+    assert normalize_text("平成31年04月30日") == "平成31年4月30日"
+    assert normalize_text("令和05年12月31日") == "令和05年12月31日"
+    assert normalize_text("西暦2024年1月1日") == "西暦2024年1月1日"
+    assert normalize_text("AD2024") == "エーディー2024"
+    assert normalize_text("BC356") == "ビーシー356"
 
 
 def test_normalize_text_time():
@@ -335,6 +365,16 @@ def test_normalize_text_time():
     assert normalize_text("24:00:00") == "二十四時零分零秒"
     assert normalize_text("24:00") == "二十四時"
     assert normalize_text("27:59:00") == "二十七時五十九分零秒"
+    assert normalize_text("00:00:00.123") == "零時零分零秒.123"
+    assert normalize_text("12:00 PM") == "十二時ピーエム"
+    assert normalize_text("12:00 AM") == "十二時エーエム"
+    assert normalize_text("深夜03時") == "深夜3時"
+    assert normalize_text("未明04時") == "未明4時"
+    assert normalize_text("早朝05時") == "早朝5時"
+    assert normalize_text("夜09時") == "夜9時"
+    assert normalize_text("正午") == "正午"
+    assert normalize_text("正午12時") == "正午12時"
+    assert normalize_text("0:00:00") == "零時零分零秒"
 
 
 def test_normalize_text_fractions():
@@ -410,6 +450,21 @@ def test_normalize_text_english():
         normalize_text("WINDSURFEDITOR") == "WINDSURFEDITOR"
     )  # 全て大文字の場合は変換しない
     assert normalize_text("DevinProgrammerAgents") == "デビンプログラマーエージェンツ"
+    # 敬称の処理
+    assert normalize_text("Mr. John") == "ミスタージョン"
+    assert normalize_text("Mrs. Smith") == "ミセススミス"
+    assert normalize_text("Ms. Jane") == "ミズジェーン"
+    assert normalize_text("Dr. Brown") == "ドクターブラウン"
+    assert normalize_text("John Smith Jr.") == "ジョンスミスジュニア"
+    assert normalize_text("John Smith Sr.") == "ジョンスミスシニア"
+    assert normalize_text("Mr Smith") == "ミスタースミス"  # ピリオドなし
+    assert normalize_text("Dr Brown") == "ドクターブラウン"  # ピリオドなし
+    assert normalize_text("Mr. and Mrs. Smith") == "ミスターアンドミセススミス"
+    assert normalize_text("Dr. Smith Jr.") == "ドクタースミスジュニア"
+    assert (
+        normalize_text("Mr. John Smith Jr. PhD")
+        == "ミスタージョンスミスジュニアピーエイチディー"
+    )
 
 
 def test_normalize_text_mathematical():
@@ -596,9 +651,9 @@ def test_normalize_text_complex():
     )
     assert (
         normalize_text(
-            "株式会社テスト(担当：山田)様、10/1(月)15:00〜17:00にWeb会議(https://meet.example.com/test)を設定しました。"
+            "株式会社Deeptest(担当：山田)様、10/1(月)15:00〜17:00にWeb会議(https://meet.example.com/test)を設定しました。"
         )
-        == "株式会社テスト'担当,山田'様,10月1日月曜日十五時から十七時にウェブ会議'エイチティーティーピーエス,ミートドット,イグザンプルドットコム,スラッシュ,test'を設定しました."
+        == "株式会社ディープテスト'担当,山田'様,10月1日月曜日十五時から十七時にウェブ会議'エイチティーティーピーエス,ミートドット,イグザンプルドットコム,スラッシュ,テスト'を設定しました."
     )
     assert (
         normalize_text(
@@ -616,7 +671,7 @@ def test_normalize_text_complex():
         normalize_text(
             "JavaScriptでArray.prototype.map()を使用し、配列の要素を2倍にする処理を1/100秒で実行。"
         )
-        == "ジャバスクリプトでアレイプロトタイプmap''を使用し,配列の要素を2倍にする処理を百ぶんの一秒で実行."
+        == "ジャバスクリプトでアレイプロトタイプマップ''を使用し,配列の要素を2倍にする処理を百ぶんの一秒で実行."
     )
     assert (
         normalize_text(
