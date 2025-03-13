@@ -41,6 +41,11 @@ def adjust_voice(
     ap = pyworld.d4c(wave, f0, t, fs)
 
     non_zero_f0 = [f for f in f0 if f != 0]
+
+    # 非ゼロの f0 が存在しない場合（無音に近い場合など）は元の音声をそのまま返す
+    if len(non_zero_f0) == 0:
+        return fs, wave.astype(np.float64)
+
     f0_mean = sum(non_zero_f0) / len(non_zero_f0)
 
     for i, f in enumerate(f0):
