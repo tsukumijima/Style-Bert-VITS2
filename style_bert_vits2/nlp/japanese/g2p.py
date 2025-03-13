@@ -150,11 +150,14 @@ def text_to_sep_kata(
         """
         assert yomi != "", f"Empty yomi: {word}"
         if yomi == "、":
-            # スラッシュは pyopenjtalk での形態素解析処理で重要なので例外的に正規化後の残しており、
+            # スラッシュは pyopenjtalk での形態素解析処理で重要なので例外的に正規化後も残しており、
             # ここでスラッシュが返ってきている場合はスラッシュを含めた辞書エントリに引っ掛からなかったということなので、
             # 通常通り "/" を "." 扱いで処理する
             if word == "/":
                 yomi = "."
+            # pyopenjtalk のバグを避けるために意図的に残した Long EM Dash が残っている場合は "-" (半角ハイフン) に変換
+            elif word == "—":
+                yomi = "-"
             # word は正規化されているので、`.`, `,`, `!`, `'`, `-`, `--` のいずれか
             elif not set(word).issubset(set(PUNCTUATIONS)):  # 記号繰り返しか判定
                 # ここは pyopenjtalk が読めない文字等のときに起こる
