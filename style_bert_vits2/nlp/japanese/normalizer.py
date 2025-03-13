@@ -467,7 +467,9 @@ def normalize_text(text: str) -> str:
 
     # pyopenjtalk は「漢字の直後に2つ以上の連続する半角ハイフンがある場合」にその漢字の読みが取得できなくなる謎のバグがあるため、
     # 正規化処理でダッシュが変換されるなどして2つ以上の連続する半角ハイフンが生まれた場合、Long EM Dash に変換してから g2p 処理に渡す
-    res = re.sub(r'([\u4e00-\u9FFF])(-{2,})', lambda m: m.group(1) + "—" * len(m.group(2)), res)
+    res = re.sub(
+        r"([\u4e00-\u9FFF])(-{2,})", lambda m: m.group(1) + "—" * len(m.group(2)), res
+    )
 
     return res
 

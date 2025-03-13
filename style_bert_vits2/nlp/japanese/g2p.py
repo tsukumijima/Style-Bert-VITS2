@@ -820,6 +820,11 @@ def __distribute_phone(n_phone: int, n_word: int) -> list[int]:
         list[int]: 単語ごとの音素の数のリスト
     """
 
+    if n_word == 0:
+        logger.warning(
+            "Empty token detected in __distribute_phone. Falling back to distribute entire phoneme count as a single token."
+        )
+        return [n_phone]
     phones_per_word = [0] * n_word
     for _ in range(n_phone):
         min_tasks = min(phones_per_word)
@@ -855,3 +860,6 @@ if __name__ == "__main__":
     print(f"phone_tones: {phone_tones}")
     print(f"word2ph: {word2ph}")
     print(f"sep_kata_with_joshi: {sep_kata_with_joshi}")
+    assert (
+        len(phones) == len(tones) == sum(word2ph)
+    ), "phone, tones の長さと word2ph の和は一致するはず"
