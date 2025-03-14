@@ -1065,9 +1065,9 @@ def __convert_english_to_katakana(text: str) -> str:
                 katakana_sub_words = []
 
                 for sub in sub_words:
-                    # 辞書にある場合はカタカナに変換、ない場合は元の単語をそのまま使用
-                    sub_katakana = KATAKANA_MAP.get(sub.lower(), sub)
-                    katakana_sub_words.append(sub_katakana)
+                    # 大文字小文字に関わらず、分割した単語ごとに個別に変換を試みる
+                    converted = process_english_word(sub)
+                    katakana_sub_words.append(converted)
 
                 return join_word.join(katakana_sub_words)
 

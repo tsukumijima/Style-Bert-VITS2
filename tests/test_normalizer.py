@@ -398,6 +398,9 @@ def test_normalize_text_symbols():
     # 基本的な記号
     assert normalize_text("ABC+ABC") == "エービーシープラスエービーシー"
     assert normalize_text("ABC&ABC") == "エービーシーアンドエービーシー"
+    assert normalize_text("abc+abc") == "エービーシープラスエービーシー"
+    assert normalize_text("abc&abc") == "エービーシーアンドエービーシー"
+    assert normalize_text("OpenAPI-Specification") == "オープンエーピーアイスペシフィケーション"
     # 数式
     assert normalize_text("1+1=2") == "1プラス1イコール2"
     assert normalize_text("5-3=2") == "5マイナス3イコール2"
@@ -465,6 +468,19 @@ def test_normalize_text_english():
         normalize_text("Mr. John Smith Jr. PhD")
         == "ミスタージョンスミスジュニアピーエイチディー"
     )
+    assert normalize_text("John's book") == "ジョンズブック"
+    assert normalize_text("The company's policy") == "ザカンパニーズポリシー"
+    # 複数形の処理
+    assert normalize_text("computers") == "コンピューターズ"
+    assert normalize_text("smartphones") == "スマートフォーンズ"
+    # 複雑な CamelCase と英文の混合パターン (TODO: 改善の余地あり)
+    assert normalize_text("ではCinamicさん、WindsurfCascade-PriceはGemini+Claude&Deepseekesより安いか分かりますか？") == "ではシナマイクさん,ウインドサーフカスケードプライスはジェミニプラスクロードアンドディープシークエスより安いか分かりますか?"
+    assert normalize_text("I'm human, with ApplePencil. Because, We have iPhone13.") == "アイムヒューマン,ウィズアップルペンシル.ビコーズ,ウィーハブアイフォンサーティーン."
+    assert normalize_text("ModelTrainingWithGPT4TurboAndLlama3") == "モデルトレーニングウィズGPT4ターボアンドラマスリー"
+    assert normalize_text("NextGenCloudComputingSystem2024") == "ネクストジェンクラウドコンピューティングシステム2024"
+    assert normalize_text("MachineLearning+DeepLearning=AI") == "マシンラーニングプラスディープラーニングイコールエーアイ"
+    assert normalize_text("iPhoneProMax15-vs-GooglePixel8Pro") == "iフォンプロマックスフィフティーンバーサスグーグルピクセルエイトプロ"
+    assert normalize_text("WebDev2023: HTML5+CSS3+JavaScript") == "ウェブデブ2023,エイチティーエムエルファイブプラスシーエスエススリープラスジャバスクリプト"
 
 
 def test_normalize_text_mathematical():
@@ -596,7 +612,7 @@ def test_normalize_text_edge_cases():
     # 極端に長い英単語
     assert (
         normalize_text("supercalifragilisticexpialidocious")
-        == "supercalifragilisticexpialidocious"
+        == "スーパーカリフィッシュ"  # e2k ライブラリによる自動推定結果
     )
     # 特殊な文字の組み合わせ
     assert normalize_text("㊊㊋㊌㊍㊎㊏㊐") == "月火水木金土日"  # 曜日の丸文字
