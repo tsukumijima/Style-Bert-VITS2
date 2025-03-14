@@ -396,8 +396,8 @@ def test_normalize_text_fractions():
 def test_normalize_text_symbols():
     """記号関連の正規化のテスト"""
     # 基本的な記号
-    assert normalize_text("ABC+ABC") == "エイビーシープラスエイビーシー"
-    assert normalize_text("ABC&ABC") == "エイビーシーアンドエイビーシー"
+    assert normalize_text("ABC+ABC") == "エービーシープラスエービーシー"
+    assert normalize_text("ABC&ABC") == "エービーシーアンドエービーシー"
     # 数式
     assert normalize_text("1+1=2") == "1プラス1イコール2"
     assert normalize_text("5-3=2") == "5マイナス3イコール2"
@@ -564,7 +564,7 @@ def test_normalize_text_mixed_scripts():
         == "漢字とひらがなとカタカナの混在文"
     )
     # 英数字との混在
-    assert normalize_text("123と漢字とABCの混在") == "123と漢字とエイビーシーの混在"
+    assert normalize_text("123と漢字とABCの混在") == "123と漢字とエービーシーの混在"
     # 記号との混在
     assert normalize_text("漢字+カタカナ=混在!?") == "漢字プラスカタカナイコール混在!?"
     # 特殊文字との混在
