@@ -137,7 +137,10 @@ if __name__ == "__main__":
                 device=device,
             )
             tts_model.load()
-            style_id = tts_model.style2id[DEFAULT_STYLE]
+            if DEFAULT_STYLE in tts_model.style2id:
+                style_id = tts_model.style2id[DEFAULT_STYLE]
+            else:
+                style_id = 0  # 通常デフォルトスタイルのインデックスは 0 になる
             assert tts_model.net_g is not None, "Model is not loaded"
 
             # 音声合成に必要な BERT 特徴量・音素列・アクセント列・言語 ID を取得
@@ -211,7 +214,7 @@ if __name__ == "__main__":
                 # モデルを ONNX に変換
                 print(Rule(characters="=", style=Style(color="blue")))
                 print(
-                    f"[bold cyan]Exporting ONNX model... (Architecture: JP-Extra)[/bold cyan]"
+                    "[bold cyan]Exporting ONNX model... (Architecture: JP-Extra)[/bold cyan]"
                 )
                 print(Rule(characters="=", style=Style(color="blue")))
                 export_start_time = time.time()
@@ -302,7 +305,7 @@ if __name__ == "__main__":
                 # モデルを ONNX に変換
                 print(Rule(characters="=", style=Style(color="blue")))
                 print(
-                    f"[bold cyan]Exporting ONNX model... (Architecture: Non-JP-Extra)[/bold cyan]"
+                    "[bold cyan]Exporting ONNX model... (Architecture: Non-JP-Extra)[/bold cyan]"
                 )
                 print(Rule(characters="=", style=Style(color="blue")))
                 export_start_time = time.time()
@@ -359,7 +362,7 @@ if __name__ == "__main__":
 
             # ONNX モデルを最適化
             print(Rule(characters="=", style=Style(color="blue")))
-            print(f"[bold cyan]Optimizing ONNX model...[/bold cyan]")
+            print("[bold cyan]Optimizing ONNX model...[/bold cyan]")
             print(Rule(characters="=", style=Style(color="blue")))
             optimize_start_time = time.time()
             onnx_model = onnx.load(onnx_temp_model_path)
@@ -396,7 +399,7 @@ if __name__ == "__main__":
 
             # AIVM ファイルを生成
             if args.aivm and (not aivm_path.exists() or args.force_convert):
-                print(f"[bold cyan]Generating AIVM file...[/bold cyan]")
+                print("[bold cyan]Generating AIVM file...[/bold cyan]")
                 print(Rule(characters="=", style=Style(color="blue")))
                 with model_path.open("rb") as safetensors_file:
                     new_aivm_file_content = aivmlib.write_aivm_metadata(safetensors_file, aivm_metadata)  # fmt: skip
@@ -407,7 +410,7 @@ if __name__ == "__main__":
 
             # AIVMX ファイルを生成
             if args.aivmx and (not aivmx_path.exists() or args.force_convert):
-                print(f"[bold cyan]Generating AIVMX file...[/bold cyan]")
+                print("[bold cyan]Generating AIVMX file...[/bold cyan]")
                 print(Rule(characters="=", style=Style(color="blue")))
                 with onnx_optimized_model_path.open("rb") as onnx_file:
                     new_aivmx_file_content = aivmlib.write_aivmx_metadata(onnx_file, aivm_metadata)  # fmt: skip
