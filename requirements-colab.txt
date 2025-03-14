@@ -2,6 +2,7 @@ accelerate
 aivmlib
 cmudict
 cn2an
+e2k
 g2p_en
 gradio>=4.32
 jieba

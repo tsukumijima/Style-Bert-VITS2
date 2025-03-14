@@ -2,6 +2,7 @@ accelerate
 aivmlib
 cmudict
 cn2an
+e2k
 faster-whisper==0.10.1
 g2p_en
 GPUtil

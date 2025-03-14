@@ -3,12 +3,16 @@ import sys
 import unicodedata
 from datetime import datetime
 
+from e2k import C2K
 from num2words import num2words
 
 from style_bert_vits2.nlp.japanese.katakana_map import KATAKANA_MAP
 from style_bert_vits2.nlp.japanese.romkan import to_katakana
 from style_bert_vits2.nlp.symbols import PUNCTUATIONS
 
+
+# C2K の初期化
+__C2K = C2K()
 
 # 記号類の正規化マップ
 __SYMBOL_REPLACE_MAP = {
@@ -930,14 +934,43 @@ def __convert_english_to_katakana(text: str) -> str:
 
         return parts
 
-    def process_english_word(word: str, enable_romaji: bool = False) -> str:
+    def extract_alphabet_chunks(text: str) -> list[tuple[str, int, int]]:
+        """
+        テキストから連続するアルファベットのチャンクを抽出し、各チャンクとその開始・終了位置を返す。
+
+        Args:
+            text (str): 処理するテキスト
+
+        Returns:
+            list[tuple[str, int, int]]: (チャンク, 開始位置, 終了位置) のリスト
+        """
+
+        chunks = []
+        current_chunk = ''
+        start_pos = -1
+        for i, char in enumerate(text):
+            if __ALPHABET_PATTERN.match(char):
+                if start_pos == -1:
+                    start_pos = i
+                current_chunk += char
+            else:
+                if current_chunk:
+                    chunks.append((current_chunk, start_pos, i))
+                    current_chunk = ''
+                    start_pos = -1
+        # 最後のチャンクを処理
+        if current_chunk:
+            chunks.append((current_chunk, start_pos, len(text)))
+        return chunks
+
+    def process_english_word(word: str, enable_romaji_c2k: bool = False) -> str:
         """
         英単語をカタカナに変換する。確実に変換できるパターンのみを処理し、
         不確実な場合は元の単語をそのまま返す (pyopenjtalk 側でアルファベット読みされる)。
 
         Args:
             word (str): 変換する英単語
-            enable_romaji (bool): ローマ字変換を有効にするかどうか
+            enable_romaji_c2k (bool): ローマ字変換や C2K によるカタカナ読みの推定を有効にするかどうか
         Returns:
             str: カタカナに変換された単語
         """
@@ -1056,6 +1089,8 @@ def __convert_english_to_katakana(text: str) -> str:
             # ここでは戻らず、値の上書きのみにとどめる
             word = "".join(result_parts)
 
+            # !!!fall through!!!
+
         # 7. 数字（小数点含む）が含まれる場合、数字部分とそれ以外の部分に分割して処理
         if any(c.isdigit() for c in word):
             # ハイフンで区切られた数字の場合はそのまま返す (例: 33-4)
@@ -1085,17 +1120,38 @@ def __convert_english_to_katakana(text: str) -> str:
 
             return "".join(parts)
 
+        # アルファベットのチャンクを抽出
+        alpha_chunks = extract_alphabet_chunks(word)
+
         # 8. アルファベットが含まれる場合、ローマ字 -> カタカナ変換を試みる
-        # 2文字以上の場合のみ変換を試みる (I -> イ のような1文字変換を防ぐ)
-        if (
-            len(word) >= 2
-            and any(__ALPHABET_PATTERN.match(c) for c in word)
-            and enable_romaji
-        ):
-            katakana = to_katakana(word)
-            # 全文字を完全にカタカナに変換できた場合のみ採用
-            if not any(__ALPHABET_PATTERN.match(c) for c in katakana):
-                return katakana
+        # 2文字以上の英単語のみ変換を試みる (I -> イ のような1文字変換を防ぐ)
+        # この処理はあくまで辞書ベースで解決できなかった場合の最終手段なので、この関数内からさらに自分自身を呼び出す処理ループではこの処理は通らない
+        if alpha_chunks and enable_romaji_c2k is True:
+            # 変換情報を保存するリスト
+            replacements = []
+            converted_any = False
+
+            # 各チャンクに対して処理8を実行
+            for chunk, start, end in alpha_chunks:
+                converted = None
+
+                # アルファベットが2文字以上の場合のみ変換を試みる (I -> イ のような1文字変換を防ぐ)
+                if len(chunk) >= 2:
+                    katakana = to_katakana(chunk)
+                    # 全文字を完全にカタカナに変換できた場合のみ採用
+                    if not any(__ALPHABET_PATTERN.match(c) for c in katakana):
+                        converted = katakana
+
+                # 変換できた場合は置換情報を記録
+                if converted is not None:
+                    converted_any = True
+                    replacements.append((start, end, converted))
+
+            # 置換情報を元に新しい文字列を構築（後ろから処理することで位置ずれを防ぐ）
+            if converted_any:
+                for start, end, converted in sorted(replacements, reverse=True):
+                    # 元の単語のチャンク部分を変換結果で置き換える
+                    word = word[:start] + converted + word[end:]
 
         # 9. 最終手段として、2単語への分割を試みる
         # 最低4文字以上の単語のみ対象とし、全て大文字の単語の場合はこの処理を実行しない
@@ -1103,6 +1159,34 @@ def __convert_english_to_katakana(text: str) -> str:
             split_result = try_split_convert(word)
             if split_result is not None:
                 return split_result
+
+        # 10. 本当に最後の手段として、C2K によるカタカナ読みの推定を試みる
+        # 4文字以上の英単語のみ変換を試みる
+        # この処理はあくまで辞書ベースで解決できなかった場合の最終手段なので、この関数内からさらに自分自身を呼び出す処理ループではこの処理は通らない
+        # ref: https://github.com/Patchethium/e2k
+        if alpha_chunks and enable_romaji_c2k is True:
+            # 変換情報を保存するリスト
+            replacements = []
+            converted_any = False
+
+            # 各チャンクに対して処理10を実行
+            for chunk, start, end in alpha_chunks:
+                # 4文字以上の場合のみ対象とし、全て大文字の場合はこの処理を実行しない
+                if len(chunk) >= 4 and not chunk.isupper():
+                    # いずれかの文字がアルファベットの場合のみ
+                    if any(__ALPHABET_PATTERN.match(c) for c in chunk):
+                        converted = __C2K(chunk.lower())  # c2k は小文字でのみ動作する
+                        if converted is not None:
+                            converted_any = True
+                            replacements.append((start, end, converted))
+
+            # 置換情報を元に新しい文字列を構築（後ろから処理することで位置ずれを防ぐ）
+            if converted_any:
+                for start, end, converted in sorted(replacements, reverse=True):
+                    # start と end が単語の長さ内にあることを確認
+                    if start < len(word) and end <= len(word):
+                        # 元の単語のチャンク部分を変換結果で置き換える
+                        word = word[:start] + converted + word[end:]
 
         # 上記以外は元の単語を返す (pyopenjtalk 側でアルファベット読みされる)
         return word
@@ -1160,13 +1244,13 @@ def __convert_english_to_katakana(text: str) -> str:
             # それ以外は文の区切りとして扱う (例: I'm fine.)
             else:
                 if current_word:
-                    words.append(process_english_word(current_word, enable_romaji=True))
+                    words.append(process_english_word(current_word, enable_romaji_c2k=True))
                     current_word = ""
                 words.append(char)
         else:
             # 英単語が終了したらカタカナに変換して words に追加
             if current_word:
-                words.append(process_english_word(current_word, enable_romaji=True))
+                words.append(process_english_word(current_word, enable_romaji_c2k=True))
                 current_word = ""
             words.append(char)
 
@@ -1175,7 +1259,7 @@ def __convert_english_to_katakana(text: str) -> str:
 
     # 最後の単語を処理
     if current_word:
-        words.append(process_english_word(current_word, enable_romaji=True))
+        words.append(process_english_word(current_word, enable_romaji_c2k=True))
 
     return "".join(words)
 
