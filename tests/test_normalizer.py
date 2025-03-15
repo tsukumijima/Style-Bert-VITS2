@@ -521,6 +521,21 @@ def test_normalize_text_english():
     assert normalize_text("This is a pen.") == "ディスイズアペン."
     assert normalize_text("This is a good pen.") == "ディスイズアグッドペン."
 
+    # ハイフンで区切られた英単語の処理
+    assert normalize_text("pen") == "ペン"
+    assert normalize_text("good-pen") == "グッドペン"
+    assert normalize_text("OFDM-modular") == "OFDMモジュラー"
+    assert (
+        # "Bentol" は適当にでっち上げた造語なので C2K によってカタカナ推定が入り、それ以外は辞書からカタカナ表記が取得される
+        normalize_text("Bentol-API-SpecificationResult20")
+        == "ベントルエーピーアイスペシフィケーションリザルトトゥエンティ"
+    )
+    assert (
+        # "Paravoice" は造語なので C2K によってカタカナ推定が入る
+        normalize_text("Paravoice 3をOTAMESHIできます")
+        == "パラボイス3をオタメシできます"
+    )
+
     # 長い英文
     assert (
         normalize_text(

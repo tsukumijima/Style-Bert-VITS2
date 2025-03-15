@@ -1004,7 +1004,7 @@ def __convert_english_to_katakana(text: str) -> str:
             if base_katakana:
                 # 数字を英語表現に変換し、それをカタカナに変換
                 number_in_english = num2words(int(number), lang="en")
-                number_katakana = process_english_word(number_in_english)
+                number_katakana = process_english_word(number_in_english, enable_romaji_c2k=True)
                 if number_katakana:
                     return base_katakana + number_katakana
 
@@ -1069,7 +1069,7 @@ def __convert_english_to_katakana(text: str) -> str:
 
                 for sub in sub_words:
                     # 大文字小文字に関わらず、分割した単語ごとに個別に変換を試みる
-                    converted = process_english_word(sub)
+                    converted = process_english_word(sub, enable_romaji_c2k=True)
                     katakana_sub_words.append(converted)
 
                 return join_word.join(katakana_sub_words)
@@ -1086,13 +1086,15 @@ def __convert_english_to_katakana(text: str) -> str:
                     result_parts.append(KATAKANA_MAP.get(part, part))
                 else:
                     # それ以外は辞書で変換を試みる
-                    converted = process_english_word(part)
+                    # enable_romaji_c2k を False に設定し、ローマ字変換と C2K 変換を無効にする
+                    converted = process_english_word(part, enable_romaji_c2k=False)
                     result_parts.append(converted)
 
             # ここでは戻らず、値の上書きのみにとどめる
             word = "".join(result_parts)
 
-            # !!!fall through!!!
+            # fall through!!!
+            # ここでは return しない
 
         # 7. 数字（小数点含む）が含まれる場合、数字部分とそれ以外の部分に分割して処理
         if any(c.isdigit() for c in word):
@@ -1110,7 +1112,7 @@ def __convert_english_to_katakana(text: str) -> str:
                 # 数字の前の部分を処理
                 if match.start() > last_end:
                     non_number = word[last_end : match.start()]
-                    parts.append(process_english_word(non_number))
+                    parts.append(process_english_word(non_number, enable_romaji_c2k=True))
 
                 # 数字部分をそのまま追加
                 parts.append(match.group())
@@ -1119,7 +1121,7 @@ def __convert_english_to_katakana(text: str) -> str:
             # 最後の非数字部分を処理
             if last_end < len(word):
                 non_number = word[last_end:]
-                parts.append(process_english_word(non_number))
+                parts.append(process_english_word(non_number, enable_romaji_c2k=True))
 
             return "".join(parts)
 
@@ -1128,7 +1130,7 @@ def __convert_english_to_katakana(text: str) -> str:
 
         # 8. アルファベットが含まれる場合、ローマ字 -> カタカナ変換を試みる
         # 2文字以上の英単語のみ変換を試みる (I -> イ のような1文字変換を防ぐ)
-        # この処理はあくまで辞書ベースで解決できなかった場合の最終手段なので、この関数内からさらに自分自身を呼び出す処理ループではこの処理は通らない
+        # この処理はあくまで辞書ベースで解決できなかった場合の最終手段なので、CamelCase を分割して個々の単語ごとに処理する際はこの処理は通らない
         if alpha_chunks and enable_romaji_c2k is True:
             # 変換情報を保存するリスト
             replacements = []
@@ -1156,6 +1158,9 @@ def __convert_english_to_katakana(text: str) -> str:
                     # 元の単語のチャンク部分を変換結果で置き換える
                     word = word[:start] + converted + word[end:]
 
+            # fall through!!!
+            # ここでは return しない
+
         # 9. 最終手段として、2単語への分割を試みる
         # 最低4文字以上の単語のみ対象とし、全て大文字の単語の場合はこの処理を実行しない
         if len(word) >= 4 and not word.isupper():
@@ -1165,7 +1170,7 @@ def __convert_english_to_katakana(text: str) -> str:
 
         # 10. 本当に最後の手段として、C2K によるカタカナ読みの推定を試みる
         # 4文字以上の英単語のみ変換を試みる
-        # この処理はあくまで辞書ベースで解決できなかった場合の最終手段なので、この関数内からさらに自分自身を呼び出す処理ループではこの処理は通らない
+        # この処理はあくまで辞書ベースで解決できなかった場合の最終手段なので、CamelCase を分割して個々の単語ごとに処理する際はこの処理は通らない
         # ref: https://github.com/Patchethium/e2k
         if alpha_chunks and enable_romaji_c2k is True:
             # 変換情報を保存するリスト
