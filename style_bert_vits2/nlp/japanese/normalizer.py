@@ -246,7 +246,7 @@ __SYMBOL_YOMI_PATTERN = re.compile("|".join(re.escape(p) for p in __SYMBOL_YOMI_
 
 # 単位の正規化マップ
 # 単位は OpenJTalk 側で変換してくれるものもあるため、単位が1文字で読み間違いが発生しやすい L, m, g, B と、
-# OpenJTalk では変換できない単位のみ変換する
+# OpenJTalk では変換できない単位、正規化処理で変換しておいた方が実装上都合が良い単位のみ変換する
 __UNIT_MAP = {
     "kL": "キロリットル",
     "dL": "デシリットル",
@@ -267,6 +267,8 @@ __UNIT_MAP = {
     "kg": "キログラム",
     "mg": "ミリグラム",
     "g": "グラム",
+    "EB": "エクサバイト",
+    "EiB": "エクスビバイト",
     "PB": "ペタバイト",
     "PiB": "ペビバイト",
     "TB": "テラバイト",
@@ -279,6 +281,9 @@ __UNIT_MAP = {
     "kB": "キロバイト",
     "KiB": "キビバイト",
     "B": "バイト",
+    "mA": "ミリアンペア",
+    "kA": "キロアンペア",
+    "A": "アンペア",
     "t": "トン",
     "d": "日",
     "h": "時間",
@@ -286,10 +291,30 @@ __UNIT_MAP = {
     "ms": "ミリ秒",
     "μs": "マイクロ秒",
     "ns": "ナノ秒",
+    "THz": "テラヘルツ",
+    "GHz": "ギガヘルツ",
+    "MHz": "メガヘルツ",
+    "kHz": "キロヘルツ",
+    "KHz": "キロヘルツ",
+    "Hz": "ヘルツ",
+    "Thz": "テラヘルツ",
+    "Ghz": "ギガヘルツ",
+    "Mhz": "メガヘルツ",
+    "khz": "キロヘルツ",
+    "Khz": "キロヘルツ",
+    "hz": "ヘルツ",
+    "Ebps": "エクサビーピーエス",
+    "Pbps": "ペタビーピーエス",
+    "Tbps": "テラビーピーエス",
+    "Gbps": "ギガビーピーエス",
+    "Mbps": "メガビーピーエス",
+    "Kbps": "キロビーピーエス",
+    "kbps": "キロビーピーエス",
+    "bps": "ビーピーエス",
 }
 # 単位の正規化パターン
 __UNIT_PATTERN = re.compile(
-    r"([0-9.]*[0-9](?:[eE][-+]?[0-9]+)?)\s*((k|d|m)?L|(?:k|c|m)m[23]?|m[23]?|m(?![a-zA-Z])|(?:k|m)?g|PB|PiB|TB|TiB|GB|GiB|MB|MiB|KB|kB|KiB|B|t|d|h|s|ms|μs|ns)(?=[^a-zA-Z/]|$)"
+    r"([0-9.]*[0-9](?:[eE][-+]?[0-9]+)?)\s*((k|d|m)?L|(?:k|c|m)m[23]?|m[23]?|m(?![a-zA-Z])|(?:k|m)?g|EB|EiB|PB|PiB|TB|TiB|GB|GiB|MB|MiB|KB|kB|KiB|B|t|d|h|s|ms|μs|ns|(?:k|m)?A|(?:k|K|M|G|T)?[Hh]z|(?:k|K|M|G|T|P|E)?bps)(?=[^a-zA-Z/]|$)"
 )
 
 # 正規化後に残す文字種を表すパターン
@@ -408,11 +433,6 @@ __ENGLISH_WORD_WITH_DIVIDER_NUMBER_PATTERN = re.compile(
     r"([a-zA-Z]+)[\s-]([1-9]|1[01])(?!\d|\.\d)"  # 12 以降は英語読みしない
 )
 __ALPHABET_PATTERN = re.compile(r"[a-zA-Z]")
-
-# CamelCase 分割から保護する単位パターン
-__PROTECTED_UNIT_PATTERN = re.compile(
-    r"^(\d+(?:\.\d+)?)?([KMGTPE]i?B|[kMGTPE]B)$"  # バイト単位系、小数点を含む数値にも対応
-)
 
 
 def normalize_text(text: str) -> str:
@@ -980,21 +1000,11 @@ def __convert_english_to_katakana(text: str) -> str:
             str: カタカナに変換された単語
         """
 
-        # 保護対象の単位パターンをチェック
-        protected_match = __PROTECTED_UNIT_PATTERN.match(word)
-        if protected_match:
-            number = protected_match.group(1)
-            unit = protected_match.group(2)
-            # 単位を変換
-            unit_katakana = __UNIT_MAP.get(unit)
-            if unit_katakana:
-                if number:
-                    return f"{number}{unit_katakana}"
-                return unit_katakana
-            # 単位が辞書にない場合は元の単位をそのまま使用
-            if number:
-                return f"{number}{unit}"
-            return unit
+        # 数値（小数点を含む）を取り除いた後の文字列がUNIT_MAP に含まれる単位と完全一致する場合は実行しない
+        # これにより、KATAKANA_MAP に "tb" が "ティービー" として別の読みで含まれていたとしても変換されずに済む
+        word_without_numbers = __NUMBER_PATTERN.sub("", word)
+        if word_without_numbers in __UNIT_MAP:
+            return word
 
         # 英単語の末尾に2桁以下の数字 (1.0 のような小数表記を除く) がつく場合の処理
         number_match = __ENGLISH_WORD_WITH_NUMBER_PATTERN.match(word)
@@ -1231,8 +1241,8 @@ def __convert_english_to_katakana(text: str) -> str:
 
     # 単語中で使われうるクオートを全て ' に置換する (例: We’ve -> We've)
     quotes = [
-        "\u2018",  # LEFT SINGLE QUOTATION MARK '
-        "\u2019",  # RIGHT SINGLE QUOTATION MARK '
+        "\u2018",  # LEFT SINGLE QUOTATION MARK ‘
+        "\u2019",  # RIGHT SINGLE QUOTATION MARK ’
         "\u201A",  # SINGLE LOW-9 QUOTATION MARK ‚
         "\u201B",  # SINGLE HIGH-REVERSED-9 QUOTATION MARK ‛
         "\u2032",  # PRIME ′

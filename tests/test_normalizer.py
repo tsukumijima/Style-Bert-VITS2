@@ -33,20 +33,34 @@ def test_normalize_text_units():
     assert normalize_text("1000.19mg") == "1000.19ミリグラム"
     assert normalize_text("100g") == "100グラム"
     assert normalize_text("2kg") == "2キログラム"
-    # スラッシュ付き単位（変換しない）
+    # スラッシュ付き単位（意図的に変換せず pyopenjtalk に任せるパターン）
     assert normalize_text("100m/s") == "100m/s"
     assert normalize_text("100kL/m") == "100kL/m"
     assert normalize_text("100g/㎥") == "100g/m3"
     assert normalize_text("100km/h") == "100km/h"
+    assert normalize_text("5000m/s") == "5000m/s"
+    assert normalize_text("3.5km/s") == "3.5km/s"
+    assert normalize_text("30.56B/s") == "30.56B/s"
+    assert normalize_text("30.56kB/s") == "30.56kB/s"
+    assert normalize_text("30.56KB/s") == "30.56KB/s"
+    assert normalize_text("30.56MB/s") == "30.56MB/s"
+    assert normalize_text("30.56GB/s") == "30.56GB/s"
+    assert normalize_text("30.56TB/s") == "30.56TB/s"
+    assert normalize_text("30.56EB/s") == "30.56EB/s"
     # データ容量
-    assert normalize_text("1B") == "1バイト"
-    assert normalize_text("1KB") == "1キロバイト"
-    assert normalize_text("1MB") == "1メガバイト"
-    assert normalize_text("1GB") == "1ギガバイト"
-    assert normalize_text("1TB") == "1テラバイト"
+    assert normalize_text("51B") == "51バイト"
+    assert normalize_text("51KB") == "51キロバイト"
+    assert normalize_text("51MB") == "51メガバイト"
+    assert normalize_text("51GB") == "51ギガバイト"
+    assert normalize_text("51TB") == "51テラバイト"
+    assert normalize_text("51PB") == "51ペタバイト"
+    assert normalize_text("51EB") == "51エクサバイト"
+    assert normalize_text("100KiB") == "100キビバイト"
     assert normalize_text("1000.11MiB") == "1000.11メビバイト"
     assert normalize_text("1000.11GiB") == "1000.11ギビバイト"
     assert normalize_text("1000.11TiB") == "1000.11テビバイト"
+    assert normalize_text("1000.11PiB") == "1000.11ペビバイト"
+    assert normalize_text("1000.11EiB") == "1000.11エクスビバイト"
     # 面積・体積
     assert normalize_text("100m2") == "100平方メートル"
     assert normalize_text("1km2") == "1平方キロメートル"
@@ -60,6 +74,33 @@ def test_normalize_text_units():
     assert normalize_text("100m〜200m") == "100メートルから200メートル"
     assert normalize_text("1kg〜2kg") == "1キログラムから2キログラム"
     assert normalize_text("100dL〜200dL") == "100デシリットルから200デシリットル"
+    # ヘルツ
+    assert normalize_text("100Hz") == "100ヘルツ"
+    assert normalize_text("100kHz") == "100キロヘルツ"  # k が小文字
+    assert normalize_text("100KHz") == "100キロヘルツ"  # K が大文字
+    assert normalize_text("100MHz") == "100メガヘルツ"
+    assert normalize_text("100GHz") == "100ギガヘルツ"
+    assert normalize_text("100THz") == "100テラヘルツ"
+    assert normalize_text("45.56kHz") == "45.56キロヘルツ"
+    # ヘルツ (hz が小文字、表記揺れ対策)
+    assert normalize_text("100hz") == "100ヘルツ"
+    assert normalize_text("100khz") == "100キロヘルツ"
+    assert normalize_text("100Khz") == "100キロヘルツ"
+    assert normalize_text("100Mhz") == "100メガヘルツ"
+    assert normalize_text("100Ghz") == "100ギガヘルツ"
+    assert normalize_text("100Thz") == "100テラヘルツ"
+    assert normalize_text("45.56khz") == "45.56キロヘルツ"
+    # アンペア
+    assert normalize_text("100A") == "100アンペア"
+    assert normalize_text("100mA") == "100ミリアンペア"
+    assert normalize_text("100kA") == "100キロアンペア"
+    assert normalize_text("45.56mA") == "45.56ミリアンペア"
+    # bps
+    assert normalize_text("100.55bps") == "100.55ビーピーエス"
+    assert normalize_text("100kbps") == "100キロビーピーエス"
+    assert normalize_text("100Mbps") == "100メガビーピーエス"
+    assert normalize_text("100Gbps") == "100ギガビーピーエス"
+    assert normalize_text("100Tbps") == "100テラビーピーエス"
     # 追加のテストケース
     assert normalize_text("100tトラック") == "100トントラック"
     assert normalize_text("100.1919tトラック") == "100.1919トントラック"
@@ -822,4 +863,10 @@ def test_normalize_text_complex():
             "今日01/03（月）にですね、16:9の映像を1/128の確率で表示するイベントをやっていて、85/09/30の08月01日(金)にお会いした人と久々に会うんです"
         )
         == "今日1月3日月曜日にですね,十六タイ九の映像を百二十八ぶんの一の確率で表示するイベントをやっていて,1985年9月30日の8月1日金曜日にお会いした人と久々に会うんです"
+    )
+    assert (
+        normalize_text(
+            "path-to-model-file.onnx は事前学習済みの onnx モデルファイルです。 onnx_model/phoneme_transition_model.onnxにあります。 path-to-wav-file はサンプリング周波数 16kHz  のモノラル wav ファイルです。 path-to-phoneme-file は音素を空白区切りしたテキストが格納されたファイルのパスです。 NOTE: 開始音素と終了音素は pau である必要があります。"
+        )
+        == "パストゥーモデルファイルオニキスは事前学習済みのオニキスモデルファイルです.オニキスモデル/フォーニムトランジションモデルオニキスにあります.パストゥーワブファイルはサンプリング周波数16キロヘルツのモノラルワブファイルです.パストゥーフォーニムファイルは音素を空白区切りしたテキストが格納されたファイルのパスです.ノート,開始音素と終了音素はパウである必要があります."
     )
