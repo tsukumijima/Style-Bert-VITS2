@@ -311,10 +311,31 @@ __UNIT_MAP = {
     "Kbps": "キロビーピーエス",
     "kbps": "キロビーピーエス",
     "bps": "ビーピーエス",
+    "Ebit": "エクサビット",
+    "Pbit": "ペタビット",
+    "Tbit": "テラビット",
+    "Gbit": "ギガビット",
+    "Mbit": "メガビット",
+    "Kbit": "キロビット",
+    "kbit": "キロビット",
+    "bit": "ビット",
+    "Eb": "エクサビット",
+    "Pb": "ペタビット",
+    "Tb": "テラビット",
+    "Gb": "ギガビット",
+    "Mb": "メガビット",
+    "Kb": "キロビット",
+    "kb": "キロビット",
+    "b": "ビット",
 }
 # 単位の正規化パターン
 __UNIT_PATTERN = re.compile(
-    r"([0-9.]*[0-9](?:[eE][-+]?[0-9]+)?)\s*((k|d|m)?L|(?:k|c|m)m[23]?|m[23]?|m(?![a-zA-Z])|(?:k|m)?g|EB|EiB|PB|PiB|TB|TiB|GB|GiB|MB|MiB|KB|kB|KiB|B|t|d|h|s|ms|μs|ns|(?:k|m)?A|(?:k|K|M|G|T)?[Hh]z|(?:k|K|M|G|T|P|E)?bps)(?=[^a-zA-Z/]|$)"
+    r"(?P<number>[0-9.]*[0-9](?:[eE][-+]?[0-9]+)?)\s*"
+    r"(?P<unit>(?:(k|d|m)?L|(?:k|c|m)m[23]?|m[23]?|m(?![a-zA-Z])|"
+    r"(?:k|m)?g|(?:k|K|M|G|T|P|E)(?:i)?B|B|t|d|h|s|ms|μs|ns|"
+    r"(?:k|m)?A|(?:k|K|M|G|T)?[Hh]z|(?:k|K|M|G|T|P|E)?(?:bps|bit|b)))"
+    r"(?P<suffix>/[hs])?"
+    r"(?=($|(?=/([^A-Za-z]|$))|[^/A-Za-z]))"
 )
 
 # 正規化後に残す文字種を表すパターン
@@ -427,10 +448,7 @@ __EXPONENT_PATTERN = re.compile(r"(\d+(?:\.\d+)?)[eE]([-+]?\d+)")
 # __convert_english_to_katakana() で使う正規表現パターン
 __ENGLISH_WORD_PATTERN = re.compile(r"[a-zA-Z0-9]")
 __ENGLISH_WORD_WITH_NUMBER_PATTERN = re.compile(
-    r"^([a-zA-Z]+)([1-9]|1[01])$"
-)  # 12 以降は英語読みしない
-__ENGLISH_WORD_WITH_DIVIDER_NUMBER_PATTERN = re.compile(
-    r"([a-zA-Z]+)[\s-]([1-9]|1[01])(?!\d|\.\d)"  # 12 以降は英語読みしない
+    r"([a-zA-Z]+)[\s-]?([1-9]|1[01])(?!\d|\.\d)"  # 12 以降は英語読みしない
 )
 __ALPHABET_PATTERN = re.compile(r"[a-zA-Z]")
 
@@ -823,8 +841,9 @@ def __convert_numbers_to_words(text: str) -> str:
 
     # 単位の変換（平方メートルなどの特殊な単位も含む）
     def convert_unit(match: re.Match[str]) -> str:
-        number = match.group(1)
-        unit = match.group(2)
+        number = match.group("number")
+        unit = match.group("unit")
+        suffix = match.group("suffix")
         # 特殊な単位の処理
         if unit.endswith("2"):
             base_unit = unit[:-1]
@@ -842,10 +861,21 @@ def __convert_numbers_to_words(text: str) -> str:
                 return f"{num_str}{unit_str}"
             except (ValueError, OverflowError):
                 pass
-        return f"{number}{__UNIT_MAP.get(unit, unit)}"
+        # 単位が /s で終わるなら「毎秒」、/h で終わるなら「毎時」をつける
+        if suffix == "/s":
+            return f"{number}{__UNIT_MAP.get(unit, unit)}毎秒"
+        elif suffix == "/h":
+            return f"{number}{__UNIT_MAP.get(unit, unit)}毎時"
+        else:
+            return f"{number}{__UNIT_MAP.get(unit, unit)}"
 
+    # 単位の変換
     res = __UNIT_PATTERN.sub(convert_unit, text)
+
+    # 12,300 のような数字の区切りとしてのカンマを削除
     res = __NUMBER_WITH_SEPARATOR_PATTERN.sub(lambda m: m[0].replace(",", ""), res)
+
+    # 通貨の変換
     res = __CURRENCY_PATTERN.sub(
         lambda m: (
             (m[2] + __CURRENCY_MAP.get(m[1], m[1]))
@@ -1000,13 +1030,17 @@ def __convert_english_to_katakana(text: str) -> str:
             str: カタカナに変換された単語
         """
 
-        # 数値（小数点を含む）を取り除いた後の文字列がUNIT_MAP に含まれる単位と完全一致する場合は実行しない
+        # 事前に word の前後のスペースが万が一あれば除去
+        word = word.strip()
+        # print(f"word: {word}")
+
+        # 数値（小数点を含む）を取り除いた後の文字列が UNIT_MAP に含まれる単位と完全一致する場合は実行しない
         # これにより、KATAKANA_MAP に "tb" が "ティービー" として別の読みで含まれていたとしても変換されずに済む
         word_without_numbers = __NUMBER_PATTERN.sub("", word)
         if word_without_numbers in __UNIT_MAP:
             return word
 
-        # 英単語の末尾に2桁以下の数字 (1.0 のような小数表記を除く) がつく場合の処理
+        # 英単語の末尾に 11 以下の数字 (1.0 のような小数表記を除く) がつく場合の処理 (例: iPhone 11, Pixel8)
         number_match = __ENGLISH_WORD_WITH_NUMBER_PATTERN.match(word)
         if number_match:
             base_word = number_match.group(1)
@@ -1088,7 +1122,43 @@ def __convert_english_to_katakana(text: str) -> str:
 
                 return join_word.join(katakana_sub_words)
 
-        # 6. CamelCase の複合語を処理
+        # 6. 数字（小数点含む）が含まれる場合、数字部分とそれ以外の部分に分割して処理
+        if any(c.isdigit() for c in word):
+            # ハイフンで区切られた数字の場合はそのまま返す (例: 33-4)
+            if "-" in word:
+                parts = word.split("-")
+                if all(part.isdigit() for part in parts):
+                    return word
+
+            # "iPhone 11" "Pixel8" のようなパターンに一致しない場合のみ処理
+            if not __ENGLISH_WORD_WITH_NUMBER_PATTERN.search(word):
+
+                # 数字（小数点含む）とそれ以外の部分を分割
+                parts = []
+                last_end = 0
+
+                for match in __NUMBER_PATTERN.finditer(word):
+                    # 数字の前の部分を処理
+                    if match.start() > last_end:
+                        non_number = word[last_end : match.start()]
+                        parts.append(
+                            process_english_word(non_number, enable_romaji_c2k=True)
+                        )
+
+                    # 数字部分をそのまま追加
+                    parts.append(match.group())
+                    last_end = match.end()
+
+                # 最後の非数字部分を処理
+                if last_end < len(word):
+                    non_number = word[last_end:]
+                    parts.append(
+                        process_english_word(non_number, enable_romaji_c2k=True)
+                    )
+
+                return "".join(parts)
+
+        # 7. CamelCase の複合語を処理
         if any(c.isupper() for c in word[1:]):  # 2文字目以降に大文字が含まれる
             parts = split_camel_case(word)
             result_parts = []
@@ -1109,37 +1179,6 @@ def __convert_english_to_katakana(text: str) -> str:
 
             # fall through!!!
             # ここでは return しない
-
-        # 7. 数字（小数点含む）が含まれる場合、数字部分とそれ以外の部分に分割して処理
-        if any(c.isdigit() for c in word):
-            # ハイフンで区切られた数字の場合はそのまま返す (例: 33-4)
-            if "-" in word:
-                parts = word.split("-")
-                if all(part.isdigit() for part in parts):
-                    return word
-
-            # 数字（小数点含む）とそれ以外の部分を分割
-            parts = []
-            last_end = 0
-
-            for match in __NUMBER_PATTERN.finditer(word):
-                # 数字の前の部分を処理
-                if match.start() > last_end:
-                    non_number = word[last_end : match.start()]
-                    parts.append(
-                        process_english_word(non_number, enable_romaji_c2k=True)
-                    )
-
-                # 数字部分をそのまま追加
-                parts.append(match.group())
-                last_end = match.end()
-
-            # 最後の非数字部分を処理
-            if last_end < len(word):
-                non_number = word[last_end:]
-                parts.append(process_english_word(non_number, enable_romaji_c2k=True))
-
-            return "".join(parts)
 
         # アルファベットのチャンクを抽出
         alpha_chunks = extract_alphabet_chunks(word)
@@ -1189,6 +1228,23 @@ def __convert_english_to_katakana(text: str) -> str:
         # この処理はあくまで辞書ベースで解決できなかった場合の最終手段なので、CamelCase を分割して個々の単語ごとに処理する際はこの処理は通らない
         # ref: https://github.com/Patchethium/e2k
         if alpha_chunks and enable_romaji_c2k is True:
+
+            # 英単語の末尾に 11 以下の数字 (1.0 のような小数表記を除く) がつく場合の処理 (例: iPhone 11, Pixel8)
+            number_match = __ENGLISH_WORD_WITH_NUMBER_PATTERN.match(word)
+            if number_match:
+                base_word = number_match.group(1)
+                number = number_match.group(2)
+                # まず base_word をカタカナに変換
+                # c2k は小文字でのみ動作する
+                converted_katakana = __C2K(base_word.lower())
+                # 数字を英語表現に変換し、それをカタカナに変換
+                number_in_english = num2words(int(number), lang="en")
+                number_katakana = process_english_word(
+                    number_in_english, enable_romaji_c2k=True
+                )
+                if number_katakana:
+                    return converted_katakana + number_katakana
+
             # 変換情報を保存するリスト
             replacements = []
             converted_any = False
@@ -1200,9 +1256,8 @@ def __convert_english_to_katakana(text: str) -> str:
                     # いずれかの文字がアルファベットの場合のみ
                     if any(__ALPHABET_PATTERN.match(c) for c in chunk):
                         converted = __C2K(chunk.lower())  # c2k は小文字でのみ動作する
-                        if converted is not None:
-                            converted_any = True
-                            replacements.append((start, end, converted))
+                        converted_any = True
+                        replacements.append((start, end, converted))
 
             # 置換情報を元に新しい文字列を構築（後ろから処理することで位置ずれを防ぐ）
             if converted_any:
@@ -1258,14 +1313,6 @@ def __convert_english_to_katakana(text: str) -> str:
     for quote in quotes:
         text = text.replace(quote, "'")
 
-    # 英単語の直後のスペースまたはハイフンを挟んで2桁以下の数字が続くパターンの場合、英単語の直後に数字がくるようにする
-    # この後 process_english_word() で「アイフォンサーティーン」のように数字も含めて英語表記に変換される
-    # 例: "iPhone 13" -> "iPhone13", "Gemini-2" -> "Gemini2"
-    # ただし、小数点を含む数値は対象外 (例: "Gemini-1.5" はそのまま)
-    text = __ENGLISH_WORD_WITH_DIVIDER_NUMBER_PATTERN.sub(
-        lambda x: x.group(1) + x.group(2), text
-    )
-
     words = []
     current_word = ""
     prev_char = ""
@@ -1304,6 +1351,58 @@ def __convert_english_to_katakana(text: str) -> str:
         char = text[i]
         next_char = text[i + 1] if i < len(text) - 1 else ""
 
+        # 英単語の後に0-11の数字が続く場合の特別処理
+        if current_word and __ALPHABET_PATTERN.search(current_word) and char.isdigit():
+            # 現在位置から数字を抽出（小数点も含めて）
+            num_str = ""
+            j = i
+            has_decimal_point = False
+
+            # 数字部分を抽出（小数点も含む）
+            while j < len(text) and (text[j].isdigit() or text[j] == "."):
+                if text[j] == ".":
+                    has_decimal_point = True
+                num_str += text[j]
+                j += 1
+
+            # 小数点を含む場合はこの特別処理を行わない
+            if has_decimal_point:
+                current_word += num_str
+                i = j  # 数字（小数点含む）の最後の位置まで進める
+                continue
+
+            # 整数部分のみを取得（小数点がない場合は元の数字文字列と同じ）
+            int_part = num_str
+
+            # 0-11の数字であり、かつその後に英数字が続く場合は分割
+            if int_part and 0 <= int(int_part) <= 11:
+                # 数字の後に英数字が続くかどうかを確認
+                has_alnum_after = j < len(text) and (
+                    __ENGLISH_WORD_PATTERN.match(text[j]) is not None
+                )
+
+                if has_alnum_after:
+                    # 英単語を処理
+                    is_all_alpha = all(
+                        __ALPHABET_PATTERN.match(c) for c in current_word
+                    )
+                    converted = process_english_word(
+                        current_word, enable_romaji_c2k=True
+                    )
+                    words.append(converted)
+                    is_english_converted.append(
+                        is_all_alpha
+                        and (is_all_katakana(converted) or converted.isupper())
+                    )
+                    current_word = int_part  # 数字を新しい単語として設定
+                    i = j  # 数字の最後の位置まで進める
+                    continue
+                else:
+                    # 英単語+数字を一つの単語として扱う
+                    current_word += int_part
+                    i = j  # 数字の最後の位置まで進める
+                    continue
+
         # 英数字または特定の記号であれば current_word に追加
         if __ENGLISH_WORD_PATTERN.match(char) is not None or char in "-&+'":
             current_word += char
@@ -1338,6 +1437,45 @@ def __convert_english_to_katakana(text: str) -> str:
                     current_word = ""
                 words.append(char)
                 is_english_converted.append(False)  # 記号は変換されていない
+        # スペースまたはハイフンの特別処理（英単語の後に0-11の数字が続く場合）
+        elif (
+            (char == " " or char == "-")
+            and current_word
+            and __ALPHABET_PATTERN.search(current_word)
+        ):
+            # 次の文字が0-11の数字かどうかを確認
+            if next_char.isdigit():
+                # 0-11の数字を抽出
+                num_str = ""
+                j = i + 1
+                while j < len(text) and text[j].isdigit():
+                    num_str += text[j]
+                    j += 1
+                # 0-11の数字であり、かつその後に英数字が続かない場合
+                if num_str and 0 <= int(num_str) <= 11:
+                    # 数字の後に英数字が続くかどうかを確認
+                    has_alnum_after = j < len(text) and (
+                        __ENGLISH_WORD_PATTERN.match(text[j]) is not None
+                    )
+                    if not has_alnum_after:
+                        # 英単語+スペース/ハイフン+数字を一つの単語として扱う
+                        current_word += char + num_str
+                        i = j  # 数字の最後の位置まで進める
+                        continue
+            # 上記条件に当てはまらない場合は通常処理
+            if current_word:
+                # 元の単語が全てアルファベットかどうかを確認
+                is_all_alpha = all(__ALPHABET_PATTERN.match(c) for c in current_word)
+                # 変換処理
+                converted = process_english_word(current_word, enable_romaji_c2k=True)
+                words.append(converted)
+                # 変換後が全てカタカナかつ元が全てアルファベットなら、もしくは当該単語が全て大文字からなる場合は True
+                is_english_converted.append(
+                    is_all_alpha and (is_all_katakana(converted) or converted.isupper())
+                )
+                current_word = ""
+            words.append(char)
+            is_english_converted.append(False)  # スペースやハイフンは変換されていない
         else:
             # 英単語が終了したらカタカナに変換して words に追加
             if current_word:

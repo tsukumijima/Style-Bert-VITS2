@@ -33,20 +33,6 @@ def test_normalize_text_units():
     assert normalize_text("1000.19mg") == "1000.19ミリグラム"
     assert normalize_text("100g") == "100グラム"
     assert normalize_text("2kg") == "2キログラム"
-    # スラッシュ付き単位（意図的に変換せず pyopenjtalk に任せるパターン）
-    assert normalize_text("100m/s") == "100m/s"
-    assert normalize_text("100kL/m") == "100kL/m"
-    assert normalize_text("100g/㎥") == "100g/m3"
-    assert normalize_text("100km/h") == "100km/h"
-    assert normalize_text("5000m/s") == "5000m/s"
-    assert normalize_text("3.5km/s") == "3.5km/s"
-    assert normalize_text("30.56B/s") == "30.56B/s"
-    assert normalize_text("30.56kB/s") == "30.56kB/s"
-    assert normalize_text("30.56KB/s") == "30.56KB/s"
-    assert normalize_text("30.56MB/s") == "30.56MB/s"
-    assert normalize_text("30.56GB/s") == "30.56GB/s"
-    assert normalize_text("30.56TB/s") == "30.56TB/s"
-    assert normalize_text("30.56EB/s") == "30.56EB/s"
     # データ容量
     assert normalize_text("51B") == "51バイト"
     assert normalize_text("51KB") == "51キロバイト"
@@ -101,6 +87,59 @@ def test_normalize_text_units():
     assert normalize_text("100Mbps") == "100メガビーピーエス"
     assert normalize_text("100Gbps") == "100ギガビーピーエス"
     assert normalize_text("100Tbps") == "100テラビーピーエス"
+    assert normalize_text("100Pbps") == "100ペタビーピーエス"
+    assert normalize_text("100Ebps") == "100エクサビーピーエス"
+    # ビット
+    assert normalize_text("100bit") == "100ビット"
+    assert normalize_text("100kbit") == "100キロビット"
+    assert normalize_text("100Mbit") == "100メガビット"
+    assert normalize_text("100Gbit") == "100ギガビット"
+    assert normalize_text("100Tbit") == "100テラビット"
+    assert normalize_text("100Pbit") == "100ペタビット"
+    assert normalize_text("100Ebit") == "100エクサビット"
+    # スラッシュ付き単位（毎分・毎秒）
+    assert normalize_text("100m/h") == "100メートル毎時"
+    assert normalize_text("100km/h") == "100キロメートル毎時"
+    assert normalize_text("5000m/h") == "5000メートル毎時"
+    assert normalize_text("3.5km/h") == "3.5キロメートル毎時"
+    assert normalize_text("30.56B/h") == "30.56バイト毎時"
+    assert normalize_text("30.56kB/h") == "30.56キロバイト毎時"
+    assert normalize_text("30.56KB/h") == "30.56キロバイト毎時"
+    assert normalize_text("30.56MB/h") == "30.56メガバイト毎時"
+    assert normalize_text("30.56GB/h") == "30.56ギガバイト毎時"
+    assert normalize_text("30.56TB/h") == "30.56テラバイト毎時"
+    assert normalize_text("30.56EB/h") == "30.56エクサバイト毎時"
+    assert normalize_text("30.56b/h") == "30.56ビット毎時"
+    assert normalize_text("30.56Kb/h") == "30.56キロビット毎時"
+    assert normalize_text("30.56Mb/h") == "30.56メガビット毎時"
+    assert normalize_text("30.56Gb/h") == "30.56ギガビット毎時"
+    assert normalize_text("30.56Tb/h") == "30.56テラビット毎時"
+    assert normalize_text("30.56Eb/h") == "30.56エクサビット毎時"
+    assert normalize_text("100m/s") == "100メートル毎秒"
+    assert normalize_text("100km/h") == "100キロメートル毎時"
+    assert normalize_text("5000m/s") == "5000メートル毎秒"
+    assert normalize_text("3.5km/s") == "3.5キロメートル毎秒"
+    assert normalize_text("30.56B/s") == "30.56バイト毎秒"
+    assert normalize_text("30.56kB/s") == "30.56キロバイト毎秒"
+    assert normalize_text("30.56KB/s") == "30.56キロバイト毎秒"
+    assert normalize_text("30.56MB/s") == "30.56メガバイト毎秒"
+    assert normalize_text("30.56GB/s") == "30.56ギガバイト毎秒"
+    assert normalize_text("30.56TB/s") == "30.56テラバイト毎秒"
+    assert normalize_text("30.56EB/s") == "30.56エクサバイト毎秒"
+    assert normalize_text("30.56b/s") == "30.56ビット毎秒"
+    assert normalize_text("30.56Kb/s") == "30.56キロビット毎秒"
+    assert normalize_text("30.56Mb/s") == "30.56メガビット毎秒"
+    assert normalize_text("30.56Gb/s") == "30.56ギガビット毎秒"
+    assert normalize_text("30.56Tb/s") == "30.56テラビット毎秒"
+    assert normalize_text("30.56Eb/s") == "30.56エクサビット毎秒"
+    # スラッシュ付き単位（毎分・毎秒以外の意図的に変換せず pyopenjtalk に任せるパターン）
+    assert normalize_text("100kL/m") == "100kL/m"
+    assert normalize_text("100g/㎥") == "100g/m3"
+    # スラッシュ付き単位ではないので通常通り変換するパターン (dB は変換対象外の単位)
+    assert normalize_text("100m/100.50mL/50dB") == "100メートル/100.50ミリリットル/50dB"
+    assert normalize_text("100m/秒") == "100メートル/秒"
+    # 英単語の後に単位が来るケース
+    assert normalize_text("up to 8GB") == "アップトゥー8ギガバイト"
     # 追加のテストケース
     assert normalize_text("100tトラック") == "100トントラック"
     assert normalize_text("100.1919tトラック") == "100.1919トントラック"
@@ -531,6 +570,18 @@ def test_normalize_text_english():
     assert normalize_text("The company's policy") == "ザカンパニーズポリシー"
 
     # 英単語の後に数字が来る場合
+    assert normalize_text("GPT-3") == "ジーピーティースリー"
+    assert normalize_text("GPT-11") == "ジーピーティーイレブン"
+    assert (
+        # 小数点は変換しない (pyopenjtalk で日本語読みされる)
+        normalize_text("GPT-4.5")
+        == "ジーピーティー4.5"
+    )
+    assert (
+        # 12 以降は変換しない (pyopenjtalk で日本語読みされる)
+        normalize_text("GPT-12")
+        == "ジーピーティー12"
+    )
     assert normalize_text("iPhone11") == "アイフォンイレブン"
     assert normalize_text("iPhone 8") == "アイフォンエイト"
     assert normalize_text("iPhone 9 Pro Max") == "アイフォンナインプロマックス"
@@ -548,17 +599,22 @@ def test_normalize_text_english():
     )
     assert (
         # 12 以降は変換しない (pyopenjtalk で日本語読みされる)
-        normalize_text("iPhone 12")
+        normalize_text("iPhone12")
         == "アイフォン12"
     )
     assert (
-        # 14 以降は変換しない (pyopenjtalk で日本語読みされる)
+        # 12 以降は変換しない (pyopenjtalk で日本語読みされる)
         normalize_text("Android 14")
         == "アンドロイド14"
     )
     assert (
-        # 14 以降は変換しない (pyopenjtalk で日本語読みされる)
+        # 12 以降は変換しない (pyopenjtalk で日本語読みされる)
         normalize_text("Windows 95")
+        == "ウィンドウズ95"
+    )
+    assert (
+        # 12 以降は変換しない (pyopenjtalk で日本語読みされる)
+        normalize_text("Windows95")
         == "ウィンドウズ95"
     )
     assert normalize_text("Gemini-2") == "ジェミニツー"
@@ -582,8 +638,8 @@ def test_normalize_text_english():
     assert normalize_text("a student") == "アスチューデント"
     assert normalize_text("not a pen") == "ノットアペン"
     assert (
-        normalize_text("a OFDM modular")
-        == "アOFDMモジュラー"  # OFDM は全て大文字なのでそのまま
+        normalize_text("a OFDMEXA modular")
+        == "アOFDMEXAモジュラー"  # OFDMEXA は辞書未収録の造語のため全て大文字なのでそのまま
     )
     assert normalize_text("a 123") == "a123"  # 数字の前の a はそのまま
     assert normalize_text("This is a pen.") == "ディスイズアペン."
@@ -592,16 +648,16 @@ def test_normalize_text_english():
     # ハイフンで区切られた英単語の処理
     assert normalize_text("pen") == "ペン"
     assert normalize_text("good-pen") == "グッドペン"
-    assert normalize_text("OFDM-modular") == "OFDMモジュラー"
+    assert normalize_text("OFDMEXA-modular") == "OFDMEXAモジュラー"
     assert (
         # "Bentol" は適当にでっち上げた造語なので C2K によってカタカナ推定が入り、それ以外は辞書からカタカナ表記が取得される
         normalize_text("Bentol-API-SpecificationResult2")
         == "ベントルエーピーアイスペシフィケーションリザルトツー"
     )
     assert (
-        # "Paravoice" は造語なので C2K によってカタカナ推定が入る
-        normalize_text("Paravoice 3をOTAMESHIできます")
-        == "パラボイス3をオタメシできます"
+        # "Paravoice" は辞書にない造語なので C2K によってカタカナ推定が入る
+        normalize_text("Paravoice 3を4GBまでOTAMESHIできます")
+        == "パラボイススリーを4ギガバイトまでオタメシできます"
     )
 
     # 長い英文
@@ -643,7 +699,7 @@ def test_normalize_text_english():
         == "マシンラーニングプラスディープラーニングイコールエーアイ"
     )
     assert (
-        normalize_text("iPhoneProMax15-vs-GooglePixel8Pro")
+        normalize_text("iPhoneProMax15-vs-GooglePixel8 Pro")
         == "iフォンプロマックス15バーサスグーグルピクセルエイトプロ"
     )
     assert (
@@ -869,4 +925,28 @@ def test_normalize_text_complex():
             "path-to-model-file.onnx は事前学習済みの onnx モデルファイルです。 onnx_model/phoneme_transition_model.onnxにあります。 path-to-wav-file はサンプリング周波数 16kHz  のモノラル wav ファイルです。 path-to-phoneme-file は音素を空白区切りしたテキストが格納されたファイルのパスです。 NOTE: 開始音素と終了音素は pau である必要があります。"
         )
         == "パストゥーモデルファイルオニキスは事前学習済みのオニキスモデルファイルです.オニキスモデル/フォーニムトランジションモデルオニキスにあります.パストゥーワブファイルはサンプリング周波数16キロヘルツのモノラルワブファイルです.パストゥーフォーニムファイルは音素を空白区切りしたテキストが格納されたファイルのパスです.ノート,開始音素と終了音素はパウである必要があります."
+    )
+    assert (
+        normalize_text(
+            "Apple Watch Series 10も安くなっている。Amazonでの 販売価格は、昨年発売された新モデルということもあり、過去最安値となっている。42mmのジェットブラックモデル（Wi-Fi）の場合、5％OFFの\\53,693＋537ポイントで販売している。ヨドバシ.comとビックカメラ.comでもセール対象となっており、ポイント還元分を含んだ実質価格はAmazonと同等だ。"
+        )
+        == "アップルウォッチシリーズテンも安くなっている.アマゾンでの販売価格は,昨年発売された新モデルということもあり,過去最安値となっている.42ミリメートルのジェットブラックモデル'ワイファイ'の場合,5パーセントオフの53693円プラス537ポイントで販売している.ヨドバシ.コムとビックカメラ.コムでもセール対象となっており,ポイント還元分を含んだ実質価格はアマゾンと同等だ."
+    )
+    assert (
+        normalize_text(
+            "音質面では、8W×2基のスピーカーを搭載。立体音響フォーマットはDTS:Xに対応し、バーチャルサウンド技術のDTS:Virtualサウンドを活用した再生も可能だという。Google TVが導入されているため、YouTube／Prime Video／Netflixといった多数のVODサービスが楽しめる他、音声操作のGoogleアシスタントbuilt-in、スマートフォンなどのデバイスからテレビに映像をキャストするChromecast built-inなども採用されている。ユニボディデザインに極上メタリックフレームを採用したプレミアムなデザインも特徴的。付属リモコンは、Bluetooth接続タイプが投入されている。ワイヤレス機能は、Bluetooth ver5.0、Wi-Fi（5GHz/2.4GHz）に対応する。"
+        )
+        == "音質面では,8Wかける2基のスピーカーを搭載.立体音響フォーマットはディーティーエス,Xに対応し,バーチャルサウンド技術のディーティーエス,バーチャルサウンドを活用した再生も可能だという.グーグルティービーが導入されているため,ユーチューブ/プライムビデオ/ネットフリックスといった多数のブイーオーディーサービスが楽しめる他,音声操作のグーグルアシスタントビルトイン,スマートフォンなどのデバイスからテレビに映像をキャストするクロームキャストビルトインなども採用されている.ユニボディデザインに極上メタリックフレームを採用したプレミアムなデザインも特徴的.付属リモコンは,ブルートゥース接続タイプが投入されている.ワイヤレス機能は,ブルートゥースバー5.0,ワイファイ'5ギガヘルツ/2.4ギガヘルツ'に対応する."
+    )
+    assert (
+        normalize_text(
+            "Scopely（スコープリー）は『モノポリーGO』や『マーベル・ストライクフォース』などを配信している、アメリカのモバイルゲーム会社。2023年にサウジアラビアのSavvy Games Groupに49億ドルで買収されている。 一方のナイアンティックは、前述のゲーム事業の売却に合わせて、新会社となる”Niantic Spatial Inc.”（ナイアンティックスペーシャル）を設立。ジオスペーシャルAI事業として、空間コンピューティング、XR、地理情報システム（GIS）、AIを統合した、新たなプラットフォーム”Niantic Spatial Platform”へ注力するという。なお、『ポケモンGO』や『モンスターハンターNow』、『ピクミンブルーム』の事業はスコープリーへ移管されるものの、『Ingress Prime』や『Peridot』などの現実世界を舞台にしたARゲームは引き続き、ナイアンティック側で運営を行う。"
+        )
+        == "スコープリー'スコープリー'はモノポリーゴーやマーベル,ストライクフォースなどを配信している,アメリカのモバイルゲーム会社.2023年にサウジアラビアのサヴィゲームズグループに49億ドルで買収されている.一方のナイアンティックは,前述のゲーム事業の売却に合わせて,新会社となる'ナイアンティックスペイシャルインク.''ナイアンティックスペーシャル'を設立.ジオスペーシャルエーアイ事業として,空間コンピューティング,エックスアール,地理情報システム'ジーアイエス',エーアイを統合した,新たなプラットフォーム'ナイアンティックスペイシャルプラットフォーム'へ注力するという.なお,ポケモンゴーやモンスターハンターナウ,ピクミンブルームの事業はスコープリーへ移管されるものの,イングレスプライムやペリドットなどの現実世界を舞台にしたエーアールゲームは引き続き,ナイアンティック側で運営を行う."
+    )
+    assert (
+        normalize_text(
+            "ROCK5 is a series of Rockchip RK3588(s) based SBC(Single Board Computer) by Radxa. It can run Linux, Android, BSD and other distributions. ROCK5 comes in two models, Model A and Model B. Both models offer 4GB, 8GB, 16GB and 32GB options. For detailed difference between Model A and Model B, please check Specifications. ROCK5 features a Octa core ARM processor(4x Cortex-A76 + 4x Cortex-A55), 64bit 3200Mb/s LPDDR4, up to 8K@60 HDMI, MIPI DSI, MIPI CSI, 3.5mm jack with mic, USB Port, 2.5 GbE LAN, PCIe 3.0, PCIe 2.0, 40-pin color expansion header, RTC. Also, ROCK5 supports USB PD and QC powering."
+        )
+        == "ロックファイブイズアシリーズオブロックチップRK3588's'ベースドエスビーシー'シングルボードコンピューター'バイラドキャ.イットキャンランリナックス,アンドロイド,ビーエスディーアンドアザーディストリビューションズ.ロックファイブカムズインツーモデルズ,モデルAアンドモデルB.ボスモデルズオファー4ギガバイト,8ギガバイト,16ギガバイトアンド32ギガバイトオプションズ.フォーディテールズディファレンスビトゥイーンモデルAアンドモデルB,プリーズチェックスペシフィケーションズ.ロックファイブフィーチャーズアオクタコアアームプロセッサー'4xコーテックスA76プラス4xコーテックスA55',64ビット3200メガビット毎秒エルピーディーディーアールフォー,アップトゥーはちケー60エイチディーエムアイ,ミピーディーエスアイ,ミピーシーエスアイ,3.5ミリメートルジャックウィズマイク,ユーエスビーポート,2.5ジービーイーラン,ピーシーアイイー3.0,ピーシーアイイー2.0,40ピンカラーエクスパンションヘッダー,アールティーシー.オルソ,ロックファイブサポーツユーエスビーピーディーアンドキューシーパワーリング."
     )
