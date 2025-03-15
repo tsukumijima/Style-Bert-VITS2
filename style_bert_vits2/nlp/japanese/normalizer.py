@@ -402,6 +402,9 @@ __EXPONENT_PATTERN = re.compile(r"(\d+(?:\.\d+)?)[eE]([-+]?\d+)")
 # __convert_english_to_katakana() で使う正規表現パターン
 __ENGLISH_WORD_PATTERN = re.compile(r"[a-zA-Z0-9]")
 __ENGLISH_WORD_WITH_NUMBER_PATTERN = re.compile(r"^([a-zA-Z]+)([0-9]{1,2})$")
+__ENGLISH_WORD_WITH_DIVIDER_NUMBER_PATTERN = re.compile(
+    r"([a-zA-Z]+)[\s-](\d{1,2})(?!\d|\.\d)"
+)
 __ALPHABET_PATTERN = re.compile(r"[a-zA-Z]")
 
 # CamelCase 分割から保護する単位パターン
@@ -946,7 +949,7 @@ def __convert_english_to_katakana(text: str) -> str:
         """
 
         chunks = []
-        current_chunk = ''
+        current_chunk = ""
         start_pos = -1
         for i, char in enumerate(text):
             if __ALPHABET_PATTERN.match(char):
@@ -956,7 +959,7 @@ def __convert_english_to_katakana(text: str) -> str:
             else:
                 if current_chunk:
                     chunks.append((current_chunk, start_pos, i))
-                    current_chunk = ''
+                    current_chunk = ""
                     start_pos = -1
         # 最後のチャンクを処理
         if current_chunk:
@@ -991,7 +994,7 @@ def __convert_english_to_katakana(text: str) -> str:
                 return f"{number}{unit}"
             return unit
 
-        # 英単語の末尾に2桁以下の数字がつく場合の処理
+        # 英単語の末尾に2桁以下の数字 (1.0 のような小数表記を除く) がつく場合の処理
         number_match = __ENGLISH_WORD_WITH_NUMBER_PATTERN.match(word)
         if number_match:
             base_word = number_match.group(1)
@@ -1191,6 +1194,36 @@ def __convert_english_to_katakana(text: str) -> str:
         # 上記以外は元の単語を返す (pyopenjtalk 側でアルファベット読みされる)
         return word
 
+    # NFKC 処理でいくつかハイフンの変種が U+002D とは別のハイフンである U+2010 に変換されるので、それを通常のハイフンに変換する
+    text = text.replace("\u2010", "-")
+
+    # 単語中で使われうるクオートを全て ' に置換する (例: We’ve -> We've)
+    quotes = [
+        "\u2018",  # LEFT SINGLE QUOTATION MARK '
+        "\u2019",  # RIGHT SINGLE QUOTATION MARK '
+        "\u201A",  # SINGLE LOW-9 QUOTATION MARK ‚
+        "\u201B",  # SINGLE HIGH-REVERSED-9 QUOTATION MARK ‛
+        "\u2032",  # PRIME ′
+        "\u0060",  # GRAVE ACCENT `
+        "\u00B4",  # ACUTE ACCENT ´
+        "\u2033",  # DOUBLE PRIME ″
+        "\u301D",  # REVERSED DOUBLE PRIME QUOTATION MARK 〝
+        "\u301E",  # DOUBLE PRIME QUOTATION MARK 〞
+        "\u301F",  # LOW DOUBLE PRIME QUOTATION MARK 〟
+        "\uFF07",  # FULLWIDTH APOSTROPHE ＇
+    ]
+    # 全てのクオート記号を ' に置換
+    for quote in quotes:
+        text = text.replace(quote, "'")
+
+    # 英単語の直後のスペースまたはハイフンを挟んで2桁以下の数字が続くパターンの場合、英単語の直後に数字がくるようにする
+    # この後 process_english_word() で「アイフォンサーティーン」のように数字も含めて英語表記に変換される
+    # 例: "iPhone 13" -> "iPhone13", "Gemini-2" -> "Gemini2"
+    # ただし、小数点を含む数値は対象外 (例: "Gemini-1.5" はそのまま)
+    text = __ENGLISH_WORD_WITH_DIVIDER_NUMBER_PATTERN.sub(
+        lambda x: x.group(1) + x.group(2), text
+    )
+
     words = []
     current_word = ""
     prev_char = ""
@@ -1244,7 +1277,9 @@ def __convert_english_to_katakana(text: str) -> str:
             # それ以外は文の区切りとして扱う (例: I'm fine.)
             else:
                 if current_word:
-                    words.append(process_english_word(current_word, enable_romaji_c2k=True))
+                    words.append(
+                        process_english_word(current_word, enable_romaji_c2k=True)
+                    )
                     current_word = ""
                 words.append(char)
         else:

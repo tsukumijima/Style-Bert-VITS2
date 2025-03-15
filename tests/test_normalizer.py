@@ -400,7 +400,10 @@ def test_normalize_text_symbols():
     assert normalize_text("ABC&ABC") == "エービーシーアンドエービーシー"
     assert normalize_text("abc+abc") == "エービーシープラスエービーシー"
     assert normalize_text("abc&abc") == "エービーシーアンドエービーシー"
-    assert normalize_text("OpenAPI-Specification") == "オープンエーピーアイスペシフィケーション"
+    assert (
+        normalize_text("OpenAPI-Specification")
+        == "オープンエーピーアイスペシフィケーション"
+    )
     # 数式
     assert normalize_text("1+1=2") == "1プラス1イコール2"
     assert normalize_text("5-3=2") == "5マイナス3イコール2"
@@ -441,9 +444,18 @@ def test_normalize_text_english():
     assert normalize_text("Hello") == "ハロー"
     assert normalize_text("Good Morning") == "グッドモーニング"
     assert normalize_text("Node.js") == "ノードジェイエス"
+    # 複数形
+    assert normalize_text("computers") == "コンピューターズ"
+    assert normalize_text("smartphones") == "スマートフォーンズ"
+    assert (
+        normalize_text("chatgpts")
+        == "チャットジーピーティーズ"  # "chatgpt" しか辞書に含まれていない場合に自動的に s をつけて読む
+    )
     # CamelCase
     assert normalize_text("JavaScript") == "ジャバスクリプト"
     assert normalize_text("TypeScript") == "タイプスクリプト"
+    assert normalize_text("RockchipTechnologies") == "ロックチップテクノロジーズ"
+    assert normalize_text("splitTextAndImage()") == "スプリットテキストアンドイメージ''"
     # 複合語
     assert normalize_text("e-mail") == "イーメール"
     assert normalize_text("YouTube") == "ユーチューブ"
@@ -453,6 +465,12 @@ def test_normalize_text_english():
         normalize_text("WINDSURFEDITOR") == "WINDSURFEDITOR"
     )  # 全て大文字の場合は変換しない
     assert normalize_text("DevinProgrammerAgents") == "デビンプログラマーエージェンツ"
+    # クオートの正規化処理
+    assert normalize_text("I'm") == "アイム"
+    assert normalize_text("I’m") == "アイム"
+    assert normalize_text("We've") == "ウイブ"
+    assert normalize_text("We’ve") == "ウイブ"
+
     # 敬称の処理
     assert normalize_text("Mr. John") == "ミスタージョン"
     assert normalize_text("Mrs. Smith") == "ミセススミス"
@@ -470,17 +488,72 @@ def test_normalize_text_english():
     )
     assert normalize_text("John's book") == "ジョンズブック"
     assert normalize_text("The company's policy") == "ザカンパニーズポリシー"
-    # 複数形の処理
-    assert normalize_text("computers") == "コンピューターズ"
-    assert normalize_text("smartphones") == "スマートフォーンズ"
+
+    # 英単語の後に数字が来る場合
+    assert normalize_text("iPhone13") == "アイフォンサーティーン"
+    assert normalize_text("iPhone 8") == "アイフォンエイト"
+    assert normalize_text("iPhone 14 Pro Max") == "アイフォンフォーティーンプロマックス"
+    assert normalize_text("Gemini-2") == "ジェミニツー"
+    assert (
+        normalize_text("Gemini-1.5")
+        == "ジェミニ1.5"  # 小数点は pyopenjtalk に任せた方が良い読みになるので変換しない
+    )
+    assert normalize_text("Gemini 2") == "ジェミニツー"
+    assert (
+        normalize_text("Gemini 2.0")
+        == "ジェミニ2.0"  # 小数点は pyopenjtalk に任せた方が良い読みになるので変換しない
+    )
+    assert (
+        normalize_text("GPT‑4")
+        == "ジーピーティーフォー"  # ハイフンが Non-Breaking Hyphen になっている
+    )
+
+    # 長い英文
+    assert (
+        normalize_text(
+            "GPT-4 can solve difficult problems with greater accuracy, thanks to its broader general knowledge and problem solving abilities."
+        )
+        == "ジーピーティーフォーキャンソルブディフィカルトプロブレムズウィズグレーターアキュラシー,サンクストゥーイツブローダージェネラルナレッジアンドプロブレムソルビングアビリティーズ."
+    )
+    assert (
+        # 小数点は pyopenjtalk に任せた方が良い読みになるので変換しない
+        normalize_text(
+            "We’re releasing a research preview of GPT‑4.5—our largest and best model for chat yet. GPT‑4.5 is a step forward in scaling up pre-training and post-training. By scaling unsupervised learning, GPT‑4.5 improves its ability to recognize patterns, draw connections, and generate creative insights without reasoning."
+        )
+        == "ウイアーリリーシングaリサーチプレビューオブジーピーティー4.5-アワーラージェストアンドベストモデルフォーチャットイェット.ジーピーティー4.5イズaステップフォーワードインスケーリングアッププリートレーニングアンドポストトレーニング.バイスケーリングアンスーパーバイズドラーニング,ジーピーティー4.5インプルーブズイツアビリティートゥーレコグナイズパターンズ,ドローコネクションズ,アンドジェネレートクリエイティブインサイツウィザウトリーズニング."
+    )
+
     # 複雑な CamelCase と英文の混合パターン (TODO: 改善の余地あり)
-    assert normalize_text("ではCinamicさん、WindsurfCascade-PriceはGemini+Claude&Deepseekesより安いか分かりますか？") == "ではシナマイクさん,ウインドサーフカスケードプライスはジェミニプラスクロードアンドディープシークエスより安いか分かりますか?"
-    assert normalize_text("I'm human, with ApplePencil. Because, We have iPhone13.") == "アイムヒューマン,ウィズアップルペンシル.ビコーズ,ウィーハブアイフォンサーティーン."
-    assert normalize_text("ModelTrainingWithGPT4TurboAndLlama3") == "モデルトレーニングウィズGPT4ターボアンドラマスリー"
-    assert normalize_text("NextGenCloudComputingSystem2024") == "ネクストジェンクラウドコンピューティングシステム2024"
-    assert normalize_text("MachineLearning+DeepLearning=AI") == "マシンラーニングプラスディープラーニングイコールエーアイ"
-    assert normalize_text("iPhoneProMax15-vs-GooglePixel8Pro") == "iフォンプロマックスフィフティーンバーサスグーグルピクセルエイトプロ"
-    assert normalize_text("WebDev2023: HTML5+CSS3+JavaScript") == "ウェブデブ2023,エイチティーエムエルファイブプラスシーエスエススリープラスジャバスクリプト"
+    assert (
+        normalize_text(
+            "ではCinamicさん、WindsurfCascade-PriceはGemini+Claude&Deepseekesより安いか分かりますか？"
+        )
+        == "ではシナマイクさん,ウインドサーフカスケードプライスはジェミニプラスクロードアンドディープシークエスより安いか分かりますか?"
+    )
+    assert (
+        normalize_text("I'm human, with ApplePencil. Because, We have iPhone13.")
+        == "アイムヒューマン,ウィズアップルペンシル.ビコーズ,ウィーハブアイフォンサーティーン."
+    )
+    assert (
+        normalize_text("ModelTrainingWithGPT4TurboAndLlama3")
+        == "モデルトレーニングウィズGPT4ターボアンドラマスリー"
+    )
+    assert (
+        normalize_text("NextGenCloudComputingSystem2024")
+        == "ネクストジェンクラウドコンピューティングシステム2024"
+    )
+    assert (
+        normalize_text("MachineLearning+DeepLearning=AI")
+        == "マシンラーニングプラスディープラーニングイコールエーアイ"
+    )
+    assert (
+        normalize_text("iPhoneProMax15-vs-GooglePixel8Pro")
+        == "iフォンプロマックスフィフティーンバーサスグーグルピクセルエイトプロ"
+    )
+    assert (
+        normalize_text("WebDev2023: HTML5+CSS3+JavaScript")
+        == "ウェブデブ2023,エイチティーエムエルファイブプラスシーエスエススリープラスジャバスクリプト"
+    )
 
 
 def test_normalize_text_mathematical():
@@ -663,7 +736,7 @@ def test_normalize_text_complex():
         normalize_text(
             "新商品のiPhone 15 Pro Max (256GB)が¥158,000(税込)で発売！9/22(金)午前10時から予約受付開始。"
         )
-        == "新商品のアイフォン15プロマックス'256ギガバイト'が158000円'税込'で発売!9月22日金曜日午前10時から予約受付開始."
+        == "新商品のアイフォンフィフティーンプロマックス'256ギガバイト'が158000円'税込'で発売!9月22日金曜日午前10時から予約受付開始."
     )
     assert (
         normalize_text(
