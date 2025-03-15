@@ -508,6 +508,19 @@ def test_normalize_text_english():
         == "ジーピーティーフォー"  # ハイフンが Non-Breaking Hyphen になっている
     )
 
+    # 単数を表す "a" の処理
+    assert normalize_text("a pen") == "アペン"
+    assert normalize_text("a book") == "アブック"
+    assert normalize_text("a student") == "アスチューデント"
+    assert normalize_text("not a pen") == "ノットアペン"
+    assert (
+        normalize_text("a OFDM modular")
+        == "アOFDMモジュラー"  # OFDM は全て大文字なのでそのまま
+    )
+    assert normalize_text("a 123") == "a123"  # 数字の前の a はそのまま
+    assert normalize_text("This is a pen.") == "ディスイズアペン."
+    assert normalize_text("This is a good pen.") == "ディスイズアグッドペン."
+
     # 長い英文
     assert (
         normalize_text(
@@ -520,7 +533,7 @@ def test_normalize_text_english():
         normalize_text(
             "We’re releasing a research preview of GPT‑4.5—our largest and best model for chat yet. GPT‑4.5 is a step forward in scaling up pre-training and post-training. By scaling unsupervised learning, GPT‑4.5 improves its ability to recognize patterns, draw connections, and generate creative insights without reasoning."
         )
-        == "ウイアーリリーシングaリサーチプレビューオブジーピーティー4.5-アワーラージェストアンドベストモデルフォーチャットイェット.ジーピーティー4.5イズaステップフォーワードインスケーリングアッププリートレーニングアンドポストトレーニング.バイスケーリングアンスーパーバイズドラーニング,ジーピーティー4.5インプルーブズイツアビリティートゥーレコグナイズパターンズ,ドローコネクションズ,アンドジェネレートクリエイティブインサイツウィザウトリーズニング."
+        == "ウイアーリリーシングアリサーチプレビューオブジーピーティー4.5-アワーラージェストアンドベストモデルフォーチャットイェット.ジーピーティー4.5イズアステップフォーワードインスケーリングアッププリートレーニングアンドポストトレーニング.バイスケーリングアンスーパーバイズドラーニング,ジーピーティー4.5インプルーブズイツアビリティートゥーレコグナイズパターンズ,ドローコネクションズ,アンドジェネレートクリエイティブインサイツウィザウトリーズニング."
     )
 
     # 複雑な CamelCase と英文の混合パターン (TODO: 改善の余地あり)

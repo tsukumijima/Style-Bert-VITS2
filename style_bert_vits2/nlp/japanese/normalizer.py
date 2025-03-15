@@ -1194,6 +1194,27 @@ def __convert_english_to_katakana(text: str) -> str:
         # 上記以外は元の単語を返す (pyopenjtalk 側でアルファベット読みされる)
         return word
 
+    def is_all_katakana(s: str) -> bool:
+        """
+        文字列が全てカタカナで構成されているかどうかを判定する。
+
+        Args:
+            s (str): 判定する文字列
+
+        Returns:
+            bool: 全てカタカナで構成されている場合は True、そうでない場合は False
+        """
+
+        # 空文字列の場合はFalseを返す
+        if not s:
+            return False
+
+        # Unicode のカタカナブロックは U+30A0 ~ U+30FF
+        for c in s:
+            if not ("\u30A0" <= c <= "\u30FF"):
+                return False
+        return True
+
     # NFKC 処理でいくつかハイフンの変種が U+002D とは別のハイフンである U+2010 に変換されるので、それを通常のハイフンに変換する
     text = text.replace("\u2010", "-")
 
@@ -1227,6 +1248,8 @@ def __convert_english_to_katakana(text: str) -> str:
     words = []
     current_word = ""
     prev_char = ""
+    # 英単語がカタカナに変換されたかどうかを記録するフラグのリスト
+    is_english_converted = []
 
     # 敬称のパターンを定義（ピリオド付きと無しの両方）
     title_patterns = [
@@ -1248,6 +1271,7 @@ def __convert_english_to_katakana(text: str) -> str:
             match = re.match(pattern, text[i:])
             if match:
                 words.append(replacement)
+                is_english_converted.append(True)  # 敬称は変換されたものとして記録
                 i += len(match.group(0))
                 matched = True
                 current_word = ""
@@ -1277,26 +1301,77 @@ def __convert_english_to_katakana(text: str) -> str:
             # それ以外は文の区切りとして扱う (例: I'm fine.)
             else:
                 if current_word:
-                    words.append(
-                        process_english_word(current_word, enable_romaji_c2k=True)
+                    # 元の単語が全てアルファベットかどうかを確認
+                    is_all_alpha = all(
+                        __ALPHABET_PATTERN.match(c) for c in current_word
+                    )
+                    # 変換処理
+                    converted = process_english_word(
+                        current_word, enable_romaji_c2k=True
+                    )
+                    words.append(converted)
+                    # 変換後が全てカタカナかつ元が全てアルファベットなら True
+                    is_english_converted.append(
+                        is_all_alpha and is_all_katakana(converted)
                     )
                     current_word = ""
                 words.append(char)
+                is_english_converted.append(False)  # 記号は変換されていない
         else:
             # 英単語が終了したらカタカナに変換して words に追加
             if current_word:
-                words.append(process_english_word(current_word, enable_romaji_c2k=True))
+                # 元の単語が全てアルファベットかどうかを確認
+                is_all_alpha = all(__ALPHABET_PATTERN.match(c) for c in current_word)
+                # 変換処理
+                converted = process_english_word(current_word, enable_romaji_c2k=True)
+                words.append(converted)
+                # 変換後が全てカタカナかつ元が全てアルファベットなら、もしくは当該単語が全て大文字からなる場合は True
+                is_english_converted.append(
+                    is_all_alpha and (is_all_katakana(converted) or converted.isupper())
+                )
                 current_word = ""
             words.append(char)
+            is_english_converted.append(False)  # 記号や他の文字は変換されていない
 
         prev_char = char
         i += 1
 
     # 最後の単語を処理
     if current_word:
-        words.append(process_english_word(current_word, enable_romaji_c2k=True))
+        # 元の単語が全てアルファベットかどうかを確認
+        is_all_alpha = all(__ALPHABET_PATTERN.match(c) for c in current_word)
+        # 変換処理
+        converted = process_english_word(current_word, enable_romaji_c2k=True)
+        words.append(converted)
+        # 変換後が全てカタカナかつ元が全てアルファベットなら True
+        is_english_converted.append(is_all_alpha and is_all_katakana(converted))
 
-    return "".join(words)
+    # 単数を表す "a" の処理
+    # 「a」の直後に空白があり、その後の単語が英語からカタカナに変換されている場合、「ア」に置き換える
+    new_words = []
+    i = 0
+    while i < len(words):
+        # "a" が現れたら、後続に空白をスキップして次のトークンを取得
+        if words[i] == "a":
+            j = i + 1
+            # j 以降が空白ならスキップ
+            while j < len(words) and words[j].isspace():
+                j += 1
+            # 次のトークンが英語からカタカナに変換されたものかどうか確認
+            if (
+                j < len(words)
+                and j < len(is_english_converted)
+                and is_english_converted[j]
+            ):
+                # "a" を「ア」として、後続の英単語と結合
+                new_words.append("ア" + words[j])
+                i = j + 1  # 置換済みなのでスキップ
+                continue
+        # その他はそのまま追加
+        new_words.append(words[i])
+        i += 1
+
+    return "".join(new_words)
 
 
 def replace_punctuation(text: str) -> str:
