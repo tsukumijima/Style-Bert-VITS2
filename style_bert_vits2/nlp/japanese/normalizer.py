@@ -401,9 +401,11 @@ __EXPONENT_PATTERN = re.compile(r"(\d+(?:\.\d+)?)[eE]([-+]?\d+)")
 
 # __convert_english_to_katakana() で使う正規表現パターン
 __ENGLISH_WORD_PATTERN = re.compile(r"[a-zA-Z0-9]")
-__ENGLISH_WORD_WITH_NUMBER_PATTERN = re.compile(r"^([a-zA-Z]+)([0-9]{1,2})$")
+__ENGLISH_WORD_WITH_NUMBER_PATTERN = re.compile(
+    r"^([a-zA-Z]+)([1-9]|1[01])$"
+)  # 12 以降は英語読みしない
 __ENGLISH_WORD_WITH_DIVIDER_NUMBER_PATTERN = re.compile(
-    r"([a-zA-Z]+)[\s-](\d{1,2})(?!\d|\.\d)"
+    r"([a-zA-Z]+)[\s-]([1-9]|1[01])(?!\d|\.\d)"  # 12 以降は英語読みしない
 )
 __ALPHABET_PATTERN = re.compile(r"[a-zA-Z]")
 
@@ -1004,7 +1006,9 @@ def __convert_english_to_katakana(text: str) -> str:
             if base_katakana:
                 # 数字を英語表現に変換し、それをカタカナに変換
                 number_in_english = num2words(int(number), lang="en")
-                number_katakana = process_english_word(number_in_english, enable_romaji_c2k=True)
+                number_katakana = process_english_word(
+                    number_in_english, enable_romaji_c2k=True
+                )
                 if number_katakana:
                     return base_katakana + number_katakana
 
@@ -1112,7 +1116,9 @@ def __convert_english_to_katakana(text: str) -> str:
                 # 数字の前の部分を処理
                 if match.start() > last_end:
                     non_number = word[last_end : match.start()]
-                    parts.append(process_english_word(non_number, enable_romaji_c2k=True))
+                    parts.append(
+                        process_english_word(non_number, enable_romaji_c2k=True)
+                    )
 
                 # 数字部分をそのまま追加
                 parts.append(match.group())

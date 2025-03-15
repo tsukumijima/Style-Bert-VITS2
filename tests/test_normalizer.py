@@ -490,9 +490,36 @@ def test_normalize_text_english():
     assert normalize_text("The company's policy") == "ザカンパニーズポリシー"
 
     # 英単語の後に数字が来る場合
-    assert normalize_text("iPhone13") == "アイフォンサーティーン"
+    assert normalize_text("iPhone11") == "アイフォンイレブン"
     assert normalize_text("iPhone 8") == "アイフォンエイト"
-    assert normalize_text("iPhone 14 Pro Max") == "アイフォンフォーティーンプロマックス"
+    assert normalize_text("iPhone 9 Pro Max") == "アイフォンナインプロマックス"
+    assert normalize_text("Claude 3") == "クロードスリー"
+    assert normalize_text("Pixel 8") == "ピクセルエイト"
+    assert (
+        # 09 のように数字が0埋めされている場合は変換しない
+        normalize_text("Pixel 09")
+        == "ピクセル09"
+    )
+    assert (
+        # 8a のように数字の後にスペースなしで何か付く場合は変換しない
+        normalize_text("Pixel 8a")
+        == "ピクセル8a"
+    )
+    assert (
+        # 12 以降は変換しない (pyopenjtalk で日本語読みされる)
+        normalize_text("iPhone 12")
+        == "アイフォン12"
+    )
+    assert (
+        # 14 以降は変換しない (pyopenjtalk で日本語読みされる)
+        normalize_text("Android 14")
+        == "アンドロイド14"
+    )
+    assert (
+        # 14 以降は変換しない (pyopenjtalk で日本語読みされる)
+        normalize_text("Windows 95")
+        == "ウィンドウズ95"
+    )
     assert normalize_text("Gemini-2") == "ジェミニツー"
     assert (
         normalize_text("Gemini-1.5")
@@ -527,8 +554,8 @@ def test_normalize_text_english():
     assert normalize_text("OFDM-modular") == "OFDMモジュラー"
     assert (
         # "Bentol" は適当にでっち上げた造語なので C2K によってカタカナ推定が入り、それ以外は辞書からカタカナ表記が取得される
-        normalize_text("Bentol-API-SpecificationResult20")
-        == "ベントルエーピーアイスペシフィケーションリザルトトゥエンティ"
+        normalize_text("Bentol-API-SpecificationResult2")
+        == "ベントルエーピーアイスペシフィケーションリザルトツー"
     )
     assert (
         # "Paravoice" は造語なので C2K によってカタカナ推定が入る
@@ -559,8 +586,8 @@ def test_normalize_text_english():
         == "ではシナマイクさん,ウインドサーフカスケードプライスはジェミニプラスクロードアンドディープシークエスより安いか分かりますか?"
     )
     assert (
-        normalize_text("I'm human, with ApplePencil. Because, We have iPhone13.")
-        == "アイムヒューマン,ウィズアップルペンシル.ビコーズ,ウィーハブアイフォンサーティーン."
+        normalize_text("I'm human, with ApplePencil. Because, We have iPhone 8.")
+        == "アイムヒューマン,ウィズアップルペンシル.ビコーズ,ウィーハブアイフォンエイト."
     )
     assert (
         normalize_text("ModelTrainingWithGPT4TurboAndLlama3")
@@ -576,7 +603,7 @@ def test_normalize_text_english():
     )
     assert (
         normalize_text("iPhoneProMax15-vs-GooglePixel8Pro")
-        == "iフォンプロマックスフィフティーンバーサスグーグルピクセルエイトプロ"
+        == "iフォンプロマックス15バーサスグーグルピクセルエイトプロ"
     )
     assert (
         normalize_text("WebDev2023: HTML5+CSS3+JavaScript")
@@ -764,7 +791,7 @@ def test_normalize_text_complex():
         normalize_text(
             "新商品のiPhone 15 Pro Max (256GB)が¥158,000(税込)で発売！9/22(金)午前10時から予約受付開始。"
         )
-        == "新商品のアイフォンフィフティーンプロマックス'256ギガバイト'が158000円'税込'で発売!9月22日金曜日午前10時から予約受付開始."
+        == "新商品のアイフォン15プロマックス'256ギガバイト'が158000円'税込'で発売!9月22日金曜日午前10時から予約受付開始."
     )
     assert (
         normalize_text(
