@@ -2,6 +2,7 @@ from typing import Any, cast
 
 import torch
 from numpy.typing import NDArray
+from torch.overrides import TorchFunctionMode
 
 from style_bert_vits2.constants import Languages
 from style_bert_vits2.logging import logger
@@ -19,73 +20,94 @@ from style_bert_vits2.nlp import (
 from style_bert_vits2.nlp.symbols import SYMBOLS
 
 
+class EmptyInitOnDevice(TorchFunctionMode):
+    def __init__(self, device=None):  # type: ignore
+        self.device = device
+
+    def __torch_function__(self, func, types, args=(), kwargs=None):  # type: ignore
+        kwargs = kwargs or {}
+        if getattr(func, "__module__", None) == "torch.nn.init":
+            if "tensor" in kwargs:
+                return kwargs["tensor"]
+            else:
+                return args[0]
+        if (
+            self.device is not None
+            and func in torch.utils._device._device_constructors()  # type: ignore
+            and kwargs.get("device") is None
+        ):  # type: ignore
+            kwargs["device"] = self.device
+        return func(*args, **kwargs)
+
+
 def get_net_g(
     model_path: str, version: str, device: str, hps: HyperParameters
 ) -> SynthesizerTrn | SynthesizerTrnJPExtra:
-    if version.endswith("JP-Extra"):
-        logger.info("Using JP-Extra model")
-        net_g = SynthesizerTrnJPExtra(
-            n_vocab=len(SYMBOLS),
-            spec_channels=hps.data.filter_length // 2 + 1,
-            segment_size=hps.train.segment_size // hps.data.hop_length,
-            n_speakers=hps.data.n_speakers,
-            # hps.model 以下のすべての値を引数に渡す
-            use_spk_conditioned_encoder=hps.model.use_spk_conditioned_encoder,
-            use_noise_scaled_mas=hps.model.use_noise_scaled_mas,
-            use_mel_posterior_encoder=hps.model.use_mel_posterior_encoder,
-            use_duration_discriminator=hps.model.use_duration_discriminator,
-            use_wavlm_discriminator=hps.model.use_wavlm_discriminator,
-            inter_channels=hps.model.inter_channels,
-            hidden_channels=hps.model.hidden_channels,
-            filter_channels=hps.model.filter_channels,
-            n_heads=hps.model.n_heads,
-            n_layers=hps.model.n_layers,
-            kernel_size=hps.model.kernel_size,
-            p_dropout=hps.model.p_dropout,
-            resblock=hps.model.resblock,
-            resblock_kernel_sizes=hps.model.resblock_kernel_sizes,
-            resblock_dilation_sizes=hps.model.resblock_dilation_sizes,
-            upsample_rates=hps.model.upsample_rates,
-            upsample_initial_channel=hps.model.upsample_initial_channel,
-            upsample_kernel_sizes=hps.model.upsample_kernel_sizes,
-            n_layers_q=hps.model.n_layers_q,
-            use_spectral_norm=hps.model.use_spectral_norm,
-            gin_channels=hps.model.gin_channels,
-            slm=hps.model.slm,
-        ).to(device)
-    else:
-        logger.info("Using normal model")
-        net_g = SynthesizerTrn(
-            n_vocab=len(SYMBOLS),
-            spec_channels=hps.data.filter_length // 2 + 1,
-            segment_size=hps.train.segment_size // hps.data.hop_length,
-            n_speakers=hps.data.n_speakers,
-            # hps.model 以下のすべての値を引数に渡す
-            use_spk_conditioned_encoder=hps.model.use_spk_conditioned_encoder,
-            use_noise_scaled_mas=hps.model.use_noise_scaled_mas,
-            use_mel_posterior_encoder=hps.model.use_mel_posterior_encoder,
-            use_duration_discriminator=hps.model.use_duration_discriminator,
-            use_wavlm_discriminator=hps.model.use_wavlm_discriminator,
-            inter_channels=hps.model.inter_channels,
-            hidden_channels=hps.model.hidden_channels,
-            filter_channels=hps.model.filter_channels,
-            n_heads=hps.model.n_heads,
-            n_layers=hps.model.n_layers,
-            kernel_size=hps.model.kernel_size,
-            p_dropout=hps.model.p_dropout,
-            resblock=hps.model.resblock,
-            resblock_kernel_sizes=hps.model.resblock_kernel_sizes,
-            resblock_dilation_sizes=hps.model.resblock_dilation_sizes,
-            upsample_rates=hps.model.upsample_rates,
-            upsample_initial_channel=hps.model.upsample_initial_channel,
-            upsample_kernel_sizes=hps.model.upsample_kernel_sizes,
-            n_layers_q=hps.model.n_layers_q,
-            use_spectral_norm=hps.model.use_spectral_norm,
-            gin_channels=hps.model.gin_channels,
-            slm=hps.model.slm,
-        ).to(device)
-    net_g.state_dict()
-    _ = net_g.eval()
+    with EmptyInitOnDevice(device):
+        if version.endswith("JP-Extra"):
+            logger.info("Using JP-Extra model")
+            net_g = SynthesizerTrnJPExtra(
+                n_vocab=len(SYMBOLS),
+                spec_channels=hps.data.filter_length // 2 + 1,
+                segment_size=hps.train.segment_size // hps.data.hop_length,
+                n_speakers=hps.data.n_speakers,
+                # hps.model 以下のすべての値を引数に渡す
+                use_spk_conditioned_encoder=hps.model.use_spk_conditioned_encoder,
+                use_noise_scaled_mas=hps.model.use_noise_scaled_mas,
+                use_mel_posterior_encoder=hps.model.use_mel_posterior_encoder,
+                use_duration_discriminator=hps.model.use_duration_discriminator,
+                use_wavlm_discriminator=hps.model.use_wavlm_discriminator,
+                inter_channels=hps.model.inter_channels,
+                hidden_channels=hps.model.hidden_channels,
+                filter_channels=hps.model.filter_channels,
+                n_heads=hps.model.n_heads,
+                n_layers=hps.model.n_layers,
+                kernel_size=hps.model.kernel_size,
+                p_dropout=hps.model.p_dropout,
+                resblock=hps.model.resblock,
+                resblock_kernel_sizes=hps.model.resblock_kernel_sizes,
+                resblock_dilation_sizes=hps.model.resblock_dilation_sizes,
+                upsample_rates=hps.model.upsample_rates,
+                upsample_initial_channel=hps.model.upsample_initial_channel,
+                upsample_kernel_sizes=hps.model.upsample_kernel_sizes,
+                n_layers_q=hps.model.n_layers_q,
+                use_spectral_norm=hps.model.use_spectral_norm,
+                gin_channels=hps.model.gin_channels,
+                slm=hps.model.slm,
+            ).to(device)
+        else:
+            logger.info("Using normal model")
+            net_g = SynthesizerTrn(
+                n_vocab=len(SYMBOLS),
+                spec_channels=hps.data.filter_length // 2 + 1,
+                segment_size=hps.train.segment_size // hps.data.hop_length,
+                n_speakers=hps.data.n_speakers,
+                # hps.model 以下のすべての値を引数に渡す
+                use_spk_conditioned_encoder=hps.model.use_spk_conditioned_encoder,
+                use_noise_scaled_mas=hps.model.use_noise_scaled_mas,
+                use_mel_posterior_encoder=hps.model.use_mel_posterior_encoder,
+                use_duration_discriminator=hps.model.use_duration_discriminator,
+                use_wavlm_discriminator=hps.model.use_wavlm_discriminator,
+                inter_channels=hps.model.inter_channels,
+                hidden_channels=hps.model.hidden_channels,
+                filter_channels=hps.model.filter_channels,
+                n_heads=hps.model.n_heads,
+                n_layers=hps.model.n_layers,
+                kernel_size=hps.model.kernel_size,
+                p_dropout=hps.model.p_dropout,
+                resblock=hps.model.resblock,
+                resblock_kernel_sizes=hps.model.resblock_kernel_sizes,
+                resblock_dilation_sizes=hps.model.resblock_dilation_sizes,
+                upsample_rates=hps.model.upsample_rates,
+                upsample_initial_channel=hps.model.upsample_initial_channel,
+                upsample_kernel_sizes=hps.model.upsample_kernel_sizes,
+                n_layers_q=hps.model.n_layers_q,
+                use_spectral_norm=hps.model.use_spectral_norm,
+                gin_channels=hps.model.gin_channels,
+                slm=hps.model.slm,
+            ).to(device)
+
+    net_g.eval()
     if model_path.endswith(".pth") or model_path.endswith(".pt"):
         _ = utils.checkpoints.load_checkpoint(
             model_path, net_g, None, skip_optimizer=True, device=device
