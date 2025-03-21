@@ -3,6 +3,7 @@ from typing import Any, cast
 import torch
 from numpy.typing import NDArray
 from torch.overrides import TorchFunctionMode
+from torch.utils import _device
 
 from style_bert_vits2.constants import Languages
 from style_bert_vits2.logging import logger
@@ -33,7 +34,7 @@ class EmptyInitOnDevice(TorchFunctionMode):
                 return args[0]
         if (
             self.device is not None
-            and func in torch.utils._device._device_constructors()  # type: ignore
+            and func in _device._device_constructors()  # type: ignore
             and kwargs.get("device") is None
         ):  # type: ignore
             kwargs["device"] = self.device
@@ -164,15 +165,15 @@ def get_text(
 
     if language_str == Languages.ZH:
         bert = bert_ori
-        ja_bert = torch.zeros(1024, len(phone))
-        en_bert = torch.zeros(1024, len(phone))
+        ja_bert = torch.zeros(1024, len(phone), device=device)
+        en_bert = torch.zeros(1024, len(phone), device=device)
     elif language_str == Languages.JP:
-        bert = torch.zeros(1024, len(phone))
+        bert = torch.zeros(1024, len(phone), device=device)
         ja_bert = bert_ori
-        en_bert = torch.zeros(1024, len(phone))
+        en_bert = torch.zeros(1024, len(phone), device=device)
     elif language_str == Languages.EN:
-        bert = torch.zeros(1024, len(phone))
-        ja_bert = torch.zeros(1024, len(phone))
+        bert = torch.zeros(1024, len(phone), device=device)
+        ja_bert = torch.zeros(1024, len(phone), device=device)
         en_bert = bert_ori
     else:
         raise ValueError("language_str should be ZH, JP or EN")
@@ -181,9 +182,9 @@ def get_text(
         f"Bert seq len {bert.shape[-1]} != {len(phone)}"
     )
 
-    phone = torch.LongTensor(phone)
-    tone = torch.LongTensor(tone)
-    language = torch.LongTensor(language)
+    phone = torch.LongTensor(phone).to(device)
+    tone = torch.LongTensor(tone).to(device)
+    language = torch.LongTensor(language).to(device)
     return bert, ja_bert, en_bert, phone, tone, language
 
 
@@ -233,12 +234,12 @@ def infer(
         en_bert = en_bert[:, :-2]
 
     with torch.no_grad():
-        x_tst = phones.to(device).unsqueeze(0)
-        tones = tones.to(device).unsqueeze(0)
-        lang_ids = lang_ids.to(device).unsqueeze(0)
-        bert = bert.to(device).unsqueeze(0)
-        ja_bert = ja_bert.to(device).unsqueeze(0)
-        en_bert = en_bert.to(device).unsqueeze(0)
+        x_tst = phones.unsqueeze(0)
+        tones = tones.unsqueeze(0)
+        lang_ids = lang_ids.unsqueeze(0)
+        bert = bert.unsqueeze(0)
+        ja_bert = ja_bert.unsqueeze(0)
+        en_bert = en_bert.unsqueeze(0)
         x_tst_lengths = torch.LongTensor([phones.size(0)]).to(device)
         style_vec_tensor = torch.from_numpy(style_vec).to(device).unsqueeze(0)
         del phones
