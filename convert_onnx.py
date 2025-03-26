@@ -1,6 +1,27 @@
 # Usage: .venv/bin/python convert_onnx.py --model model_assets/koharune-ami/koharune-ami.safetensors
-# Usage: .venv/bin/python convert_onnx.py --model model_assets/ (All models in the directory will be converted)
-# ref: https://github.com/tuna2134/sbv2-api/blob/main/convert/convert_model.py
+#        .venv/bin/python convert_onnx.py --model model_assets/ (All models in the directory will be converted)
+# https://github.com/tuna2134/sbv2-api/blob/main/scripts/convert/convert_model.py を参考に実装した
+
+# MIT License
+# Copyright (c) 2024 tuna2134
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
 
 import re
 import time
@@ -9,10 +30,8 @@ from argparse import ArgumentParser
 from pathlib import Path
 from typing import BinaryIO, cast
 
-import aivmlib
 import onnx
 import torch
-from aivmlib.schemas.aivm_manifest import AivmMetadata, ModelArchitecture
 from onnxsim import model_info, simplify
 from rich import print
 from rich.rule import Rule
@@ -37,7 +56,14 @@ def generate_aivm_metadata(
     style_vectors_file: BinaryIO,
     model_file_name: str,
     model_uuid: uuid.UUID,
-) -> AivmMetadata:
+):
+    try:
+        import aivmlib
+        from aivmlib.schemas.aivm_manifest import ModelArchitecture
+    except ImportError:
+        raise ImportError(
+            "aivmlib is not installed. Please install it using `pip install aivmlib`."
+        )
 
     # AIVM メタデータを生成
     metadata = aivmlib.generate_aivm_metadata(
@@ -384,6 +410,13 @@ if __name__ == "__main__":
 
         # AIVM/AIVMX ファイルを生成
         if args.aivm or args.aivmx:
+            try:
+                import aivmlib
+            except ImportError:
+                raise ImportError(
+                    "aivmlib is not installed. Please install it using `pip install aivmlib`."
+                )
+
             # 共通の UUID を生成
             model_uuid = uuid.uuid4()
 

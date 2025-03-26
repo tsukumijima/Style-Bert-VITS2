@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
 
 # https://github.com/tokuhirom/jawiki-kana-kanji-dict/blob/master/jawiki/romkan.py をベースに一部改変
 
@@ -34,12 +33,12 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-from __future__ import unicode_literals
 
 import re
 import sys
+from collections.abc import Iterator
 from functools import cmp_to_key
-from typing import Iterator, Union
+from typing import Union
 
 
 #
@@ -413,10 +412,10 @@ ROMKAN.update(
 
 # Sort in long order so that a longer Romaji sequence precedes.
 
-_len_cmp = lambda x: -len(x)  # type: ignore
+_len_cmp = lambda x: -len(x)  # type: ignore # noqa: E731
 ROMPAT = re.compile("|".join(sorted(ROMKAN.keys(), key=_len_cmp)))
 
-_kanpat_cmp = lambda x, y: (len(y) > len(x)) - (len(y) < len(x)) or (  # type: ignore
+_kanpat_cmp = lambda x, y: (len(y) > len(x)) - (len(y) < len(x)) or (  # type: ignore # noqa: E731
     len(KANROM[x]) > len(KANROM[x])
 ) - (len(KANROM[x]) < len(KANROM[x]))
 KANPAT = re.compile("|".join(sorted(KANROM.keys(), key=cmp_to_key(_kanpat_cmp))))
@@ -465,10 +464,10 @@ ROMKAN_H.update(
 
 # Sort in long order so that a longer Romaji sequence precedes.
 
-_len_cmp = lambda x: -len(x)  # type: ignore
+_len_cmp = lambda x: -len(x)  # type: ignore # noqa: E731
 ROMPAT_H = re.compile("|".join(sorted(ROMKAN_H.keys(), key=_len_cmp)))
 
-_kanpat_cmp = lambda x, y: (len(y) > len(x)) - (len(y) < len(x)) or (  # type: ignore
+_kanpat_cmp = lambda x, y: (len(y) > len(x)) - (len(y) < len(x)) or (  # type: ignore # noqa: E731
     len(KANROM_H[x]) > len(KANROM_H[x])
 ) - (len(KANROM_H[x]) < len(KANROM_H[x]))
 KANPAT_H = re.compile("|".join(sorted(KANROM_H.keys(), key=cmp_to_key(_kanpat_cmp))))
@@ -627,7 +626,7 @@ def expand_consonant(str: str) -> list[str]:
 
     str = str.lower()
 
-    return sorted([mora for mora in ROMKAN.keys() if re.match("^%s.$" % str, mora)])
+    return sorted([mora for mora in ROMKAN if re.match("^%s.$" % str, mora)])
 
 
 if __name__ == "__main__":

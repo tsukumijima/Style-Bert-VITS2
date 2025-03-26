@@ -1008,11 +1008,10 @@ def __convert_english_to_katakana(text: str) -> str:
                 if start_pos == -1:
                     start_pos = i
                 current_chunk += char
-            else:
-                if current_chunk:
-                    chunks.append((current_chunk, start_pos, i))
-                    current_chunk = ""
-                    start_pos = -1
+            elif current_chunk:
+                chunks.append((current_chunk, start_pos, i))
+                current_chunk = ""
+                start_pos = -1
         # 最後のチャンクを処理
         if current_chunk:
             chunks.append((current_chunk, start_pos, len(text)))
