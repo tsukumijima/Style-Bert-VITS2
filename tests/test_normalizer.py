@@ -33,6 +33,7 @@ def test_normalize_text_units():
     assert normalize_text("1000.19mg") == "1000.19ミリグラム"
     assert normalize_text("100g") == "100グラム"
     assert normalize_text("2kg") == "2キログラム"
+    assert normalize_text("200ｍｇ") == "200ミリグラム"  # 全角英数
     # データ容量
     assert normalize_text("51B") == "51バイト"
     assert normalize_text("51KB") == "51キロバイト"
@@ -220,6 +221,8 @@ def test_normalize_text_dates():
     assert normalize_text("2024年01月01日") == "2024年1月1日"  # 0埋めを除去
     assert normalize_text("01/01") == "1月1日"
     assert normalize_text("1/1") == "1月1日"
+    assert normalize_text("２０２４／０１／０１") == "2024年1月1日"  # 全角英数記号
+    assert normalize_text("２０２４/０１/０１") == "2024年1月1日"  # 全角英数
     # 曜日付きの日付
     assert normalize_text("2024/01/01(月)") == "2024年1月1日月曜日"
     assert normalize_text("2024-01-01（火）") == "2024年1月1日火曜日"
@@ -507,6 +510,8 @@ def test_normalize_text_url_email():
         normalize_text("http://test.jp")
         == "エイチティーティーピー,テストドットジェイピー"
     )
+    # 全角 URL
+    assert normalize_text("ｈｔｔｐｓ：／／ｅｘａｍｐｌｅ．ｃｏｍ") == "エイチティーティーピーエス,イグザンプルドットコム"
     # メールアドレス
     assert (
         normalize_text("test@example.com")
@@ -639,7 +644,7 @@ def test_normalize_text_english():
     assert normalize_text("not a pen") == "ノットアペン"
     assert (
         normalize_text("a OFDMEXA modular")
-        == "アOFDMEXAモジュラー"  # OFDMEXA は辞書未収録の造語のため全て大文字なのでそのまま
+        == "アOFDMEXAモジュラー"  # OFDMEXA は辞書未収録の造語かつ全て大文字なのでそのまま
     )
     assert normalize_text("a 123") == "a123"  # 数字の前の a はそのまま
     assert normalize_text("This is a pen.") == "ディスイズアペン."
@@ -655,7 +660,8 @@ def test_normalize_text_english():
         == "ベントルエーピーアイスペシフィケーションリザルトツー"
     )
     assert (
-        # "Paravoice" は辞書にない造語なので C2K によってカタカナ推定が入る
+        # "Paravoice" は辞書にない造語なので、C2K によってカタカナ推定が入る
+        # "OTAMESHI" は辞書にない単語だがローマ字として解釈可能なため、ローマ字読みされる
         normalize_text("Paravoice 3を4GBまでOTAMESHIできます")
         == "パラボイススリーを4ギガバイトまでオタメシできます"
     )

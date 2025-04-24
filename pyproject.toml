@@ -26,6 +26,7 @@ dependencies = [
     "cn2an",
     "e2k",
     "g2p_en",
+    "jaconv",
     "jieba",
     "loguru",
     "nltk<=3.8.1",
@@ -92,7 +93,7 @@ cov-report = ["- coverage combine", "coverage report"]
 # Usage: `hatch run test:cov`
 cov = ["test-cov", "cov-report"]
 [[tool.hatch.envs.test.matrix]]
-python = ["3.9", "3.10", "3.11"]
+python = ["3.10", "3.11"]
 
 # for ONNX inference (without PyTorch dependency)
 [tool.hatch.envs.test-onnx]
@@ -119,7 +120,13 @@ cov-report = ["- coverage combine", "coverage report"]
 # Usage: `hatch run test-onnx:cov`
 cov = ["test-cov", "cov-report"]
 [[tool.hatch.envs.test-onnx.matrix]]
-python = ["3.9", "3.10", "3.11"]
+python = ["3.10", "3.11"]
+
+[tool.hatch.envs.test-normalizer]
+dependencies = ["pytest"]
+[tool.hatch.envs.test-normalizer.scripts]
+# Usage: `hatch run test-normalizer:test`
+test = "pytest -s tests/test_normalizer.py"
 
 [tool.hatch.envs.style]
 detached = true

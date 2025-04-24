@@ -4,6 +4,7 @@ import unicodedata
 from datetime import datetime
 
 from e2k import C2K
+from jaconv import jaconv
 from num2words import num2words
 
 from style_bert_vits2.nlp.japanese.katakana_map import KATAKANA_MAP
@@ -483,8 +484,14 @@ def normalize_text(text: str) -> str:
         str: 正規化されたテキスト
     """
 
-    # 一番先に記号を変換
-    # 最初でないと ℃ が unicodedata.normalize() で分割されてしまう
+    # 最初にカタカナを除く英数字記号 (ASCII 文字) を半角に変換する
+    # どのみち Unicode 正規化で行われる処理ではあるが、__replace_symbols() は Unicode 正規化前に実行しなければ正常に動作しない
+    # 一方で __replace_symbols() は半角英数字の入力を前提に実装されており、全角英数記号が入ると変換処理（正規表現マッチ）が意図通り実行されない可能性がある
+    # これを回避するため、__replace_symbols() の実行前に半角英数記号を半角に変換している
+    text = jaconv.z2h(text, kana=False, digit=True, ascii=True, ignore="\u3000")  # 全角スペースは変換しない
+
+    # Unicode 正規化前に記号を変換
+    # 正規化前でないと ℃ などが unicodedata.normalize() で分割されてしまう
     res = __replace_symbols(text)
 
     # 自然な日本語テキスト読み上げのために、全角スペースは句点に変換
@@ -495,7 +502,7 @@ def normalize_text(text: str) -> str:
     # ゼロ幅スペースを削除
     res = res.replace("\u200b", "")
 
-    res = unicodedata.normalize("NFKC", res)  # ここでアルファベットは半角になる
+    res = unicodedata.normalize("NFKC", res)  # ここで Unicode 正規化が行われる
 
     res = __convert_english_to_katakana(res)  # 英単語をカタカナに変換
 
