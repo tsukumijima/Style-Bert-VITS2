@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from pyopenjtalk import NJDFeature
+from pyopenjtalk import NJDFeature, OpenJTalk
 
 from style_bert_vits2.logging import logger
 from style_bert_vits2.nlp.japanese.pyopenjtalk_worker.worker_client import WorkerClient
@@ -22,7 +22,10 @@ WORKER_CLIENT: Optional[WorkerClient] = None
 
 
 def run_frontend(
-    text: str, run_marine: bool = False, use_vanilla: bool = False
+    text: str,
+    run_marine: bool = False,
+    use_vanilla: bool = False,
+    jtalk: OpenJTalk | None = None,
 ) -> list[NJDFeature]:
     if WORKER_CLIENT is not None:
         ret = WORKER_CLIENT.dispatch_pyopenjtalk("run_frontend", text)
@@ -32,10 +35,13 @@ def run_frontend(
         # without worker
         import pyopenjtalk
 
-        return pyopenjtalk.run_frontend(text, run_marine, use_vanilla)
+        return pyopenjtalk.run_frontend(text, run_marine, use_vanilla, jtalk)
 
 
-def make_label(njd_features: list[NJDFeature]) -> list[str]:
+def make_label(
+    njd_features: list[NJDFeature],
+    jtalk: OpenJTalk | None = None,
+) -> list[str]:
     if WORKER_CLIENT is not None:
         ret = WORKER_CLIENT.dispatch_pyopenjtalk("make_label", njd_features)
         assert isinstance(ret, list)
@@ -44,7 +50,7 @@ def make_label(njd_features: list[NJDFeature]) -> list[str]:
         # without worker
         import pyopenjtalk
 
-        return pyopenjtalk.make_label(njd_features)
+        return pyopenjtalk.make_label(njd_features, jtalk)
 
 
 def mecab_dict_index(path: str, out_path: str, dn_mecab: Optional[str] = None) -> None:

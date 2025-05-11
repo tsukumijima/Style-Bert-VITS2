@@ -2,7 +2,7 @@ import re
 import sys
 from typing import Optional, TypedDict
 
-from pyopenjtalk import NJDFeature
+from pyopenjtalk import NJDFeature, OpenJTalk
 
 from style_bert_vits2.constants import Languages
 from style_bert_vits2.logging import logger
@@ -14,7 +14,10 @@ from style_bert_vits2.nlp.symbols import PUNCTUATIONS
 
 
 def g2p(
-    norm_text: str, use_jp_extra: bool = True, raise_yomi_error: bool = False
+    norm_text: str,
+    use_jp_extra: bool = True,
+    raise_yomi_error: bool = False,
+    jtalk: OpenJTalk | None = None,
 ) -> tuple[list[str], list[int], list[int], list[str]]:
     """
     他で使われるメインの関数。`normalize_text()` で正規化された `norm_text` を受け取り、
@@ -29,6 +32,7 @@ def g2p(
         norm_text (str): 正規化済みテキスト
         use_jp_extra (bool, optional): False の場合、「ん」の音素を「N」ではなく「n」とする。Defaults to True.
         raise_yomi_error (bool, optional): False の場合、読めない文字が「'」として発音される。Defaults to False.
+        jtalk (OpenJTalk | None, optional): 未指定時は pyopenjtalk モジュール内部で保持されているインスタンスが自動的に利用される。
 
     Returns:
         tuple[list[str], list[int], list[int], list[str]]: 音素のリスト、アクセントのリスト、word2ph のリスト、助詞を連結した読みのリスト
@@ -41,16 +45,19 @@ def g2p(
     # アクセント割当をしなおすことによって punctuation を含めた音素とアクセントのリストを作る。
 
     # OpenJTalk から NJDFeature のリストを取得
-    njd_features = pyopenjtalk.run_frontend(norm_text)
+    njd_features = pyopenjtalk.run_frontend(norm_text, jtalk=jtalk)
 
     # punctuation がすべて消えた、音素とアクセントのタプルのリスト（「ん」は「N」）
-    phone_tone_list_wo_punct = __g2phone_tone_wo_punct(njd_features)
+    phone_tone_list_wo_punct = __g2phone_tone_wo_punct(njd_features, jtalk=jtalk)
 
     # sep_text: 単語単位の単語のリスト
     # sep_kata: 単語単位の単語のカタカナ読みのリスト、読めない文字は raise_yomi_error=True なら例外、False なら読めない文字を「'」として返ってくる
     # sep_kata_with_joshi: sep_kata と同様だが、助詞を直前の単語に連結している
     sep_text, sep_kata, sep_kata_with_joshi = text_to_sep_kata(
-        norm_text, njd_features=njd_features, raise_yomi_error=raise_yomi_error
+        norm_text,
+        njd_features=njd_features,
+        raise_yomi_error=raise_yomi_error,
+        jtalk=jtalk,
     )
 
     # sep_phonemes: 各単語ごとの音素のリストのリスト
@@ -105,6 +112,7 @@ def text_to_sep_kata(
     norm_text: str,
     njd_features: Optional[list[NJDFeature]] = None,
     raise_yomi_error: bool = False,
+    jtalk: OpenJTalk | None = None,
 ) -> tuple[list[str], list[str], list[str]]:
     """
     `normalize_text` で正規化済みの `norm_text` を受け取り、それを単語分割し、
@@ -118,6 +126,7 @@ def text_to_sep_kata(
         norm_text (str): 正規化済みテキスト
         njd_features (Optional[list[NJDFeature]], optional): pyopenjtalk.run_frontend() の結果。None の場合は内部で実行する。
         raise_yomi_error (bool, optional): False の場合、読めない文字が「'」として発音される。Defaults to False.
+        jtalk (OpenJTalk | None, optional): 未指定時は pyopenjtalk モジュール内部で保持されているインスタンスが自動的に利用される。
 
     Returns:
         tuple[list[str], list[str], list[str]]: 分割された単語リストと、その読み（カタカナ or 記号1文字）のリスト、助詞を連結した読みのリスト
@@ -125,7 +134,7 @@ def text_to_sep_kata(
 
     # njd_features: OpenJTalkの解析結果
     if njd_features is None:
-        njd_features = pyopenjtalk.run_frontend(norm_text)
+        njd_features = pyopenjtalk.run_frontend(norm_text, jtalk=jtalk)
     sep_text: list[str] = []
     sep_kata: list[str] = []
     sep_kata_with_joshi: list[str] = []  # 助詞を分けずに連結した sep_kata (例: "鉛筆", "を" -> "鉛筆を") # fmt: skip
@@ -466,6 +475,7 @@ def adjust_word2ph(
 
 def __g2phone_tone_wo_punct(
     njd_features: list[NJDFeature],
+    jtalk: OpenJTalk | None = None,
 ) -> list[tuple[str, int]]:
     """
     テキストに対して、音素とアクセント（0か1）のペアのリストを返す。
@@ -477,12 +487,13 @@ def __g2phone_tone_wo_punct(
 
     Args:
         njd_features (list[NJDFeature]): pyopenjtalk.run_frontend() の結果
+        jtalk (OpenJTalk | None, optional): 未指定時は pyopenjtalk モジュール内部で保持されているインスタンスが自動的に利用される。
 
     Returns:
         list[tuple[str, int]]: 音素とアクセントのペアのリスト
     """
 
-    prosodies = __pyopenjtalk_g2p_prosody(njd_features, drop_unvoiced_vowels=True)
+    prosodies = __pyopenjtalk_g2p_prosody(njd_features, drop_unvoiced_vowels=True, jtalk=jtalk)
     # logger.debug(f"prosodies: {prosodies}")
     result: list[tuple[str, int]] = []
     current_phrase: list[tuple[str, int]] = []
@@ -534,6 +545,7 @@ __PYOPENJTALK_G2P_PROSODY_P3_PATTERN = re.compile(r"\-(.*?)\+")
 def __pyopenjtalk_g2p_prosody(
     njd_features: list[NJDFeature],
     drop_unvoiced_vowels: bool = True,
+    jtalk: OpenJTalk | None = None,
 ) -> list[str]:
     """
     ESPnet の実装から引用。直接 NJDFeature のリストを受け取る形に変更した。「ん」は「N」なことに注意。
@@ -548,6 +560,7 @@ def __pyopenjtalk_g2p_prosody(
     Args:
         njd_features (list[NJDFeature]): result of pyopenjtalk.run_frontend().
         drop_unvoiced_vowels (bool): whether to drop unvoiced vowels.
+        jtalk (OpenJTalk | None, optional): OpenJTalk instance.
 
     Returns:
         List[str]: List of phoneme + prosody symbols.
@@ -567,7 +580,7 @@ def __pyopenjtalk_g2p_prosody(
             return -50
         return int(match.group(1))
 
-    labels = pyopenjtalk.make_label(njd_features)
+    labels = pyopenjtalk.make_label(njd_features, jtalk=jtalk)
     N = len(labels)
 
     phones = []
@@ -736,7 +749,7 @@ def __kata_to_phoneme_list(text: str) -> list[str]:
     spaced_phonemes = __MORA_PATTERN.sub(lambda m: mora2phonemes(m.group()), text)
 
     # 長音記号「ー」の処理
-    long_replacement = lambda m: m.group(1) + (" " + m.group(1)) * len(m.group(2))  # type: ignore
+    long_replacement = lambda m: m.group(1) + (" " + m.group(1)) * len(m.group(2))  # type: ignore  # noqa: E731
     spaced_phonemes = __LONG_PATTERN.sub(long_replacement, spaced_phonemes)
 
     return spaced_phonemes.strip().split(" ")
