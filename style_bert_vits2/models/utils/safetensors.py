@@ -18,12 +18,12 @@ def load_safetensors(
     指定されたパスから safetensors モデルを読み込み、モデルとイテレーションを返す。
 
     Args:
-        checkpoint_path (Union[str, Path]): モデルのチェックポイントファイルのパス
+        checkpoint_path (str | Path): モデルのチェックポイントファイルのパス
         model (torch.nn.Module): 読み込む対象のモデル
         for_infer (bool): 推論用に読み込むかどうかのフラグ
 
     Returns:
-        tuple[torch.nn.Module, Optional[int]]: 読み込まれたモデルとイテレーション回数（存在する場合）
+        tuple[torch.nn.Module, int | None]: 読み込まれたモデルとイテレーション回数（存在する場合）
     """
 
     tensors: dict[str, Any] = {}
@@ -34,7 +34,7 @@ def load_safetensors(
                 iteration = f.get_tensor(key).item()
             tensors[key] = f.get_tensor(key)
     if hasattr(model, "module"):
-        result = model.module.load_state_dict(tensors, strict=False)
+        result = model.module.load_state_dict(tensors, strict=False)  # type: ignore
     else:
         result = model.load_state_dict(tensors, strict=False)
     for key in result.missing_keys:
@@ -66,13 +66,13 @@ def save_safetensors(
     Args:
         model (torch.nn.Module): 保存するモデル
         iteration (int): イテレーション回数
-        checkpoint_path (Union[str, Path]): 保存先のパス
+        checkpoint_path (str | Path): 保存先のパス
         is_half (bool): モデルを半精度で保存するかどうかのフラグ
         for_infer (bool): 推論用に保存するかどうかのフラグ
     """
 
     if hasattr(model, "module"):
-        state_dict = model.module.state_dict()
+        state_dict = model.module.state_dict()  # type: ignore
     else:
         state_dict = model.state_dict()
     keys = []

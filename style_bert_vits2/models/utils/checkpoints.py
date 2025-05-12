@@ -21,14 +21,14 @@ def load_checkpoint(
     指定されたパスからチェックポイントを読み込み、モデルとオプティマイザーを更新する。
 
     Args:
-        checkpoint_path (Union[str, Path]): チェックポイントファイルのパス
+        checkpoint_path (str | Path): チェックポイントファイルのパス
         model (torch.nn.Module): 更新するモデル
-        optimizer (Optional[torch.optim.Optimizer]): 更新するオプティマイザー。None の場合は更新しない
+        optimizer (torch.optim.Optimizer | None): 更新するオプティマイザー。None の場合は更新しない
         skip_optimizer (bool): オプティマイザーの更新をスキップするかどうかのフラグ
         for_infer (bool): 推論用に読み込むかどうかのフラグ
 
     Returns:
-        tuple[torch.nn.Module, Optional[torch.optim.Optimizer], float, int]: 更新されたモデルとオプティマイザー、学習率、イテレーション回数
+        tuple[torch.nn.Module, torch.optim.Optimizer | None, float, int]: 更新されたモデルとオプティマイザー、学習率、イテレーション回数
     """
 
     assert os.path.isfile(checkpoint_path)
@@ -54,7 +54,7 @@ def load_checkpoint(
 
     saved_state_dict = checkpoint_dict["model"]
     if hasattr(model, "module"):
-        state_dict = model.module.state_dict()
+        state_dict = model.module.state_dict()  # type: ignore
     else:
         state_dict = model.state_dict()
 
@@ -82,7 +82,7 @@ def load_checkpoint(
             new_state_dict[k] = v
 
     if hasattr(model, "module"):
-        model.module.load_state_dict(new_state_dict, strict=False)
+        model.module.load_state_dict(new_state_dict, strict=False)  # type: ignore
     else:
         model.load_state_dict(new_state_dict, strict=False)
 
@@ -103,16 +103,16 @@ def save_checkpoint(
 
     Args:
         model (torch.nn.Module): 保存するモデル
-        optimizer (Union[torch.optim.Optimizer, torch.optim.AdamW]): 保存するオプティマイザー
+        optimizer (torch.optim.Optimizer | torch.optim.AdamW): 保存するオプティマイザー
         learning_rate (float): 学習率
         iteration (int): イテレーション回数
-        checkpoint_path (Union[str, Path]): 保存先のパス
+        checkpoint_path (str | Path): 保存先のパス
     """
     logger.info(
         f"Saving model and optimizer state at iteration {iteration} to {checkpoint_path}"
     )
     if hasattr(model, "module"):
-        state_dict = model.module.state_dict()
+        state_dict = model.module.state_dict()  # type: ignore
     else:
         state_dict = model.state_dict()
     torch.save(
@@ -135,7 +135,7 @@ def clean_checkpoints(
     指定されたディレクトリから古いチェックポイントを削除して空き容量を確保する
 
     Args:
-        model_dir_path (Union[str, Path]): モデルが保存されているディレクトリのパス
+        model_dir_path (str | Path): モデルが保存されているディレクトリのパス
         n_ckpts_to_keep (int): 保持するチェックポイントの数（G_0.pth と D_0.pth を除く）
         sort_by_time (bool): True の場合、時間順に削除。False の場合、名前順に削除
     """
@@ -186,7 +186,7 @@ def get_latest_checkpoint_path(
     指定されたディレクトリから最新のチェックポイントのパスを取得する
 
     Args:
-        model_dir_path (Union[str, Path]): モデルが保存されているディレクトリのパス
+        model_dir_path (str | Path): モデルが保存されているディレクトリのパス
         regex (str): チェックポイントのファイル名の正規表現
 
     Returns:

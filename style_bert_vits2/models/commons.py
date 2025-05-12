@@ -96,7 +96,7 @@ def rand_slice_segments(
 
     Args:
         x (torch.Tensor): 入力テンソル
-        x_lengths (Optional[torch.Tensor], optional): 各バッチの長さ (デフォルト: None)
+        x_lengths (torch.Tensor | None, optional): 各バッチの長さ (デフォルト: None)
         segment_size (int, optional): スライスのサイズ (デフォルト: 4)
 
     Returns:
@@ -154,7 +154,7 @@ def sequence_mask(length: torch.Tensor, max_length: int | None = None) -> torch.
 
     Args:
         length (torch.Tensor): 各シーケンスの長さ
-        max_length (Optional[int]): 最大のシーケンス長さ。指定されていない場合は length の最大値を使用
+        max_length (int | None): 最大のシーケンス長さ。指定されていない場合は length の最大値を使用
 
     Returns:
         torch.Tensor: 生成されたシーケンスマスク
@@ -196,8 +196,8 @@ def clip_grad_value_(
     勾配の値をクリップする
 
     Args:
-        parameters (Union[torch.Tensor, list[torch.Tensor]]): クリップするパラメータ
-        clip_value (Optional[float]): クリップする値。None の場合はクリップしない
+        parameters (torch.Tensor | list[torch.Tensor]): クリップするパラメータ
+        clip_value (float | None): クリップする値。None の場合はクリップしない
         norm_type (float): ノルムの種類
 
     Returns:

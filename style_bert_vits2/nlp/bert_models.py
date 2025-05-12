@@ -70,15 +70,15 @@ def load_model(
 
     Args:
         language (Languages): ロードする学習済みモデルの対象言語
-        pretrained_model_name_or_path (Optional[str]): ロードする学習済みモデルの名前またはパス。指定しない場合はデフォルトのパスが利用される (デフォルト: None)
-        device_map (Optional[str]): accelerate を使用して高速にデバイスにモデルをロードするためのデバイスマップ。
+        pretrained_model_name_or_path (str | None): ロードする学習済みモデルの名前またはパス。指定しない場合はデフォルトのパスが利用される (デフォルト: None)
+        device_map (str | None): accelerate を使用して高速にデバイスにモデルをロードするためのデバイスマップ。
             指定しない場合は通常のモデルロード処理になる (デフォルト: None)
             ref: https://huggingface.co/docs/accelerate/usage_guides/big_modeling
-        cache_dir (Optional[str]): モデルのキャッシュディレクトリ。指定しない場合はデフォルトのキャッシュディレクトリが利用される (デフォルト: None)
+        cache_dir (str | None): モデルのキャッシュディレクトリ。指定しない場合はデフォルトのキャッシュディレクトリが利用される (デフォルト: None)
         revision (str): モデルの Hugging Face 上の Git リビジョン。指定しない場合は最新の main ブランチの内容が利用される (デフォルト: None)
 
     Returns:
-        Union[PreTrainedModel, DebertaV2Model]: ロード済みの BERT モデル
+        PreTrainedModel | DebertaV2Model: ロード済みの BERT モデル
     """
 
     # すでにロード済みの場合はそのまま返す
@@ -139,12 +139,12 @@ def load_tokenizer(
 
     Args:
         language (Languages): ロードする学習済みモデルの対象言語
-        pretrained_model_name_or_path (Optional[str]): ロードする学習済みモデルの名前またはパス。指定しない場合はデフォルトのパスが利用される (デフォルト: None)
-        cache_dir (Optional[str]): モデルのキャッシュディレクトリ。指定しない場合はデフォルトのキャッシュディレクトリが利用される (デフォルト: None)
+        pretrained_model_name_or_path (str | None): ロードする学習済みモデルの名前またはパス。指定しない場合はデフォルトのパスが利用される (デフォルト: None)
+        cache_dir (str | None): モデルのキャッシュディレクトリ。指定しない場合はデフォルトのキャッシュディレクトリが利用される (デフォルト: None)
         revision (str): モデルの Hugging Face 上の Git リビジョン。指定しない場合は最新の main ブランチの内容が利用される (デフォルト: None)
 
     Returns:
-        Union[PreTrainedTokenizer, PreTrainedTokenizerFast, DebertaV2TokenizerFast]: ロード済みの BERT トークナイザー
+        PreTrainedTokenizer | PreTrainedTokenizerFast | DebertaV2TokenizerFast: ロード済みの BERT トークナイザー
     """
 
     # すでにロード済みの場合はそのまま返す
