@@ -40,7 +40,7 @@ def extract_bert_feature(
         word2ph (list[int]): 元のテキストの各文字に音素が何個割り当てられるかを表すリスト
         language (Languages): テキストの言語
         device (str): 推論に利用するデバイス
-        assist_text (Optional[str], optional): 補助テキスト (デフォルト: None)
+        assist_text (str | None, optional): 補助テキスト (デフォルト: None)
         assist_text_weight (float, optional): 補助テキストの重み (デフォルト: 0.7)
         sep_text (Optional[list[str]], optional): 単語単位の単語のリスト (デフォルト: None)
 
@@ -100,7 +100,7 @@ def extract_bert_feature_onnx(
         word2ph (list[int]): 元のテキストの各文字に音素が何個割り当てられるかを表すリスト
         language (Languages): テキストの言語
         onnx_providers (list[str]): ONNX 推論で利用する ExecutionProvider (CPUExecutionProvider, CUDAExecutionProvider など)
-        assist_text (Optional[str], optional): 補助テキスト (デフォルト: None)
+        assist_text (str | None, optional): 補助テキスト (デフォルト: None)
         assist_text_weight (float, optional): 補助テキストの重み (デフォルト: 0.7)
         sep_text (Optional[list[str]], optional): 単語単位の単語のリスト (デフォルト: None)
 
@@ -243,8 +243,8 @@ def clean_text_with_given_phone_tone(
     Args:
         text (str): クリーニングするテキスト
         language (Languages): テキストの言語
-        given_phone (Optional[list[int]], optional): 読み上げテキストの読みを表す音素列。指定する場合は given_tone も別途指定が必要. Defaults to None.
-        given_tone (Optional[list[int]], optional): アクセントのトーンのリスト. Defaults to None.
+        given_phone (list[str] | None, optional): 読み上げテキストの読みを表す音素列。指定する場合は given_tone も別途指定が必要. Defaults to None.
+        given_tone (list[int] | None, optional): アクセントのトーンのリスト. Defaults to None.
         use_jp_extra (bool, optional): テキストが日本語の場合に JP-Extra モデルを利用するかどうか。Defaults to True.
         raise_yomi_error (bool, optional): False の場合、読めない文字が消えたような扱いとして処理される。Defaults to False.
         jtalk (OpenJTalk | None, optional): 未指定時は pyopenjtalk モジュール内部で保持されているインスタンスが自動的に利用される。

@@ -14,7 +14,7 @@ def torch_device_to_onnx_providers(
         device (str): PyTorch のデバイス種別
 
     Returns:
-        Sequence[Union[str, tuple[str, dict[str, Any]]]]: ExecutionProvider のリスト
+        Sequence[str | tuple[str, dict[str, Any]]]: ExecutionProvider のリスト
     """
 
     if device.startswith("cuda"):
@@ -48,7 +48,7 @@ def get_onnx_device_options(
 
     Args:
         onnx_session (onnxruntime.InferenceSession): 初期化済みの ONNX セッション
-        onnx_providers (Sequence[Union[str, tuple[str, dict[str, Any]]]]): ExecutionProvider のリスト
+        onnx_providers (Sequence[str | tuple[str, dict[str, Any]]]): ExecutionProvider のリスト
 
     Returns:
         tuple[str, int, onnxruntime.RunOptions]: 入力テンソルの転送に使用するデバイス種別, デバイス ID, 実行オプション

@@ -69,10 +69,10 @@ class TTSModel:
 
         Args:
             model_path (Path): モデル (.safetensors / .onnx) のパス
-            config_path (Union[Path, HyperParameters]): ハイパーパラメータ (config.json) のパス (直接 HyperParameters を指定することも可能)
-            style_vec_path (Union[Path, NDArray[Any]]): スタイルベクトル (style_vectors.npy) のパス (直接 NDArray を指定することも可能)
+            config_path (Path | HyperParameters): ハイパーパラメータ (config.json) のパス (直接 HyperParameters を指定することも可能)
+            style_vec_path (Path | NDArray[Any]): スタイルベクトル (style_vectors.npy) のパス (直接 NDArray を指定することも可能)
             device (str): PyTorch 推論での音声合成時に利用するデバイス (cpu, cuda, mps など)
-            onnx_providers (list[str]): ONNX 推論で利用する ExecutionProvider (CPUExecutionProvider, CUDAExecutionProvider など)
+            onnx_providers (list[str | tuple[str, dict[str, Any]]]): ONNX 推論で利用する ExecutionProvider (CPUExecutionProvider, CUDAExecutionProvider など)
         """
 
         self.model_path: Path = model_path
@@ -384,23 +384,23 @@ class TTSModel:
             text (str): 読み上げるテキスト
             language (Languages, optional): 言語. Defaults to Languages.JP.
             speaker_id (int, optional): 話者 ID. Defaults to 0.
-            reference_audio_path (Optional[str], optional): 音声スタイルの参照元の音声ファイルのパス. Defaults to None.
+            reference_audio_path (str | None, optional): 音声スタイルの参照元の音声ファイルのパス. Defaults to None.
             sdp_ratio (float, optional): DP と SDP の混合比。0 で DP のみ、1で SDP のみを使用 (値を大きくするとテンポに緩急がつく). Defaults to DEFAULT_SDP_RATIO.
             noise (float, optional): DP に与えられるノイズ. Defaults to DEFAULT_NOISE.
             noise_w (float, optional): SDP に与えられるノイズ. Defaults to DEFAULT_NOISEW.
             length (float, optional): 生成音声の長さ（話速）のパラメータ。大きいほど生成音声が長くゆっくり、小さいほど短く早くなる。 Defaults to DEFAULT_LENGTH.
             line_split (bool, optional): テキストを改行ごとに分割して生成するかどうか (True の場合 given_phone/given_tone は無視される). Defaults to DEFAULT_LINE_SPLIT.
             split_interval (float, optional): 改行ごとに分割する場合の無音 (秒). Defaults to DEFAULT_SPLIT_INTERVAL.
-            assist_text (Optional[str], optional): 感情表現の参照元の補助テキスト. Defaults to None.
+            assist_text (str | None, optional): 感情表現の参照元の補助テキスト. Defaults to None.
             assist_text_weight (float, optional): 感情表現の補助テキストを適用する強さ. Defaults to DEFAULT_ASSIST_TEXT_WEIGHT.
             use_assist_text (bool, optional): 音声合成時に感情表現の補助テキストを使用するかどうか. Defaults to False.
             style (str, optional): 音声スタイル (Neutral, Happy など). Defaults to DEFAULT_STYLE.
             style_weight (float, optional): 音声スタイルを適用する強さ. Defaults to DEFAULT_STYLE_WEIGHT.
-            given_phone (Optional[list[int]], optional): 読み上げテキストの読みを表す音素列。指定する場合は given_tone も別途指定が必要. Defaults to None.
-            given_tone (Optional[list[int]], optional): アクセントのトーンのリスト. Defaults to None.
+            given_phone (list[str] | None, optional): 読み上げテキストの読みを表す音素列。指定する場合は given_tone も別途指定が必要. Defaults to None.
+            given_tone (list[int] | None, optional): アクセントのトーンのリスト. Defaults to None.
             pitch_scale (float, optional): ピッチの高さ (1.0 から変更すると若干音質が低下する). Defaults to 1.0.
             intonation_scale (float, optional): 抑揚の平均からの変化幅 (1.0 から変更すると若干音質が低下する). Defaults to 1.0.
-            null_model_params (Optional[dict[int, NullModelParam]], optional): 推論時に使用するヌルモデルの情報。ONNX 推論では無視される。
+            null_model_params (dict[int, NullModelParam] | None, optional): 推論時に使用するヌルモデルの情報。ONNX 推論では無視される。
             force_reload_model (bool, optional): モデルを強制的に再ロードするかどうか. Defaults to False.
         Returns:
             tuple[int, NDArray[Any]]: サンプリングレートと音声データ (16bit PCM)

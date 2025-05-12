@@ -117,7 +117,7 @@ def plot_alignment_to_numpy(
 
     Args:
         alignment (NDArray[Any]): アライメント
-        info (Optional[str]): 画像に追加する情報
+        info (str | None): 画像に追加する情報
 
     Returns:
         NDArray[Any]: 画像データ
@@ -157,7 +157,7 @@ def load_wav_to_torch(full_path: str | Path) -> tuple[torch.FloatTensor, int]:
     指定された音声ファイルを読み込み、PyTorch のテンソルに変換して返す
 
     Args:
-        full_path (Union[str, Path]): 音声ファイルのパス
+        full_path (str | Path): 音声ファイルのパス
 
     Returns:
         tuple[torch.FloatTensor, int]: 音声データのテンソルとサンプリングレート
@@ -179,7 +179,7 @@ def load_filepaths_and_text(filename: str | Path, split: str = "|") -> list[list
     指定されたファイルからファイルパスとテキストを読み込む
 
     Args:
-        filename (Union[str, Path]): ファイルのパス
+        filename (str | Path): ファイルのパス
         split (str): ファイルの区切り文字 (デフォルト: "|")
 
     Returns:
@@ -198,7 +198,7 @@ def get_logger(
     ロガーを取得する
 
     Args:
-        model_dir_path (Union[str, Path]): ログを保存するディレクトリのパス
+        model_dir_path (str | Path): ログを保存するディレクトリのパス
         filename (str): ログファイルの名前 (デフォルト: "train.log")
 
     Returns:
@@ -224,10 +224,10 @@ def get_steps(model_path: str | Path) -> int | None:
     モデルのパスからイテレーション回数を取得する
 
     Args:
-        model_path (Union[str, Path]): モデルのパス
+        model_path (str | Path): モデルのパス
 
     Returns:
-        Optional[int]: イテレーション回数
+        int | None: イテレーション回数
     """
 
     matches = re.findall(r"\d+", model_path)  # type: ignore
@@ -239,7 +239,7 @@ def check_git_hash(model_dir_path: str | Path) -> None:
     モデルのディレクトリに .git ディレクトリが存在する場合、ハッシュ値を比較する
 
     Args:
-        model_dir_path (Union[str, Path]): モデルのディレクトリのパス
+        model_dir_path (str | Path): モデルのディレクトリのパス
     """
 
     source_dir = os.path.dirname(os.path.realpath(__file__))

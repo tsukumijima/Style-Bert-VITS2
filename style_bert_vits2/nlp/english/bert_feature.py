@@ -30,7 +30,7 @@ def extract_bert_feature(
         text (str): 英語のテキスト
         word2ph (list[int]): 元のテキストの各文字に音素が何個割り当てられるかを表すリスト
         device (str): 推論に利用するデバイス
-        assist_text (Optional[str], optional): 補助テキスト (デフォルト: None)
+        assist_text (str | None, optional): 補助テキスト (デフォルト: None)
         assist_text_weight (float, optional): 補助テキストの重み (デフォルト: 0.7)
 
     Returns:
@@ -93,7 +93,7 @@ def extract_bert_feature_onnx(
         text (str): 英語のテキスト
         word2ph (list[int]): 元のテキストの各文字に音素が何個割り当てられるかを表すリスト
         onnx_providers (list[str]): ONNX 推論で利用する ExecutionProvider (CPUExecutionProvider, CUDAExecutionProvider など)
-        assist_text (Optional[str], optional): 補助テキスト (デフォルト: None)
+        assist_text (str | None, optional): 補助テキスト (デフォルト: None)
         assist_text_weight (float, optional): 補助テキストの重み (デフォルト: 0.7)
 
     Returns:

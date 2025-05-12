@@ -119,7 +119,7 @@ class HyperParameters(BaseModel):
         与えられた JSON ファイルからハイパーパラメータを読み込む。
 
         Args:
-            json_path (Union[str, Path]): JSON ファイルのパス
+            json_path (str | Path): JSON ファイルのパス
 
         Returns:
             HyperParameters: ハイパーパラメータ

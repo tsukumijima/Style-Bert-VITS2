@@ -216,9 +216,9 @@ def _create_word(
         単語情報
     accent_type : int
         単語情報
-    word_type : Optional[WordTypes]
+    word_type : WordTypes | None
         品詞
-    priority : Optional[int]
+    priority : int | None
         優先度
     Returns
     -------
@@ -271,9 +271,9 @@ def apply_word(
         単語情報
     accent_type : int
         単語情報
-    word_type : Optional[WordTypes]
+    word_type : WordTypes | None
         品詞
-    priority : Optional[int]
+    priority : int | None
         優先度
     user_dict_path : Path
         ユーザー辞書ファイルのパス
@@ -325,9 +325,9 @@ def rewrite_word(
         単語情報
     accent_type : int
         単語情報
-    word_type : Optional[WordTypes]
+    word_type : WordTypes | None
         品詞
-    priority : Optional[int]
+    priority : int | None
         優先度
     user_dict_path : Path
         ユーザー辞書ファイルのパス
