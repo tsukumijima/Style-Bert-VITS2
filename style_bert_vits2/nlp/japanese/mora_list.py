@@ -47,14 +47,13 @@ OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 POSSIBILITY OF SUCH DAMAGE.
 """
 
-from typing import Optional
 
 
 # (カタカナ, 子音, 母音)の順。子音がない場合は None を入れる。
 # 但し「ン」と「ッ」は母音のみという扱いで、「ン」は「N」、「ッ」は「q」とする。
 # （元々「ッ」は「cl」）
 # また「デェ = dy e」は pyopenjtalk の出力（de e）と合わないため削除
-__MORA_LIST_MINIMUM: list[tuple[str, Optional[str], str]] = [
+__MORA_LIST_MINIMUM: list[tuple[str, str | None, str]] = [
     ("ヴォ", "v", "o"),
     ("ヴェ", "v", "e"),
     ("ヴィ", "v", "i"),
@@ -201,7 +200,7 @@ __MORA_LIST_MINIMUM: list[tuple[str, Optional[str], str]] = [
     ("イ", None, "i"),
     ("ア", None, "a"),
 ]
-__MORA_LIST_ADDITIONAL: list[tuple[str, Optional[str], str]] = [
+__MORA_LIST_ADDITIONAL: list[tuple[str, str | None, str]] = [
     ("ヴョ", "by", "o"),
     ("ヴュ", "by", "u"),
     ("ヴャ", "by", "a"),
@@ -230,7 +229,7 @@ MORA_PHONEMES_TO_MORA_KATA: dict[str, str] = {
 
 # モーラのカタカナ表記と音素の対応表
 # 例: "ヴォ" -> ("v", "o"), "ア" -> (None, "a")
-MORA_KATA_TO_MORA_PHONEMES: dict[str, tuple[Optional[str], str]] = {
+MORA_KATA_TO_MORA_PHONEMES: dict[str, tuple[str | None, str]] = {
     kana: (consonant, vowel)
     for [kana, consonant, vowel] in __MORA_LIST_MINIMUM + __MORA_LIST_ADDITIONAL
 }

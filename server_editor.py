@@ -16,7 +16,6 @@ import zipfile
 from datetime import datetime
 from io import BytesIO
 from pathlib import Path
-from typing import Optional
 
 import numpy as np
 import requests
@@ -277,7 +276,7 @@ class SynthesisRequest(BaseModel):
     silenceAfter: float = 0.5
     pitchScale: float = 1.0
     intonationScale: float = 1.0
-    speaker: Optional[str] = None
+    speaker: str | None = None
 
 
 @router.post("/synthesis", response_class=AudioResponse)

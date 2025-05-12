@@ -1,5 +1,5 @@
 import math
-from typing import Any, Optional
+from typing import Any
 
 import torch
 from torch import nn
@@ -58,7 +58,7 @@ class DurationDiscriminator(nn.Module):  # vits2
         x: torch.Tensor,
         x_mask: torch.Tensor,
         dur: torch.Tensor,
-        g: Optional[torch.Tensor] = None,
+        g: torch.Tensor | None = None,
     ) -> torch.Tensor:
         dur = self.dur_proj(dur)
         x = torch.cat([x, dur], dim=1)
@@ -81,7 +81,7 @@ class DurationDiscriminator(nn.Module):  # vits2
         x_mask: torch.Tensor,
         dur_r: torch.Tensor,
         dur_hat: torch.Tensor,
-        g: Optional[torch.Tensor] = None,
+        g: torch.Tensor | None = None,
     ) -> list[torch.Tensor]:
         x = torch.detach(x)
         if g is not None:
@@ -165,7 +165,7 @@ class TransformerCouplingBlock(nn.Module):
         self,
         x: torch.Tensor,
         x_mask: torch.Tensor,
-        g: Optional[torch.Tensor] = None,
+        g: torch.Tensor | None = None,
         reverse: bool = False,
     ) -> torch.Tensor:
         if not reverse:
@@ -230,8 +230,8 @@ class StochasticDurationPredictor(nn.Module):
         self,
         x: torch.Tensor,
         x_mask: torch.Tensor,
-        w: Optional[torch.Tensor] = None,
-        g: Optional[torch.Tensor] = None,
+        w: torch.Tensor | None = None,
+        g: torch.Tensor | None = None,
         reverse: bool = False,
         noise_scale: float = 1.0,
     ) -> torch.Tensor:
@@ -328,7 +328,7 @@ class DurationPredictor(nn.Module):
             self.cond = nn.Conv1d(gin_channels, in_channels, 1)
 
     def forward(
-        self, x: torch.Tensor, x_mask: torch.Tensor, g: Optional[torch.Tensor] = None
+        self, x: torch.Tensor, x_mask: torch.Tensor, g: torch.Tensor | None = None
     ) -> torch.Tensor:
         x = torch.detach(x)
         if g is not None:
@@ -403,7 +403,7 @@ class TextEncoder(nn.Module):
         en_bert: torch.Tensor,
         style_vec: torch.Tensor,
         sid: torch.Tensor,
-        g: Optional[torch.Tensor] = None,
+        g: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         bert_emb = self.bert_proj(bert).transpose(1, 2)
         ja_bert_emb = self.ja_bert_proj(ja_bert).transpose(1, 2)
@@ -472,7 +472,7 @@ class ResidualCouplingBlock(nn.Module):
         self,
         x: torch.Tensor,
         x_mask: torch.Tensor,
-        g: Optional[torch.Tensor] = None,
+        g: torch.Tensor | None = None,
         reverse: bool = False,
     ) -> torch.Tensor:
         if not reverse:
@@ -518,7 +518,7 @@ class PosteriorEncoder(nn.Module):
         self,
         x: torch.Tensor,
         x_lengths: torch.Tensor,
-        g: Optional[torch.Tensor] = None,
+        g: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         x_mask = torch.unsqueeze(commons.sequence_mask(x_lengths, x.size(2)), 1).to(
             x.dtype
@@ -582,7 +582,7 @@ class Generator(torch.nn.Module):
             self.cond = nn.Conv1d(gin_channels, upsample_initial_channel, 1)
 
     def forward(
-        self, x: torch.Tensor, g: Optional[torch.Tensor] = None
+        self, x: torch.Tensor, g: torch.Tensor | None = None
     ) -> torch.Tensor:
         x = self.conv_pre(x)
         if g is not None:
@@ -797,7 +797,7 @@ class ReferenceEncoder(nn.Module):
         self.proj = nn.Linear(128, gin_channels)
 
     def forward(
-        self, inputs: torch.Tensor, mask: Optional[torch.Tensor] = None
+        self, inputs: torch.Tensor, mask: torch.Tensor | None = None
     ) -> torch.Tensor:
         N = inputs.size(0)
         out = inputs.view(N, 1, -1, self.spec_channels)  # [N, 1, Ty, n_freqs]
@@ -1063,9 +1063,9 @@ class SynthesizerTrn(nn.Module):
         noise_scale: float = 0.667,
         length_scale: float = 1.0,
         noise_scale_w: float = 0.8,
-        max_len: Optional[int] = None,
+        max_len: int | None = None,
         sdp_ratio: float = 0.0,
-        y: Optional[torch.Tensor] = None,
+        y: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, tuple[torch.Tensor, ...]]:
         # x, m_p, logs_p, x_mask = self.enc_p(x, x_lengths, tone, language, bert)
         # g = self.gst(y)

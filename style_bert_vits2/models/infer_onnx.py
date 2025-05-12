@@ -1,5 +1,5 @@
 from collections.abc import Sequence
-from typing import Any, Optional, Union
+from typing import Any
 
 import numpy as np
 import onnxruntime
@@ -37,11 +37,11 @@ def get_text_onnx(
     text: str,
     language_str: Languages,
     hps: HyperParameters,
-    onnx_providers: Sequence[Union[str, tuple[str, dict[str, Any]]]],
-    assist_text: Optional[str] = None,
+    onnx_providers: Sequence[str | tuple[str, dict[str, Any]]],
+    assist_text: str | None = None,
     assist_text_weight: float = 0.7,
-    given_phone: Optional[list[str]] = None,
-    given_tone: Optional[list[int]] = None,
+    given_phone: list[str] | None = None,
+    given_tone: list[int] | None = None,
 ) -> tuple[
     NDArray[Any], NDArray[Any], NDArray[Any], NDArray[Any], NDArray[Any], NDArray[Any]
 ]:
@@ -111,13 +111,13 @@ def infer_onnx(
     language: Languages,
     hps: HyperParameters,
     onnx_session: onnxruntime.InferenceSession,
-    onnx_providers: Sequence[Union[str, tuple[str, dict[str, Any]]]],
+    onnx_providers: Sequence[str | tuple[str, dict[str, Any]]],
     skip_start: bool = False,
     skip_end: bool = False,
-    assist_text: Optional[str] = None,
+    assist_text: str | None = None,
     assist_text_weight: float = 0.7,
-    given_phone: Optional[list[str]] = None,
-    given_tone: Optional[list[int]] = None,
+    given_phone: list[str] | None = None,
+    given_tone: list[int] | None = None,
 ) -> NDArray[Any]:
     is_jp_extra = hps.version.endswith("JP-Extra")
     bert, ja_bert, en_bert, phones, tones, lang_ids = get_text_onnx(

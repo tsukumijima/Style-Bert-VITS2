@@ -3,7 +3,6 @@ import json
 from collections import defaultdict
 from pathlib import Path
 from random import sample
-from typing import Optional
 
 from tqdm import tqdm
 
@@ -69,7 +68,7 @@ def process_line(
 
 def preprocess(
     transcription_path: Path,
-    cleaned_path: Optional[Path],
+    cleaned_path: Path | None,
     train_path: Path,
     val_path: Path,
     config_path: Path,

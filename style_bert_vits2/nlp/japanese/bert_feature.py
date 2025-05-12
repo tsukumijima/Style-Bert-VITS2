@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any, Optional, Union
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import onnxruntime
@@ -21,7 +21,7 @@ def extract_bert_feature(
     text: str,
     word2ph: list[int],
     device: str,
-    assist_text: Optional[str] = None,
+    assist_text: str | None = None,
     assist_text_weight: float = 0.7,
 ) -> torch.Tensor:
     """
@@ -89,8 +89,8 @@ def extract_bert_feature(
 def extract_bert_feature_onnx(
     text: str,
     word2ph: list[int],
-    onnx_providers: Sequence[Union[str, tuple[str, dict[str, Any]]]],
-    assist_text: Optional[str] = None,
+    onnx_providers: Sequence[str | tuple[str, dict[str, Any]]],
+    assist_text: str | None = None,
     assist_text_weight: float = 0.7,
 ) -> NDArray[Any]:
     """

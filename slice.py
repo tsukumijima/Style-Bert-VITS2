@@ -3,7 +3,7 @@ import shutil
 from pathlib import Path
 from queue import Queue
 from threading import Thread
-from typing import Any, Optional
+from typing import Any
 
 import soundfile as sf
 import torch
@@ -180,7 +180,7 @@ if __name__ == "__main__":
     # Silero VADのモデルは、同じインスタンスで並列処理するとおかしくなるらしい
     # ワーカーごとにモデルをロードするようにするため、Queueを使って処理する
     def process_queue(
-        q: Queue[Optional[Path]],
+        q: Queue[Path | None],
         result_queue: Queue[tuple[float, int]],
         error_queue: Queue[tuple[Path, Exception]],
     ):
@@ -216,7 +216,7 @@ if __name__ == "__main__":
             finally:
                 q.task_done()
 
-    q: Queue[Optional[Path]] = Queue()
+    q: Queue[Path | None] = Queue()
     result_queue: Queue[tuple[float, int]] = Queue()
     error_queue: Queue[tuple[Path, Exception]] = Queue()
 

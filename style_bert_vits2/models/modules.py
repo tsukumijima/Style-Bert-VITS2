@@ -1,5 +1,5 @@
 import math
-from typing import Any, Optional, Union
+from typing import Any
 
 import torch
 from torch import nn
@@ -120,7 +120,7 @@ class DDSConv(nn.Module):
             self.norms_2.append(LayerNorm(channels))
 
     def forward(
-        self, x: torch.Tensor, x_mask: torch.Tensor, g: Optional[torch.Tensor] = None
+        self, x: torch.Tensor, x_mask: torch.Tensor, g: torch.Tensor | None = None
     ) -> torch.Tensor:
         if g is not None:
             x = x + g
@@ -192,7 +192,7 @@ class WN(torch.nn.Module):
         self,
         x: torch.Tensor,
         x_mask: torch.Tensor,
-        g: Optional[torch.Tensor] = None,
+        g: torch.Tensor | None = None,
         **kwargs: Any,
     ) -> torch.Tensor:
         output = torch.zeros_like(x)
@@ -311,7 +311,7 @@ class ResBlock1(torch.nn.Module):
         self.convs2.apply(commons.init_weights)
 
     def forward(
-        self, x: torch.Tensor, x_mask: Optional[torch.Tensor] = None
+        self, x: torch.Tensor, x_mask: torch.Tensor | None = None
     ) -> torch.Tensor:
         for c1, c2 in zip(self.convs1, self.convs2):
             xt = F.leaky_relu(x, LRELU_SLOPE)
@@ -366,7 +366,7 @@ class ResBlock2(torch.nn.Module):
         self.convs.apply(commons.init_weights)
 
     def forward(
-        self, x: torch.Tensor, x_mask: Optional[torch.Tensor] = None
+        self, x: torch.Tensor, x_mask: torch.Tensor | None = None
     ) -> torch.Tensor:
         for c in self.convs:
             xt = F.leaky_relu(x, LRELU_SLOPE)
@@ -390,7 +390,7 @@ class Log(nn.Module):
         x_mask: torch.Tensor,
         reverse: bool = False,
         **kwargs: Any,
-    ) -> Union[tuple[torch.Tensor, torch.Tensor], torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor] | torch.Tensor:
         if not reverse:
             y = torch.log(torch.clamp_min(x, 1e-5)) * x_mask
             logdet = torch.sum(-y, [1, 2])
@@ -407,7 +407,7 @@ class Flip(nn.Module):
         *args: Any,
         reverse: bool = False,
         **kwargs: Any,
-    ) -> Union[tuple[torch.Tensor, torch.Tensor], torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor] | torch.Tensor:
         x = torch.flip(x, [1])
         if not reverse:
             logdet = torch.zeros(x.size(0)).to(dtype=x.dtype, device=x.device)
@@ -429,7 +429,7 @@ class ElementwiseAffine(nn.Module):
         x_mask: torch.Tensor,
         reverse: bool = False,
         **kwargs: Any,
-    ) -> Union[tuple[torch.Tensor, torch.Tensor], torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor] | torch.Tensor:
         if not reverse:
             y = self.m + torch.exp(self.logs) * x
             y = y * x_mask
@@ -480,9 +480,9 @@ class ResidualCouplingLayer(nn.Module):
         self,
         x: torch.Tensor,
         x_mask: torch.Tensor,
-        g: Optional[torch.Tensor] = None,
+        g: torch.Tensor | None = None,
         reverse: bool = False,
-    ) -> Union[tuple[torch.Tensor, torch.Tensor], torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor] | torch.Tensor:
         x0, x1 = torch.split(x, [self.half_channels] * 2, 1)
         h = self.pre(x0) * x_mask
         h = self.enc(h, x_mask, g=g)
@@ -536,9 +536,9 @@ class ConvFlow(nn.Module):
         self,
         x: torch.Tensor,
         x_mask: torch.Tensor,
-        g: Optional[torch.Tensor] = None,
+        g: torch.Tensor | None = None,
         reverse: bool = False,
-    ) -> Union[tuple[torch.Tensor, torch.Tensor], torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor] | torch.Tensor:
         x0, x1 = torch.split(x, [self.half_channels] * 2, 1)
         h = self.pre(x0)
         h = self.convs(h, x_mask, g=g)
@@ -582,7 +582,7 @@ class TransformerCouplingLayer(nn.Module):
         p_dropout: float = 0,
         filter_channels: int = 0,
         mean_only: bool = False,
-        wn_sharing_parameter: Optional[nn.Module] = None,
+        wn_sharing_parameter: nn.Module | None = None,
         gin_channels: int = 0,
     ) -> None:
         assert channels % 2 == 0, "channels should be divisible by 2"
@@ -618,9 +618,9 @@ class TransformerCouplingLayer(nn.Module):
         self,
         x: torch.Tensor,
         x_mask: torch.Tensor,
-        g: Optional[torch.Tensor] = None,
+        g: torch.Tensor | None = None,
         reverse: bool = False,
-    ) -> Union[tuple[torch.Tensor, torch.Tensor], torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor] | torch.Tensor:
         x0, x1 = torch.split(x, [self.half_channels] * 2, 1)
         h = self.pre(x0) * x_mask
         h = self.enc(h, x_mask, g=g)

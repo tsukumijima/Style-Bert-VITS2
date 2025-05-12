@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any, Optional, Union
+from typing import TYPE_CHECKING, Any
 
 from numpy.typing import NDArray
 
@@ -27,7 +27,7 @@ def extract_bert_feature(
     word2ph: list[int],
     language: Languages,
     device: str,
-    assist_text: Optional[str] = None,
+    assist_text: str | None = None,
     assist_text_weight: float = 0.7,
 ) -> torch.Tensor:
     """
@@ -61,8 +61,8 @@ def extract_bert_feature_onnx(
     text: str,
     word2ph: list[int],
     language: Languages,
-    onnx_providers: Sequence[Union[str, tuple[str, dict[str, Any]]]],
-    assist_text: Optional[str] = None,
+    onnx_providers: Sequence[str | tuple[str, dict[str, Any]]],
+    assist_text: str | None = None,
     assist_text_weight: float = 0.7,
 ) -> NDArray[Any]:
     """
@@ -145,8 +145,8 @@ def clean_text(
 def clean_text_with_given_phone_tone(
     text: str,
     language: Languages,
-    given_phone: Optional[list[str]] = None,
-    given_tone: Optional[list[int]] = None,
+    given_phone: list[str] | None = None,
+    given_tone: list[int] | None = None,
     use_jp_extra: bool = True,
     raise_yomi_error: bool = False,
 ) -> tuple[str, list[str], list[int], list[int]]:

@@ -3,7 +3,7 @@
 コードと完全に一致している保証はない。あくまで参考程度とすること。
 """
 
-from typing import Any, Optional, Union
+from typing import Any
 
 import torch
 from torch.nn import functional as F
@@ -89,7 +89,7 @@ def slice_segments(
 
 
 def rand_slice_segments(
-    x: torch.Tensor, x_lengths: Optional[torch.Tensor] = None, segment_size: int = 4
+    x: torch.Tensor, x_lengths: torch.Tensor | None = None, segment_size: int = 4
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """
     ランダムなセグメントをスライスする
@@ -149,7 +149,7 @@ def fused_add_tanh_sigmoid_multiply(
 
 
 def sequence_mask(
-    length: torch.Tensor, max_length: Optional[int] = None
+    length: torch.Tensor, max_length: int | None = None
 ) -> torch.Tensor:
     """
     シーケンスマスクを生成する
@@ -190,8 +190,8 @@ def generate_path(duration: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
 
 
 def clip_grad_value_(
-    parameters: Union[torch.Tensor, list[torch.Tensor]],
-    clip_value: Optional[float],
+    parameters: torch.Tensor | list[torch.Tensor],
+    clip_value: float | None,
     norm_type: float = 2.0,
 ) -> float:
     """

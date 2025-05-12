@@ -1,7 +1,7 @@
 import argparse
 import sys
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from torch.utils.data import Dataset
 from tqdm import tqdm
@@ -16,7 +16,7 @@ from style_bert_vits2.utils.stdout_wrapper import SAFE_STDOUT
 def transcribe_with_faster_whisper(
     model: "WhisperModel",
     audio_file: Path,
-    initial_prompt: Optional[str] = None,
+    initial_prompt: str | None = None,
     language: str = "ja",
     num_beams: int = 1,
     no_repeat_ngram_size: int = 10,
@@ -49,13 +49,13 @@ def transcribe_files_with_hf_whisper(
     audio_files: list[Path],
     model_id: str,
     output_file: Path,
-    initial_prompt: Optional[str] = None,
+    initial_prompt: str | None = None,
     language: str = "ja",
     batch_size: int = 16,
     num_beams: int = 1,
     no_repeat_ngram_size: int = 10,
     device: str = "cuda",
-    pbar: Optional[tqdm] = None,
+    pbar: tqdm | None = None,
 ) -> list[str]:
     import torch
     from transformers import WhisperProcessor, pipeline

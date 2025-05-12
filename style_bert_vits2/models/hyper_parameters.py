@@ -5,7 +5,6 @@ Style-Bert-VITS2 モデルのハイパーパラメータを表す Pydantic モ�
 """
 
 from pathlib import Path
-from typing import Optional, Union
 
 from pydantic import BaseModel, ConfigDict
 
@@ -49,7 +48,7 @@ class HyperParametersData(BaseModel):
     win_length: int = 2048
     n_mel_channels: int = 128
     mel_fmin: float = 0.0
-    mel_fmax: Optional[float] = None
+    mel_fmax: float | None = None
     add_blank: bool = True
     n_speakers: int = 1
     cleaned_text: bool = True
@@ -107,15 +106,15 @@ class HyperParameters(BaseModel):
     model: HyperParametersModel = HyperParametersModel()
 
     # 以下は学習時にのみ動的に設定されるパラメータ (通常 config.json には存在しない)
-    model_dir: Optional[str] = None
+    model_dir: str | None = None
     speedup: bool = False
-    repo_id: Optional[str] = None
+    repo_id: str | None = None
 
     # model_ 以下を Pydantic の保護対象から除外する
     model_config = ConfigDict(protected_namespaces=())
 
     @staticmethod
-    def load_from_json(json_path: Union[str, Path]) -> "HyperParameters":
+    def load_from_json(json_path: str | Path) -> "HyperParameters":
         """
         与えられた JSON ファイルからハイパーパラメータを読み込む。
 

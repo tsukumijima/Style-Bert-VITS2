@@ -1,4 +1,4 @@
-from typing import Any, Optional, Union, cast
+from typing import Any, cast
 
 import torch
 from numpy.typing import NDArray
@@ -21,7 +21,7 @@ from style_bert_vits2.nlp.symbols import SYMBOLS
 
 def get_net_g(
     model_path: str, version: str, device: str, hps: HyperParameters
-) -> Union[SynthesizerTrn, SynthesizerTrnJPExtra]:
+) -> SynthesizerTrn | SynthesizerTrnJPExtra:
     if version.endswith("JP-Extra"):
         logger.info("Using JP-Extra model")
         net_g = SynthesizerTrnJPExtra(
@@ -102,10 +102,10 @@ def get_text(
     language_str: Languages,
     hps: HyperParameters,
     device: str,
-    assist_text: Optional[str] = None,
+    assist_text: str | None = None,
     assist_text_weight: float = 0.7,
-    given_phone: Optional[list[str]] = None,
-    given_tone: Optional[list[int]] = None,
+    given_phone: list[str] | None = None,
+    given_tone: list[int] | None = None,
 ) -> tuple[
     torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor
 ]:
@@ -174,14 +174,14 @@ def infer(
     sid: int,  # In the original Bert-VITS2, its speaker_name: str, but here it's id
     language: Languages,
     hps: HyperParameters,
-    net_g: Union[SynthesizerTrn, SynthesizerTrnJPExtra],
+    net_g: SynthesizerTrn | SynthesizerTrnJPExtra,
     device: str,
     skip_start: bool = False,
     skip_end: bool = False,
-    assist_text: Optional[str] = None,
+    assist_text: str | None = None,
     assist_text_weight: float = 0.7,
-    given_phone: Optional[list[str]] = None,
-    given_tone: Optional[list[int]] = None,
+    given_phone: list[str] | None = None,
+    given_tone: list[int] | None = None,
 ) -> NDArray[Any]:
     is_jp_extra = hps.version.endswith("JP-Extra")
     bert, ja_bert, en_bert, phones, tones, lang_ids = get_text(

@@ -472,10 +472,10 @@ class ToneSandhi:
                 finals[j] = finals[j][:-1] + "5"
         ge_idx = word.find("个")
         if (
-            len(word) >= 1
-            and word[-1] in "吧呢啊呐噻嘛吖嗨呐哦哒额滴哩哟喽啰耶喔诶"
-            or len(word) >= 1
-            and word[-1] in "的地得"
+            (len(word) >= 1
+            and word[-1] in "吧呢啊呐噻嘛吖嗨呐哦哒额滴哩哟喽啰耶喔诶")
+            or (len(word) >= 1
+            and word[-1] in "的地得")
             or (
                 (
                     len(word) > 1
@@ -483,13 +483,13 @@ class ToneSandhi:
                     and pos in {"r", "n"}
                     and word not in self.must_not_neural_tone_words
                 )
-                or len(word) > 1
+                or (len(word) > 1
                 and word[-1] in "上下里"
-                and pos in {"s", "l", "f"}
+                and pos in {"s", "l", "f"})
             )
-            or len(word) > 1
+            or (len(word) > 1
             and word[-1] in "来去"
-            and word[-2] in "上下进出回过起开"
+            and word[-2] in "上下进出回过起开")
         ):
             finals[-1] = finals[-1][:-1] + "5"
         # 个做量词

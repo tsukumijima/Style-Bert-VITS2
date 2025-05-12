@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import gc
 import time
-from typing import TYPE_CHECKING, Optional, Union, cast
+from typing import TYPE_CHECKING, cast
 
 from transformers import (
     AutoModelForMaskedLM,
@@ -34,24 +34,22 @@ if TYPE_CHECKING:
 
 
 # 各言語ごとのロード済みの BERT モデルを格納する辞書
-__loaded_models: dict[Languages, Union[PreTrainedModel, DebertaV2Model]] = {}
+__loaded_models: dict[Languages, PreTrainedModel | DebertaV2Model] = {}
 
 # 各言語ごとのロード済みの BERT トークナイザーを格納する辞書
 __loaded_tokenizers: dict[
     Languages,
-    Union[PreTrainedTokenizer, PreTrainedTokenizerFast, DebertaV2TokenizerFast],
+    PreTrainedTokenizer | PreTrainedTokenizerFast | DebertaV2TokenizerFast,
 ] = {}
 
 
 def load_model(
     language: Languages,
-    pretrained_model_name_or_path: Optional[str] = None,
-    device_map: Optional[
-        Union[str, dict[str, Union[int, str, torch.device]], int, torch.device]
-    ] = None,
-    cache_dir: Optional[str] = None,
+    pretrained_model_name_or_path: str | None = None,
+    device_map: str | dict[str, int | str | torch.device] | int | torch.device | None = None,
+    cache_dir: str | None = None,
     revision: str = "main",
-) -> Union[PreTrainedModel, DebertaV2Model]:
+) -> PreTrainedModel | DebertaV2Model:
     """
     指定された言語の BERT モデルをロードし、ロード済みの BERT モデルを返す。
     一度ロードされていれば、ロード済みの BERT モデルを即座に返す。
@@ -118,10 +116,10 @@ def load_model(
 
 def load_tokenizer(
     language: Languages,
-    pretrained_model_name_or_path: Optional[str] = None,
-    cache_dir: Optional[str] = None,
+    pretrained_model_name_or_path: str | None = None,
+    cache_dir: str | None = None,
     revision: str = "main",
-) -> Union[PreTrainedTokenizer, PreTrainedTokenizerFast, DebertaV2TokenizerFast]:
+) -> PreTrainedTokenizer | PreTrainedTokenizerFast | DebertaV2TokenizerFast:
     """
     指定された言語の BERT トークナイザーをロードし、ロード済みの BERT トークナイザーを返す。
     一度ロードされていれば、ロード済みの BERT トークナイザーを即座に返す。

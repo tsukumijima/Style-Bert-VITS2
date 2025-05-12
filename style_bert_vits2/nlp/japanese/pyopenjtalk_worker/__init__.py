@@ -3,14 +3,14 @@ Run the pyopenjtalk worker in a separate process
 to avoid user dictionary access error
 """
 
-from typing import Any, Optional
+from typing import Any
 
 from style_bert_vits2.logging import logger
 from style_bert_vits2.nlp.japanese.pyopenjtalk_worker.worker_client import WorkerClient
 from style_bert_vits2.nlp.japanese.pyopenjtalk_worker.worker_common import WORKER_PORT
 
 
-WORKER_CLIENT: Optional[WorkerClient] = None
+WORKER_CLIENT: WorkerClient | None = None
 
 
 # pyopenjtalk interface
@@ -41,7 +41,7 @@ def make_label(njd_features: Any) -> list[str]:
         return pyopenjtalk.make_label(njd_features)
 
 
-def mecab_dict_index(path: str, out_path: str, dn_mecab: Optional[str] = None) -> None:
+def mecab_dict_index(path: str, out_path: str, dn_mecab: str | None = None) -> None:
     if WORKER_CLIENT is not None:
         WORKER_CLIENT.dispatch_pyopenjtalk("mecab_dict_index", path, out_path, dn_mecab)
     else:
@@ -77,7 +77,6 @@ def unset_user_dict() -> None:
 def initialize_worker(port: int = WORKER_PORT) -> None:
     import atexit
     import signal
-    import socket
     import sys
     import time
 
@@ -88,7 +87,7 @@ def initialize_worker(port: int = WORKER_PORT) -> None:
     client = None
     try:
         client = WorkerClient(port)
-    except (OSError, socket.timeout):
+    except (TimeoutError, OSError):
         logger.debug("try starting pyopenjtalk worker server")
         import os
         import subprocess

@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from typing import Any, Union
+from typing import Any
 
 import gradio as gr
 import numpy as np
@@ -25,7 +25,7 @@ path_config = get_path_config()
 assets_root = path_config.assets_root
 
 
-def load_safetensors(model_path: Union[str, Path]) -> dict[str, torch.Tensor]:
+def load_safetensors(model_path: str | Path) -> dict[str, torch.Tensor]:
     result: dict[str, torch.Tensor] = {}
     with safe_open(model_path, framework="pt", device="cpu") as f:
         for k in f.keys():

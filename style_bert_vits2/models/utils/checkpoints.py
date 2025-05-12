@@ -2,7 +2,7 @@ import glob
 import os
 import re
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import Any
 
 import torch
 
@@ -10,13 +10,13 @@ from style_bert_vits2.logging import logger
 
 
 def load_checkpoint(
-    checkpoint_path: Union[str, Path],
+    checkpoint_path: str | Path,
     model: torch.nn.Module,
-    optimizer: Optional[torch.optim.Optimizer] = None,
+    optimizer: torch.optim.Optimizer | None = None,
     skip_optimizer: bool = False,
     for_infer: bool = False,
-    device: Union[str, torch.device] = "cpu",
-) -> tuple[torch.nn.Module, Optional[torch.optim.Optimizer], float, int]:
+    device: str | torch.device = "cpu",
+) -> tuple[torch.nn.Module, torch.optim.Optimizer | None, float, int]:
     """
     指定されたパスからチェックポイントを読み込み、モデルとオプティマイザーを更新する。
 
@@ -93,10 +93,10 @@ def load_checkpoint(
 
 def save_checkpoint(
     model: torch.nn.Module,
-    optimizer: Union[torch.optim.Optimizer, torch.optim.AdamW],
+    optimizer: torch.optim.Optimizer | torch.optim.AdamW,
     learning_rate: float,
     iteration: int,
-    checkpoint_path: Union[str, Path],
+    checkpoint_path: str | Path,
 ) -> None:
     """
     モデルとオプティマイザーの状態を指定されたパスに保存する。
@@ -127,7 +127,7 @@ def save_checkpoint(
 
 
 def clean_checkpoints(
-    model_dir_path: Union[str, Path] = "logs/44k/",
+    model_dir_path: str | Path = "logs/44k/",
     n_ckpts_to_keep: int = 2,
     sort_by_time: bool = True,
 ) -> None:
@@ -180,7 +180,7 @@ def clean_checkpoints(
 
 
 def get_latest_checkpoint_path(
-    model_dir_path: Union[str, Path], regex: str = "G_*.pth"
+    model_dir_path: str | Path, regex: str = "G_*.pth"
 ) -> str:
     """
     指定されたディレクトリから最新のチェックポイントのパスを取得する

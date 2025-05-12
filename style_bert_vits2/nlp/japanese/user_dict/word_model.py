@@ -7,7 +7,6 @@
 
 from enum import Enum
 from re import findall, fullmatch
-from typing import List, Optional
 
 from pydantic import BaseModel, Field, validator
 
@@ -36,7 +35,7 @@ class UserDictWord(BaseModel):
     yomi: str = Field(title="読み")
     pronunciation: str = Field(title="発音")
     accent_type: int = Field(title="アクセント型")
-    mora_count: Optional[int] = Field(title="モーラ数", default=None)
+    mora_count: int | None = Field(title="モーラ数", default=None)
     accent_associative_rule: str = Field(title="アクセント結合規則")
 
     class Config:
@@ -116,8 +115,8 @@ class PartOfSpeechDetail(BaseModel):
     # context_idは辞書の左・右文脈IDのこと
     # https://github.com/VOICEVOX/open_jtalk/blob/427cfd761b78efb6094bea3c5bb8c968f0d711ab/src/mecab-naist-jdic/_left-id.def
     context_id: int = Field(title="文脈ID")
-    cost_candidates: List[int] = Field(title="コストのパーセンタイル")
-    accent_associative_rules: List[str] = Field(title="アクセント結合規則の一覧")
+    cost_candidates: list[int] = Field(title="コストのパーセンタイル")
+    accent_associative_rules: list[str] = Field(title="アクセント結合規則の一覧")
 
 
 class WordTypes(str, Enum):

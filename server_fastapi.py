@@ -8,7 +8,7 @@ import os
 import sys
 from io import BytesIO
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 from urllib.parse import unquote
 
 import GPUtil
@@ -183,16 +183,16 @@ if __name__ == "__main__":
         split_interval: float = Query(
             DEFAULT_SPLIT_INTERVAL, description="分けた場合に挟む無音の長さ（秒）"
         ),
-        assist_text: Optional[str] = Query(
+        assist_text: str | None = Query(
             None,
             description="このテキストの読み上げと似た声音・感情になりやすくなる。ただし抑揚やテンポ等が犠牲になる傾向がある",
         ),
         assist_text_weight: float = Query(
             DEFAULT_ASSIST_TEXT_WEIGHT, description="assist_textの強さ"
         ),
-        style: Optional[str] = Query(DEFAULT_STYLE, description="スタイル"),
+        style: str | None = Query(DEFAULT_STYLE, description="スタイル"),
         style_weight: float = Query(DEFAULT_STYLE_WEIGHT, description="スタイルの強さ"),
-        reference_audio_path: Optional[str] = Query(
+        reference_audio_path: str | None = Query(
             None, description="スタイルを音声ファイルで行う"
         ),
     ):
