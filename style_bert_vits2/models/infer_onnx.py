@@ -46,7 +46,7 @@ def get_text_onnx(
     NDArray[Any], NDArray[Any], NDArray[Any], NDArray[Any], NDArray[Any], NDArray[Any]
 ]:
     use_jp_extra = hps.version.endswith("JP-Extra")
-    norm_text, phone, tone, word2ph = clean_text_with_given_phone_tone(
+    norm_text, phone, tone, word2ph, sep_text, _, _ = clean_text_with_given_phone_tone(
         text,
         language_str,
         given_phone=given_phone,
@@ -71,6 +71,7 @@ def get_text_onnx(
         onnx_providers,
         assist_text,
         assist_text_weight,
+        sep_text,  # clean_text_with_given_phone_tone() の中間生成物を再利用して効率向上を図る
     )
     del word2ph
     assert bert_ori.shape[-1] == len(phone), phone

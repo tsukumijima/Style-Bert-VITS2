@@ -23,6 +23,7 @@ def extract_bert_feature(
     device: str,
     assist_text: Optional[str] = None,
     assist_text_weight: float = 0.7,
+    sep_text: Optional[list[str]] = None,
 ) -> torch.Tensor:
     """
     日本語のテキストから BERT の特徴量を抽出する (PyTorch 推論)
@@ -33,16 +34,21 @@ def extract_bert_feature(
         device (str): 推論に利用するデバイス
         assist_text (Optional[str], optional): 補助テキスト (デフォルト: None)
         assist_text_weight (float, optional): 補助テキストの重み (デフォルト: 0.7)
-
+        sep_text (Optional[list[str]], optional): 単語単位の単語のリスト (デフォルト: None)
     Returns:
         torch.Tensor: BERT の特徴量
     """
 
     import torch
 
+    # sep_text が指定されていない場合のみ、text_to_sep_kata() を使って単語単位の単語のリストを作る
+    # 指定されている時はそのリストをそのまま使うことで、何回も形態素解析処理が行われないようにする
+    if sep_text is None:
+        sep_text = text_to_sep_kata(text, raise_yomi_error=False)[0]
+
     # 各単語が何文字かを作る `word2ph` を使う必要があるので、読めない文字は必ず無視する
     # でないと `word2ph` の結果とテキストの文字数結果が整合性が取れない
-    text = "".join(text_to_sep_kata(text, raise_yomi_error=False)[0])
+    text = "".join(sep_text)
     if assist_text:
         assist_text = "".join(text_to_sep_kata(assist_text, raise_yomi_error=False)[0])
 
@@ -92,6 +98,7 @@ def extract_bert_feature_onnx(
     onnx_providers: Sequence[Union[str, tuple[str, dict[str, Any]]]],
     assist_text: Optional[str] = None,
     assist_text_weight: float = 0.7,
+    sep_text: Optional[list[str]] = None,
 ) -> NDArray[Any]:
     """
     日本語のテキストから BERT の特徴量を抽出する (ONNX 推論)
@@ -102,14 +109,20 @@ def extract_bert_feature_onnx(
         onnx_providers (list[str]): ONNX 推論で利用する ExecutionProvider (CPUExecutionProvider, CUDAExecutionProvider など)
         assist_text (Optional[str], optional): 補助テキスト (デフォルト: None)
         assist_text_weight (float, optional): 補助テキストの重み (デフォルト: 0.7)
+        sep_text (Optional[list[str]], optional): 単語単位の単語のリスト (デフォルト: None)
 
     Returns:
         NDArray[Any]: BERT の特徴量
     """
 
+    # sep_text が指定されていない場合のみ、text_to_sep_kata() を使って単語単位の単語のリストを作る
+    # 指定されている時はそのリストをそのまま使うことで、何回も形態素解析処理が行われないようにする
+    if sep_text is None:
+        sep_text = text_to_sep_kata(text, raise_yomi_error=False)[0]
+
     # 各単語が何文字かを作る `word2ph` を使う必要があるので、読めない文字は必ず無視する
     # でないと `word2ph` の結果とテキストの文字数結果が整合性が取れない
-    text = "".join(text_to_sep_kata(text, raise_yomi_error=False)[0])
+    text = "".join(sep_text)
     if assist_text:
         assist_text = "".join(text_to_sep_kata(assist_text, raise_yomi_error=False)[0])
 

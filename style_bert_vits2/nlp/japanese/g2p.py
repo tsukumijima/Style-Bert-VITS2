@@ -18,12 +18,14 @@ def g2p(
     use_jp_extra: bool = True,
     raise_yomi_error: bool = False,
     jtalk: OpenJTalk | None = None,
-) -> tuple[list[str], list[int], list[int], list[str]]:
+) -> tuple[list[str], list[int], list[int], list[str], list[str], list[str]]:
     """
     他で使われるメインの関数。`normalize_text()` で正規化された `norm_text` を受け取り、
     - phones: 音素のリスト（ただし `!` や `,` や `.` など punctuation が含まれうる）
     - tones: アクセントのリスト、0（低）と1（高）からなり、phones と同じ長さ
     - word2ph: 正規化済みテキストの各文字に音素が何個割り当てられるかを表すリスト
+    - sep_text: 単語単位の単語のリスト
+    - sep_kata: 単語単位の単語のカタカナ読みのリスト
     - sep_kata_with_joshi: 単語単位の単語のカタカナ読みのリスト (助詞を直前の単語に連結している)
     のタプルを返す。
     ただし `phones` と `tones` の最初と終わりに `_` が入り、応じて `word2ph` の最初と最後に 1 が追加される。
@@ -35,7 +37,13 @@ def g2p(
         jtalk (OpenJTalk | None, optional): 未指定時は pyopenjtalk モジュール内部で保持されているインスタンスが自動的に利用される。
 
     Returns:
-        tuple[list[str], list[int], list[int], list[str]]: 音素のリスト、アクセントのリスト、word2ph のリスト、助詞を連結した読みのリスト
+        tuple[list[str], list[int], list[int], list[str], list[str], list[str]]:
+            - phones: 音素のリスト（ただし `!` や `,` や `.` など punctuation が含まれうる）
+            - tones: アクセントのリスト、0（低）と1（高）からなり、phones と同じ長さ
+            - word2ph: 正規化済みテキストの各文字に音素が何個割り当てられるかを表すリスト
+            - sep_text: 単語単位の単語のリスト
+            - sep_kata: 単語単位の単語のカタカナ読みのリスト
+            - sep_kata_with_joshi: 単語単位の単語のカタカナ読みのリスト (助詞を直前の単語に連結している)
     """
 
     # pyopenjtalk のフルコンテキストラベルを使ってアクセントを取り出すと、punctuation の位置が消えてしまい情報が失われてしまう：
@@ -105,7 +113,7 @@ def g2p(
     if not use_jp_extra:
         phones = [phone if phone != "N" else "n" for phone in phones]
 
-    return phones, tones, word2ph, sep_kata_with_joshi
+    return phones, tones, word2ph, sep_text, sep_kata, sep_kata_with_joshi
 
 
 def text_to_sep_kata(
@@ -863,12 +871,14 @@ if __name__ == "__main__":
         sys.exit(1)
     bert_models.load_tokenizer(Languages.JP)
     start = time.time()
-    phones, tones, word2ph, sep_kata_with_joshi = g2p(normalize_text(sys.argv[1]))
+    phones, tones, word2ph, sep_text, sep_kata, sep_kata_with_joshi = g2p(normalize_text(sys.argv[1]))
     end = time.time()
     print(f"time: {end - start:.4f}s")
     phone_tones = phone_tone2kata_tone(list(zip(phones, tones)))
     print(f"phone_tones: {phone_tones}")
     print(f"word2ph: {word2ph}")
+    print(f"sep_text: {sep_text}")
+    print(f"sep_kata: {sep_kata}")
     print(f"sep_kata_with_joshi: {sep_kata_with_joshi}")
     assert (
         len(phones) == len(tones) == sum(word2ph)

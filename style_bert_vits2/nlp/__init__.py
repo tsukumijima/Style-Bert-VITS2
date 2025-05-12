@@ -4,6 +4,7 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, Optional, Union
 
 from numpy.typing import NDArray
+from pyopenjtalk import OpenJTalk
 
 from style_bert_vits2.constants import Languages
 from style_bert_vits2.nlp.symbols import (
@@ -29,6 +30,7 @@ def extract_bert_feature(
     device: str,
     assist_text: Optional[str] = None,
     assist_text_weight: float = 0.7,
+    sep_text: Optional[list[str]] = None,
 ) -> torch.Tensor:
     """
     テキストから BERT の特徴量を抽出する (PyTorch 推論)
@@ -40,6 +42,7 @@ def extract_bert_feature(
         device (str): 推論に利用するデバイス
         assist_text (Optional[str], optional): 補助テキスト (デフォルト: None)
         assist_text_weight (float, optional): 補助テキストの重み (デフォルト: 0.7)
+        sep_text (Optional[list[str]], optional): 単語単位の単語のリスト (デフォルト: None)
 
     Returns:
         torch.Tensor: BERT の特徴量
@@ -47,14 +50,35 @@ def extract_bert_feature(
 
     if language == Languages.JP:
         from style_bert_vits2.nlp.japanese.bert_feature import extract_bert_feature
+        return extract_bert_feature(
+            text,
+            word2ph,
+            device,
+            assist_text,
+            assist_text_weight,
+            sep_text,  # 日本語のみ sep_text を指定する
+        )
     elif language == Languages.EN:
         from style_bert_vits2.nlp.english.bert_feature import extract_bert_feature
+        return extract_bert_feature(
+            text,
+            word2ph,
+            device,
+            assist_text,
+            assist_text_weight,
+        )
     elif language == Languages.ZH:
         from style_bert_vits2.nlp.chinese.bert_feature import extract_bert_feature
+        return extract_bert_feature(
+            text,
+            word2ph,
+            device,
+            assist_text,
+            assist_text_weight,
+        )
     else:
         raise ValueError(f"Language {language} not supported")
 
-    return extract_bert_feature(text, word2ph, device, assist_text, assist_text_weight)
 
 
 def extract_bert_feature_onnx(
@@ -64,6 +88,7 @@ def extract_bert_feature_onnx(
     onnx_providers: Sequence[Union[str, tuple[str, dict[str, Any]]]],
     assist_text: Optional[str] = None,
     assist_text_weight: float = 0.7,
+    sep_text: Optional[list[str]] = None,
 ) -> NDArray[Any]:
     """
     テキストから BERT の特徴量を抽出する (ONNX 推論)
@@ -75,6 +100,7 @@ def extract_bert_feature_onnx(
         onnx_providers (list[str]): ONNX 推論で利用する ExecutionProvider (CPUExecutionProvider, CUDAExecutionProvider など)
         assist_text (Optional[str], optional): 補助テキスト (デフォルト: None)
         assist_text_weight (float, optional): 補助テキストの重み (デフォルト: 0.7)
+        sep_text (Optional[list[str]], optional): 単語単位の単語のリスト (デフォルト: None)
 
     Returns:
         NDArray[Any]: BERT の特徴量
@@ -82,20 +108,35 @@ def extract_bert_feature_onnx(
 
     if language == Languages.JP:
         from style_bert_vits2.nlp.japanese.bert_feature import extract_bert_feature_onnx
+        return extract_bert_feature_onnx(
+            text,
+            word2ph,
+            onnx_providers,
+            assist_text,
+            assist_text_weight,
+            sep_text,  # 日本語のみ sep_text を指定する
+        )
     elif language == Languages.EN:
         from style_bert_vits2.nlp.english.bert_feature import extract_bert_feature_onnx
+        return extract_bert_feature_onnx(
+            text,
+            word2ph,
+            onnx_providers,
+            assist_text,
+            assist_text_weight,
+        )
     elif language == Languages.ZH:
         from style_bert_vits2.nlp.chinese.bert_feature import extract_bert_feature_onnx
+        return extract_bert_feature_onnx(
+            text,
+            word2ph,
+            onnx_providers,
+            assist_text,
+            assist_text_weight,
+        )
     else:
         raise ValueError(f"Language {language} not supported")
 
-    return extract_bert_feature_onnx(
-        text,
-        word2ph,
-        onnx_providers,
-        assist_text,
-        assist_text_weight,
-    )
 
 
 def clean_text(
@@ -103,7 +144,8 @@ def clean_text(
     language: Languages,
     use_jp_extra: bool = True,
     raise_yomi_error: bool = False,
-) -> tuple[str, list[str], list[int], list[int]]:
+    jtalk: OpenJTalk | None = None,
+) -> tuple[str, list[str], list[int], list[int], list[str] | None, list[str] | None, list[str] | None]:
     """
     テキストをクリーニングし、音素に変換する
 
@@ -112,9 +154,17 @@ def clean_text(
         language (Languages): テキストの言語
         use_jp_extra (bool, optional): テキストが日本語の場合に JP-Extra モデルを利用するかどうか。Defaults to True.
         raise_yomi_error (bool, optional): False の場合、読めない文字が消えたような扱いとして処理される。Defaults to False.
+        jtalk (OpenJTalk | None, optional): 未指定時は pyopenjtalk モジュール内部で保持されているインスタンスが自動的に利用される。
 
     Returns:
-        tuple[str, list[str], list[int], list[int]]: クリーニングされたテキストと、音素・アクセント・元のテキストの各文字に音素が何個割り当てられるかのリスト
+        tuple[str, list[str], list[int], list[int], list[str] | None, list[str] | None, list[str] | None]:
+            - クリーニングされたテキスト
+            - 音素
+            - アクセント
+            - 元のテキストの各文字に音素が何個割り当てられるかのリスト
+            - 単語単位の単語のリスト
+            - 単語単位の単語のカタカナ読みのリスト
+            - 単語単位の単語のカタカナ読みに助詞を追加したリスト
     """
 
     # Changed to import inside if condition to avoid unnecessary import
@@ -123,23 +173,38 @@ def clean_text(
         from style_bert_vits2.nlp.japanese.normalizer import normalize_text
 
         norm_text = normalize_text(text)
-        phones, tones, word2ph, _ = g2p(norm_text, use_jp_extra, raise_yomi_error)
+        phones, tones, word2ph, sep_text, sep_kata, sep_kata_with_joshi = g2p(
+            norm_text,
+            use_jp_extra=use_jp_extra,
+            raise_yomi_error=raise_yomi_error,
+            jtalk=jtalk,
+        )
     elif language == Languages.EN:
         from style_bert_vits2.nlp.english.g2p import g2p
         from style_bert_vits2.nlp.english.normalizer import normalize_text
 
         norm_text = normalize_text(text)
         phones, tones, word2ph = g2p(norm_text)
+
+        # 日本語以外では sep_text, sep_kata, sep_kata_with_joshi は None になる
+        sep_text = None
+        sep_kata = None
+        sep_kata_with_joshi = None
     elif language == Languages.ZH:
         from style_bert_vits2.nlp.chinese.g2p import g2p
         from style_bert_vits2.nlp.chinese.normalizer import normalize_text
 
         norm_text = normalize_text(text)
         phones, tones, word2ph = g2p(norm_text)
+
+        # 日本語以外では sep_text, sep_kata, sep_kata_with_joshi は None になる
+        sep_text = None
+        sep_kata = None
+        sep_kata_with_joshi = None
     else:
         raise ValueError(f"Language {language} not supported")
 
-    return norm_text, phones, tones, word2ph
+    return norm_text, phones, tones, word2ph, sep_text, sep_kata, sep_kata_with_joshi
 
 
 def clean_text_with_given_phone_tone(
@@ -149,7 +214,8 @@ def clean_text_with_given_phone_tone(
     given_tone: Optional[list[int]] = None,
     use_jp_extra: bool = True,
     raise_yomi_error: bool = False,
-) -> tuple[str, list[str], list[int], list[int]]:
+    jtalk: OpenJTalk | None = None,
+) -> tuple[str, list[str], list[int], list[int], list[str] | None, list[str] | None, list[str] | None]:
     """
     テキストをクリーニングし、音素に変換する
     変換時、given_phone や given_tone が与えられた場合はそれを調整して使う
@@ -161,17 +227,26 @@ def clean_text_with_given_phone_tone(
         given_tone (Optional[list[int]], optional): アクセントのトーンのリスト. Defaults to None.
         use_jp_extra (bool, optional): テキストが日本語の場合に JP-Extra モデルを利用するかどうか。Defaults to True.
         raise_yomi_error (bool, optional): False の場合、読めない文字が消えたような扱いとして処理される。Defaults to False.
+        jtalk (OpenJTalk | None, optional): 未指定時は pyopenjtalk モジュール内部で保持されているインスタンスが自動的に利用される。
 
     Returns:
-        tuple[str, list[str], list[int], list[int]]: クリーニングされたテキストと、音素・アクセント・元のテキストの各文字に音素が何個割り当てられるかのリスト
+        tuple[str, list[str], list[int], list[int], list[str] | None, list[str] | None, list[str] | None]:
+            - クリーニングされたテキスト
+            - 音素
+            - アクセント
+            - 元のテキストの各文字に音素が何個割り当てられるかのリスト
+            - 単語単位の単語のリスト
+            - 単語単位の単語のカタカナ読みのリスト
+            - 単語単位の単語のカタカナ読みに助詞を追加したリスト
     """
 
     # 与えられたテキストをクリーニング
-    norm_text, phone, tone, word2ph = clean_text(
+    norm_text, phone, tone, word2ph, sep_text, sep_kata, sep_kata_with_joshi = clean_text(
         text,
         language,
         use_jp_extra=use_jp_extra,
         raise_yomi_error=raise_yomi_error,
+        jtalk=jtalk,
     )
 
     # phone と tone の両方が与えられた場合はそれを使う
@@ -274,7 +349,7 @@ def clean_text_with_given_phone_tone(
         # ここでは必ず音素数が一致するはず
         assert len(phone) == len(tone) == sum(word2ph)
 
-    return norm_text, phone, tone, word2ph
+    return norm_text, phone, tone, word2ph, sep_text, sep_kata, sep_kata_with_joshi
 
 
 def cleaned_text_to_sequence(

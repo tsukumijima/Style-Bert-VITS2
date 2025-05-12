@@ -47,7 +47,7 @@ def process_line(
     if len(splitted_line) != 4:
         raise ValueError(f"Invalid line format: {line.strip()}")
     utt, spk, language, text = splitted_line
-    norm_text, phones, tones, word2ph = clean_text(
+    norm_text, phones, tones, word2ph, _, _, _ = clean_text(
         text=text,
         language=language,  # type: ignore
         use_jp_extra=use_jp_extra,
