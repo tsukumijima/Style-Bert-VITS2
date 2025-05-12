@@ -1,6 +1,8 @@
+import traceback
 from typing import Any, cast
 
 import torch
+import torch_tensorrt
 from numpy.typing import NDArray
 from torch.overrides import TorchFunctionMode
 
@@ -40,13 +42,80 @@ class EmptyInitOnDevice(TorchFunctionMode):
         return func(*args, **kwargs)
 
 
+class SynthesizerTrnWrapperForTensorRT(torch.nn.Module):
+    def __init__(
+        self,
+        synthesizer_model: SynthesizerTrn | SynthesizerTrnJPExtra,
+        is_jp_extra: bool,
+    ):
+        super().__init__()
+        self.synthesizer_model = synthesizer_model
+        self.is_jp_extra = is_jp_extra
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        x_lengths: torch.Tensor,
+        sid: torch.Tensor,
+        tones: torch.Tensor,
+        lang_ids: torch.Tensor,
+        bert_or_ja_bert: torch.Tensor,
+        style_vec: torch.Tensor,
+        ja_bert_normal: torch.Tensor | None = None,
+        en_bert_normal: torch.Tensor | None = None,
+        length_scale: float = 1.0,
+        sdp_ratio: float = 0.0,
+        noise_scale: float = 0.667,
+        noise_scale_w: float = 0.8,
+    ):
+        if self.is_jp_extra:
+            return cast(SynthesizerTrnJPExtra, self.synthesizer_model).infer(
+                x,
+                x_lengths,
+                sid,
+                tones,
+                lang_ids,
+                bert_or_ja_bert,
+                style_vec=style_vec,
+                length_scale=length_scale,
+                sdp_ratio=sdp_ratio,
+                noise_scale=noise_scale,
+                noise_scale_w=noise_scale_w,
+            )
+        else:
+            if ja_bert_normal is None or en_bert_normal is None:
+                raise ValueError(
+                    "ja_bert_normal and en_bert_normal must be provided for non-JP-Extra model in TensorRT wrapper."
+                )
+            return cast(SynthesizerTrn, self.synthesizer_model).infer(
+                x,
+                x_lengths,
+                sid,
+                tones,
+                lang_ids,
+                bert_or_ja_bert,
+                ja_bert_normal,
+                en_bert_normal,
+                style_vec=style_vec,
+                length_scale=length_scale,
+                sdp_ratio=sdp_ratio,
+                noise_scale=noise_scale,
+                noise_scale_w=noise_scale_w,
+            )
+
+
 def get_net_g(
-    model_path: str, version: str, device: str, hps: HyperParameters
-) -> SynthesizerTrn | SynthesizerTrnJPExtra:
+    model_path: str,
+    version: str,
+    device: str,
+    hps: HyperParameters,
+    use_tensorrt: bool = True,
+) -> SynthesizerTrn | SynthesizerTrnJPExtra | torch.jit.ScriptModule:
     with EmptyInitOnDevice(device):
-        if version.endswith("JP-Extra"):
+        is_jp_extra_model = version.endswith("JP-Extra")
+        if is_jp_extra_model:
             logger.info("Using JP-Extra model")
-            net_g = SynthesizerTrnJPExtra(
+            net_g_pytorch = SynthesizerTrnJPExtra(
                 n_vocab=len(SYMBOLS),
                 spec_channels=hps.data.filter_length // 2 + 1,
                 segment_size=hps.train.segment_size // hps.data.hop_length,
@@ -77,7 +146,7 @@ def get_net_g(
             ).to(device)
         else:
             logger.info("Using normal model")
-            net_g = SynthesizerTrn(
+            net_g_pytorch = SynthesizerTrn(
                 n_vocab=len(SYMBOLS),
                 spec_channels=hps.data.filter_length // 2 + 1,
                 segment_size=hps.train.segment_size // hps.data.hop_length,
@@ -107,16 +176,97 @@ def get_net_g(
                 slm=hps.model.slm,
             ).to(device)
 
-    net_g.eval()
+    net_g_pytorch.eval()
     if model_path.endswith(".pth") or model_path.endswith(".pt"):
         _ = utils.checkpoints.load_checkpoint(
-            model_path, net_g, None, skip_optimizer=True, device=device
+            model_path, net_g_pytorch, None, skip_optimizer=True, device=device
         )
     elif model_path.endswith(".safetensors") or model_path.endswith(".aivm"):
-        _ = utils.safetensors.load_safetensors(model_path, net_g, True, device=device)
+        _ = utils.safetensors.load_safetensors(
+            model_path, net_g_pytorch, True, device=device
+        )
     else:
         raise ValueError(f"Unknown model format: {model_path}")
-    return net_g
+
+    if use_tensorrt and device.startswith("cuda"):
+        try:
+            logger.info(
+                f"Attempting to compile the model with Torch-TensorRT for device: {device}"
+            )
+            infer_wrapper = (
+                SynthesizerTrnWrapperForTensorRT(net_g_pytorch, is_jp_extra_model)
+                .eval()
+                .to(device)
+            )
+
+            seq_len_min, seq_len_opt, seq_len_max = 30, 250, 1200
+            style_vec_dim = 256
+
+            x_input = torch_tensorrt.Input(
+                min_shape=[1, seq_len_min],
+                opt_shape=[1, seq_len_opt],
+                max_shape=[1, seq_len_max],
+                dtype=torch.long,
+            )
+            x_lengths_input = torch_tensorrt.Input(shape=[1], dtype=torch.long)
+            sid_input = torch_tensorrt.Input(shape=[1], dtype=torch.long)
+            tones_input = torch_tensorrt.Input(
+                min_shape=[1, seq_len_min],
+                opt_shape=[1, seq_len_opt],
+                max_shape=[1, seq_len_max],
+                dtype=torch.long,
+            )
+            lang_ids_input = torch_tensorrt.Input(
+                min_shape=[1, seq_len_min],
+                opt_shape=[1, seq_len_opt],
+                max_shape=[1, seq_len_max],
+                dtype=torch.long,
+            )
+            bert_tensor_input = torch_tensorrt.Input(
+                min_shape=[1, 1024, seq_len_min],
+                opt_shape=[1, 1024, seq_len_opt],
+                max_shape=[1, 1024, seq_len_max],
+                dtype=torch.float,
+            )
+            style_vec_input = torch_tensorrt.Input(
+                shape=[1, style_vec_dim], dtype=torch.float
+            )
+
+            compile_inputs = [
+                x_input,
+                x_lengths_input,
+                sid_input,
+                tones_input,
+                lang_ids_input,
+            ]
+            if is_jp_extra_model:
+                compile_inputs.append(bert_tensor_input)
+            else:
+                compile_inputs.append(bert_tensor_input)
+                compile_inputs.append(bert_tensor_input)
+                compile_inputs.append(bert_tensor_input)
+            compile_inputs.append(style_vec_input)
+
+            enabled_precisions = {torch.float, torch.half}
+
+            logger.info("Compiling the model with Torch-TensorRT...")
+            trt_model = cast(
+                torch.jit.ScriptModule,
+                torch_tensorrt.compile(
+                    infer_wrapper,
+                    inputs=compile_inputs,
+                    enabled_precisions=enabled_precisions,  # type: ignore
+                    workspace_size=1 << 30,
+                ),
+            )
+            logger.info("Model compiled successfully with Torch-TensorRT.")
+            return trt_model
+        except Exception as e:
+            logger.error(f"Failed to compile the model with Torch-TensorRT: {e}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            logger.error("Falling back to the original PyTorch model.")
+            return net_g_pytorch
+    return net_g_pytorch
 
 
 def get_text(
@@ -197,7 +347,7 @@ def infer(
     sid: int,  # In the original Bert-VITS2, its speaker_name: str, but here it's id
     language: Languages,
     hps: HyperParameters,
-    net_g: SynthesizerTrn | SynthesizerTrnJPExtra,
+    net_g: SynthesizerTrn | SynthesizerTrnJPExtra | torch.jit.ScriptModule,
     device: str,
     skip_start: bool = False,
     skip_end: bool = False,
@@ -206,7 +356,17 @@ def infer(
     given_phone: list[str] | None = None,
     given_tone: list[int] | None = None,
 ) -> NDArray[Any]:
-    is_jp_extra = hps.version.endswith("JP-Extra")
+    is_tensorrt_model = isinstance(net_g, torch.jit.ScriptModule)
+
+    if is_tensorrt_model:
+        is_jp_extra_net = (
+            net_g.is_jp_extra
+            if hasattr(net_g, "is_jp_extra")
+            else hps.version.endswith("JP-Extra")
+        )
+    else:
+        is_jp_extra_net = hps.version.endswith("JP-Extra")
+
     bert, ja_bert, en_bert, phones, tones, lang_ids = get_text(
         text,
         language,
@@ -232,6 +392,15 @@ def infer(
         ja_bert = ja_bert[:, :-2]
         en_bert = en_bert[:, :-2]
 
+    if is_tensorrt_model:
+        logger.debug("Converting float tensors to half for TensorRT model.")
+        if bert.dtype == torch.float32:
+            bert = bert.half()
+        if ja_bert.dtype == torch.float32:
+            ja_bert = ja_bert.half()
+        if en_bert.dtype == torch.float32:
+            en_bert = en_bert.half()
+
     with torch.no_grad():
         x_tst = phones.unsqueeze(0)
         tones = tones.unsqueeze(0)
@@ -244,14 +413,27 @@ def infer(
         del phones
         sid_tensor = torch.LongTensor([sid]).to(device)
 
-        if is_jp_extra:
-            output = cast(SynthesizerTrnJPExtra, net_g).infer(
+        if is_tensorrt_model and style_vec_tensor.dtype == torch.float32:
+            style_vec_tensor = style_vec_tensor.half()
+
+        if is_tensorrt_model:
+            logger.debug("Using TensorRT model for inference.")
+            forward_args_pos = [
                 x_tst,
                 x_tst_lengths,
                 sid_tensor,
                 tones,
                 lang_ids,
-                ja_bert,
+            ]
+            if is_jp_extra_net:
+                forward_args_pos.append(ja_bert)
+            else:
+                forward_args_pos.append(bert)
+                forward_args_pos.append(ja_bert)
+                forward_args_pos.append(en_bert)
+
+            output = net_g(
+                *forward_args_pos,
                 style_vec=style_vec_tensor,
                 length_scale=length_scale,
                 sdp_ratio=sdp_ratio,
@@ -259,21 +441,37 @@ def infer(
                 noise_scale_w=noise_scale_w,
             )
         else:
-            output = cast(SynthesizerTrn, net_g).infer(
-                x_tst,
-                x_tst_lengths,
-                sid_tensor,
-                tones,
-                lang_ids,
-                bert,
-                ja_bert,
-                en_bert,
-                style_vec=style_vec_tensor,
-                length_scale=length_scale,
-                sdp_ratio=sdp_ratio,
-                noise_scale=noise_scale,
-                noise_scale_w=noise_scale_w,
-            )
+            logger.debug("Using PyTorch model for inference.")
+            if is_jp_extra_net:
+                output = cast(SynthesizerTrnJPExtra, net_g).infer(
+                    x_tst,
+                    x_tst_lengths,
+                    sid_tensor,
+                    tones,
+                    lang_ids,
+                    ja_bert,
+                    style_vec=style_vec_tensor,
+                    length_scale=length_scale,
+                    sdp_ratio=sdp_ratio,
+                    noise_scale=noise_scale,
+                    noise_scale_w=noise_scale_w,
+                )
+            else:
+                output = cast(SynthesizerTrn, net_g).infer(
+                    x_tst,
+                    x_tst_lengths,
+                    sid_tensor,
+                    tones,
+                    lang_ids,
+                    bert,
+                    ja_bert,
+                    en_bert,
+                    style_vec=style_vec_tensor,
+                    length_scale=length_scale,
+                    sdp_ratio=sdp_ratio,
+                    noise_scale=noise_scale,
+                    noise_scale_w=noise_scale_w,
+                )
 
         audio = output[0][0, 0].data.cpu().float().numpy()
 
