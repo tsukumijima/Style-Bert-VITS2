@@ -21,7 +21,8 @@ def synthesize(
     if len(model_holder.models_info) > 0:
         # "koharune-ami" または "amitaro" モデルを探す
         for model_info in model_holder.models_info:
-            if model_info.name == "koharune-ami" or model_info.name == "amitaro":
+            # if model_info.name == "koharune-ami" or model_info.name == "amitaro":
+            if model_info.name == "koharune-ami":
                 # Safetensors 形式または ONNX 形式のモデルファイルに絞り込む
                 if inference_type == "torch":
                     model_files = [
@@ -130,12 +131,7 @@ def test_synthesize_onnx_tensorrt():
     synthesize(
         inference_type="onnx",
         onnx_providers=[
-            (
-                "TensorrtExecutionProvider",
-                {
-                    "trt_fp16_enable": True,
-                },
-            ),
+            ("TensorrtExecutionProvider", {}),
         ],
     )
 

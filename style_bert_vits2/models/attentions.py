@@ -279,7 +279,7 @@ class MultiHeadAttention(nn.Module):
         k = self.conv_k(c)
         v = self.conv_v(c)
 
-        x, self.attn = self.attention(q, k, v, mask=attn_mask)
+        x, _ = self.attention(q, k, v, mask=attn_mask)
 
         x = self.conv_o(x)
         return x
@@ -292,7 +292,8 @@ class MultiHeadAttention(nn.Module):
         mask: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         # reshape [b, d, t] -> [b, n_h, t, d_k]
-        b, d, t_s, t_t = (*key.size(), query.size(2))
+        b, d, t_s = key.size()
+        t_t = query.size(2)
         query = query.view(b, self.n_heads, self.k_channels, t_t).transpose(2, 3)
         key = key.view(b, self.n_heads, self.k_channels, t_s).transpose(2, 3)
         value = value.view(b, self.n_heads, self.k_channels, t_s).transpose(2, 3)
@@ -366,19 +367,18 @@ class MultiHeadAttention(nn.Module):
     def _get_relative_embeddings(
         self, relative_embeddings: torch.Tensor, length: int
     ) -> torch.Tensor:
-        assert self.window_size is not None
-        2 * self.window_size + 1  # type: ignore
         # Pad first before slice to avoid using cond ops.
-        pad_length = max(length - (self.window_size + 1), 0)
-        slice_start_position = max((self.window_size + 1) - length, 0)
+        pad_length = torch.clamp(length - (self.window_size + 1), min=0)
+        slice_start_position = torch.clamp((self.window_size + 1) - length, min=0)
         slice_end_position = slice_start_position + 2 * length - 1
-        if pad_length > 0:
-            padded_relative_embeddings = F.pad(
-                relative_embeddings,
-                commons.convert_pad_shape([[0, 0], [pad_length, pad_length], [0, 0]]),
-            )
-        else:
-            padded_relative_embeddings = relative_embeddings
+        # if pad_length > 0:
+        padded_relative_embeddings = F.pad(
+            relative_embeddings,
+            # commons.convert_pad_shape([[0, 0], [pad_length, pad_length], [0, 0]]),
+            [0, 0, pad_length, pad_length, 0, 0],
+        )
+        # else:
+        #     padded_relative_embeddings = relative_embeddings
         used_relative_embeddings = padded_relative_embeddings[
             :, slice_start_position:slice_end_position
         ]
@@ -391,12 +391,18 @@ class MultiHeadAttention(nn.Module):
         """
         batch, heads, length, _ = x.size()
         # Concat columns of pad to shift from relative to absolute indexing.
-        x = F.pad(x, commons.convert_pad_shape([[0, 0], [0, 0], [0, 0], [0, 1]]))
+        x = F.pad(
+            x,
+            # commons.convert_pad_shape([[0, 0], [0, 0], [0, 0], [0, 1]]),
+            [0, 1, 0, 0, 0, 0, 0, 0],
+        )
 
         # Concat extra elements so to add up to shape (len+1, 2*len-1).
         x_flat = x.view([batch, heads, length * 2 * length])
         x_flat = F.pad(
-            x_flat, commons.convert_pad_shape([[0, 0], [0, 0], [0, length - 1]])
+            x_flat,
+            # commons.convert_pad_shape([[0, 0], [0, 0], [0, length - 1]]),
+            [0, length - 1, 0, 0, 0, 0],
         )
 
         # Reshape and slice out the padded elements.
@@ -413,11 +419,17 @@ class MultiHeadAttention(nn.Module):
         batch, heads, length, _ = x.size()
         # pad along column
         x = F.pad(
-            x, commons.convert_pad_shape([[0, 0], [0, 0], [0, 0], [0, length - 1]])
+            x,
+            # commons.convert_pad_shape([[0, 0], [0, 0], [0, 0], [0, length - 1]]),
+            [0, length - 1, 0, 0, 0, 0, 0, 0],
         )
-        x_flat = x.view([batch, heads, length**2 + length * (length - 1)])
+        x_flat = x.view([batch, heads, length * length + length * (length - 1)])
         # add 0's in the beginning that will skew the elements after reshape
-        x_flat = F.pad(x_flat, commons.convert_pad_shape([[0, 0], [0, 0], [length, 0]]))
+        x_flat = F.pad(
+            x_flat,
+            # commons.convert_pad_shape([[0, 0], [0, 0], [length, 0]],
+            [length, 0, 0, 0, 0, 0],
+        )
         x_final = x_flat.view([batch, heads, length, 2 * length])[:, :, :, 1:]
         return x_final
 
@@ -452,24 +464,31 @@ class FFN(nn.Module):
         self.p_dropout = p_dropout
         self.activation = activation
         self.causal = causal
-
-        if causal:
-            self.padding = self._causal_padding
-        else:
-            self.padding = self._same_padding
+        self.is_activation = True if activation == "gelu" else False
+        # if causal:
+        #     self.padding = self._causal_padding
+        # else:
+        #     self.padding = self._same_padding
 
         self.conv_1 = nn.Conv1d(in_channels, filter_channels, kernel_size)
         self.conv_2 = nn.Conv1d(filter_channels, out_channels, kernel_size)
         self.drop = nn.Dropout(p_dropout)
 
-    def forward(self, x: torch.Tensor, x_mask: torch.Tensor) -> torch.Tensor:
-        x = self.conv_1(self.padding(x * x_mask))
-        if self.activation == "gelu":
+    def padding(self, x: torch.Tensor, x_mask: torch.Tensor) -> torch.Tensor:
+        if self.causal:
+            padding = self._causal_padding(x * x_mask)
+        else:
+            padding = self._same_padding(x * x_mask)
+        return padding
+
+    def forward(self, x: torch.Tensor, x_mask: torch.Tensor):
+        x = self.conv_1(self.padding(x, x_mask))
+        if self.is_activation:
             x = x * torch.sigmoid(1.702 * x)
         else:
             x = torch.relu(x)
         x = self.drop(x)
-        x = self.conv_2(self.padding(x * x_mask))
+        x = self.conv_2(self.padding(x, x_mask))
         return x * x_mask
 
     def _causal_padding(self, x: torch.Tensor) -> torch.Tensor:
@@ -477,8 +496,12 @@ class FFN(nn.Module):
             return x
         pad_l = self.kernel_size - 1
         pad_r = 0
-        padding = [[0, 0], [0, 0], [pad_l, pad_r]]
-        x = F.pad(x, commons.convert_pad_shape(padding))
+        # padding = [[0, 0], [0, 0], [pad_l, pad_r]]
+        x = F.pad(
+            x,
+            # commons.convert_pad_shape(padding),
+            [pad_l, pad_r, 0, 0, 0, 0],
+        )
         return x
 
     def _same_padding(self, x: torch.Tensor) -> torch.Tensor:
@@ -486,6 +509,10 @@ class FFN(nn.Module):
             return x
         pad_l = (self.kernel_size - 1) // 2
         pad_r = self.kernel_size // 2
-        padding = [[0, 0], [0, 0], [pad_l, pad_r]]
-        x = F.pad(x, commons.convert_pad_shape(padding))
+        # padding = [[0, 0], [0, 0], [pad_l, pad_r]]
+        x = F.pad(
+            x,
+            # commons.convert_pad_shape(padding),
+            [pad_l, pad_r, 0, 0, 0, 0],
+        )
         return x
