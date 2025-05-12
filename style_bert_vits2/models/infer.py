@@ -2,14 +2,23 @@ import traceback
 from typing import Any, cast
 
 import torch
-import torch_tensorrt
+
+
+# torch_tensorrt をインポート (失敗してもエラーにしない)
+try:
+    import torch_tensorrt
+
+    _torch_tensorrt_available = True
+except ImportError:
+    _torch_tensorrt_available = False
+    torch_tensorrt = None  # モジュールが存在しない場合 None を設定
+
 from numpy.typing import NDArray
 from torch.overrides import TorchFunctionMode
 
 from style_bert_vits2.constants import Languages
 from style_bert_vits2.logging import logger
 from style_bert_vits2.models import commons, utils
-from style_bert_vits2.models.attentions import MultiHeadAttention
 from style_bert_vits2.models.hyper_parameters import HyperParameters
 from style_bert_vits2.models.models import SynthesizerTrn
 from style_bert_vits2.models.models_jp_extra import (
@@ -21,6 +30,20 @@ from style_bert_vits2.nlp import (
     extract_bert_feature,
 )
 from style_bert_vits2.nlp.symbols import SYMBOLS
+
+
+# TensorRT が利用可能かどうかのフラグ
+_is_tensorrt_available = False
+_compiled_dec = None  # コンパイル済み Generator をキャッシュする変数
+
+# torch_tensorrt がインポートでき、かつ CUDA が利用可能かチェック
+if _torch_tensorrt_available and torch.cuda.is_available():
+    _is_tensorrt_available = True
+    logger.info("Torch-TensorRT is available.")
+elif _torch_tensorrt_available:
+    logger.warning("Torch-TensorRT is installed but CUDA is not available.")
+else:
+    logger.info("Torch-TensorRT is not installed. Falling back to PyTorch.")
 
 
 class EmptyInitOnDevice(TorchFunctionMode):
@@ -43,82 +66,13 @@ class EmptyInitOnDevice(TorchFunctionMode):
         return func(*args, **kwargs)
 
 
-class SynthesizerTrnWrapperForTensorRT(torch.nn.Module):
-    def __init__(
-        self,
-        synthesizer_model: SynthesizerTrn | SynthesizerTrnJPExtra,
-        is_jp_extra: bool,
-    ):
-        super().__init__()
-        self.synthesizer_model = synthesizer_model
-        self.is_jp_extra = is_jp_extra
-
-    def forward(
-        self,
-        x: torch.Tensor,
-        x_lengths: torch.Tensor,
-        sid: torch.Tensor,
-        tones: torch.Tensor,
-        lang_ids: torch.Tensor,
-        bert_or_ja_bert: torch.Tensor,
-        style_vec: torch.Tensor,
-        ja_bert_normal: torch.Tensor | None = None,
-        en_bert_normal: torch.Tensor | None = None,
-        length_scale: float = 1.0,
-        sdp_ratio: float = 0.0,
-        noise_scale: float = 0.667,
-        noise_scale_w: float = 0.8,
-    ):
-        # Dynamo の ShapeEnv に「x.size(1) == bert_or_ja_bert.size(2)」を学習させる
-        torch._check(x.size(1) == bert_or_ja_bert.size(2), None)  # type: ignore[attr-defined]
-        if self.is_jp_extra:
-            return cast(SynthesizerTrnJPExtra, self.synthesizer_model).infer(
-                x,
-                x_lengths,
-                sid,
-                tones,
-                lang_ids,
-                bert_or_ja_bert,
-                style_vec=style_vec,
-                length_scale=length_scale,
-                sdp_ratio=sdp_ratio,
-                noise_scale=noise_scale,
-                noise_scale_w=noise_scale_w,
-            )
-        else:
-            if ja_bert_normal is None or en_bert_normal is None:
-                raise ValueError(
-                    "ja_bert_normal and en_bert_normal must be provided for non-JP-Extra model in TensorRT wrapper."
-                )
-            return cast(SynthesizerTrn, self.synthesizer_model).infer(
-                x,
-                x_lengths,
-                sid,
-                tones,
-                lang_ids,
-                bert_or_ja_bert,
-                ja_bert_normal,
-                en_bert_normal,
-                style_vec=style_vec,
-                length_scale=length_scale,
-                sdp_ratio=sdp_ratio,
-                noise_scale=noise_scale,
-                noise_scale_w=noise_scale_w,
-            )
-
-
 def get_net_g(
-    model_path: str,
-    version: str,
-    device: str,
-    hps: HyperParameters,
-    use_tensorrt: bool = True,
-) -> SynthesizerTrn | SynthesizerTrnJPExtra | torch.jit.ScriptModule:
+    model_path: str, version: str, device: str, hps: HyperParameters
+) -> SynthesizerTrn | SynthesizerTrnJPExtra:
     with EmptyInitOnDevice(device):
-        is_jp_extra_model = version.endswith("JP-Extra")
-        if is_jp_extra_model:
+        if version.endswith("JP-Extra"):
             logger.info("Using JP-Extra model")
-            net_g_pytorch = SynthesizerTrnJPExtra(
+            net_g = SynthesizerTrnJPExtra(
                 n_vocab=len(SYMBOLS),
                 spec_channels=hps.data.filter_length // 2 + 1,
                 segment_size=hps.train.segment_size // hps.data.hop_length,
@@ -149,7 +103,7 @@ def get_net_g(
             ).to(device)
         else:
             logger.info("Using normal model")
-            net_g_pytorch = SynthesizerTrn(
+            net_g = SynthesizerTrn(
                 n_vocab=len(SYMBOLS),
                 spec_channels=hps.data.filter_length // 2 + 1,
                 segment_size=hps.train.segment_size // hps.data.hop_length,
@@ -179,103 +133,16 @@ def get_net_g(
                 slm=hps.model.slm,
             ).to(device)
 
-    net_g_pytorch.eval()
+    net_g.eval()
     if model_path.endswith(".pth") or model_path.endswith(".pt"):
         _ = utils.checkpoints.load_checkpoint(
-            model_path, net_g_pytorch, None, skip_optimizer=True, device=device
+            model_path, net_g, None, skip_optimizer=True, device=device
         )
     elif model_path.endswith(".safetensors") or model_path.endswith(".aivm"):
-        _ = utils.safetensors.load_safetensors(
-            model_path, net_g_pytorch, True, device=device
-        )
+        _ = utils.safetensors.load_safetensors(model_path, net_g, True, device=device)
     else:
         raise ValueError(f"Unknown model format: {model_path}")
-
-    if use_tensorrt and device.startswith("cuda"):
-        try:
-            logger.info(
-                f"Attempting to compile the model with Torch-TensorRT for device: {device}"
-            )
-            for module in net_g_pytorch.modules():
-                if isinstance(module, MultiHeadAttention):
-                    module.window_size = None
-            infer_wrapper = (
-                SynthesizerTrnWrapperForTensorRT(net_g_pytorch, is_jp_extra_model)
-                .eval()
-                .to(device)
-            )
-
-            seq_len_min, seq_len_opt, seq_len_max = 30, 250, 1200
-            style_vec_dim = 256
-
-            x_input = torch_tensorrt.Input(
-                min_shape=[1, seq_len_min],
-                opt_shape=[1, seq_len_opt],
-                max_shape=[1, seq_len_max],
-                dtype=torch.long,
-            )
-            x_lengths_input = torch_tensorrt.Input(shape=[1], dtype=torch.long)
-            sid_input = torch_tensorrt.Input(shape=[1], dtype=torch.long)
-            tones_input = torch_tensorrt.Input(
-                min_shape=[1, seq_len_min],
-                opt_shape=[1, seq_len_opt],
-                max_shape=[1, seq_len_max],
-                dtype=torch.long,
-            )
-            lang_ids_input = torch_tensorrt.Input(
-                min_shape=[1, seq_len_min],
-                opt_shape=[1, seq_len_opt],
-                max_shape=[1, seq_len_max],
-                dtype=torch.long,
-            )
-            bert_tensor_input = torch_tensorrt.Input(
-                min_shape=[1, 1024, seq_len_min],
-                opt_shape=[1, 1024, seq_len_opt],
-                max_shape=[1, 1024, seq_len_max],
-                dtype=torch.float,
-            )
-            style_vec_input = torch_tensorrt.Input(
-                shape=[1, style_vec_dim], dtype=torch.float
-            )
-
-            compile_inputs = [
-                x_input,
-                x_lengths_input,
-                sid_input,
-                tones_input,
-                lang_ids_input,
-            ]
-            if is_jp_extra_model:
-                compile_inputs.append(bert_tensor_input)
-            else:
-                compile_inputs.append(bert_tensor_input)
-                compile_inputs.append(bert_tensor_input)
-                compile_inputs.append(bert_tensor_input)
-            compile_inputs.append(style_vec_input)
-
-            enabled_precisions = {torch.float, torch.half}
-
-            logger.info("Compiling the model with Torch-TensorRT...")
-            trt_model = cast(
-                torch.jit.ScriptModule,
-                torch_tensorrt.compile(
-                    infer_wrapper,
-                    inputs=compile_inputs,
-                    ir="dynamo",  # Explicitly specify Dynamo frontend
-                    enabled_precisions=enabled_precisions,  # type: ignore
-                    workspace_size=1 << 30,
-                    assume_dynamic_shape_support=True,  # Assume dynamic shape support for all ops
-                    pass_through_build_failures=True,  # Fallback to PyTorch on build failure
-                ),
-            )
-            logger.info("Model compiled successfully with Torch-TensorRT.")
-            return trt_model
-        except Exception as e:
-            logger.error(f"Failed to compile the model with Torch-TensorRT: {e}")
-            logger.error(f"Traceback: {traceback.format_exc()}")
-            logger.error("Falling back to the original PyTorch model.")
-            return net_g_pytorch
-    return net_g_pytorch
+    return net_g
 
 
 def get_text(
@@ -356,7 +223,7 @@ def infer(
     sid: int,  # In the original Bert-VITS2, its speaker_name: str, but here it's id
     language: Languages,
     hps: HyperParameters,
-    net_g: SynthesizerTrn | SynthesizerTrnJPExtra | torch.jit.ScriptModule,
+    net_g: SynthesizerTrn | SynthesizerTrnJPExtra,
     device: str,
     skip_start: bool = False,
     skip_end: bool = False,
@@ -365,17 +232,11 @@ def infer(
     given_phone: list[str] | None = None,
     given_tone: list[int] | None = None,
 ) -> NDArray[Any]:
-    is_tensorrt_model = isinstance(net_g, torch.jit.ScriptModule)
+    global _is_tensorrt_available
+    global _compiled_dec
+    global torch_tensorrt  # グローバル変数を参照
 
-    if is_tensorrt_model:
-        is_jp_extra_net = (
-            net_g.is_jp_extra
-            if hasattr(net_g, "is_jp_extra")
-            else hps.version.endswith("JP-Extra")
-        )
-    else:
-        is_jp_extra_net = hps.version.endswith("JP-Extra")
-
+    is_jp_extra = hps.version.endswith("JP-Extra")
     bert, ja_bert, en_bert, phones, tones, lang_ids = get_text(
         text,
         language,
@@ -401,15 +262,6 @@ def infer(
         ja_bert = ja_bert[:, :-2]
         en_bert = en_bert[:, :-2]
 
-    if is_tensorrt_model:
-        logger.debug("Converting float tensors to half for TensorRT model.")
-        if bert.dtype == torch.float32:
-            bert = bert.half()
-        if ja_bert.dtype == torch.float32:
-            ja_bert = ja_bert.half()
-        if en_bert.dtype == torch.float32:
-            en_bert = en_bert.half()
-
     with torch.no_grad():
         x_tst = phones.unsqueeze(0)
         tones = tones.unsqueeze(0)
@@ -422,65 +274,192 @@ def infer(
         del phones
         sid_tensor = torch.LongTensor([sid]).to(device)
 
-        if is_tensorrt_model and style_vec_tensor.dtype == torch.float32:
-            style_vec_tensor = style_vec_tensor.half()
+        # --- Generator (self.dec) の TensorRT 化 ---
+        # net_g.dec をローカル変数にコピー
+        dec_module = net_g.dec
 
-        if is_tensorrt_model:
-            logger.debug("Using TensorRT model for inference.")
-            forward_args_pos = [
+        # TensorRT が利用可能で、まだコンパイルされていない場合
+        if _is_tensorrt_available and _compiled_dec is None:
+            try:
+                logger.info(
+                    "Attempting to compile the Generator (dec) with Torch-TensorRT..."
+                )
+                # Generator への入力形状を定義 (time 次元を可変に)
+                # time の最小・最適・最大値を設定 (必要に応じて調整)
+                seq_len_min, seq_len_opt, seq_len_max = 30, 250, 1200
+                # z の形状: [batch, inter_channels, time]
+                # torch_tensorrt.Input を使用するには torch_tensorrt が None でないことを確認
+                assert torch_tensorrt is not None
+                input_z_shape = torch_tensorrt.Input(
+                    min_shape=[1, hps.model.inter_channels, seq_len_min],
+                    opt_shape=[1, hps.model.inter_channels, seq_len_opt],
+                    max_shape=[1, hps.model.inter_channels, seq_len_max],
+                    dtype=torch.float32,  # 必要に応じて dtype を確認・変更
+                )
+                # g の形状: [batch, gin_channels, 1] (通常固定長)
+                input_g_shape = torch_tensorrt.Input(
+                    shape=[1, hps.model.gin_channels, 1],
+                    dtype=torch.float32,  # 必要に応じて dtype を確認・変更
+                )
+
+                _compiled_dec = torch_tensorrt.compile(
+                    dec_module,
+                    inputs=[input_z_shape, input_g_shape],  # z と g を入力として指定
+                    enabled_precisions={torch.float},  # type: ignore
+                    # workspace_size=1 << 30,  # 1GB
+                    # pass_through_build_failures=True,  # ビルド失敗時に PyTorch にフォールバック
+                    ir="dynamo",  # 必要であれば指定
+                    # assume_dynamic_shape_support=True, # 必要であれば指定
+                )
+                logger.info("Generator compiled successfully with Torch-TensorRT.")
+            except Exception as ex:
+                logger.warning("Failed to compile Generator with Torch-TensorRT:")
+                # トレースバックを出力
+                traceback.print_exc()
+                logger.warning("Falling back to PyTorch for Generator.")
+                _is_tensorrt_available = False  # コンパイル失敗時は TensorRT を無効化
+                _compiled_dec = (
+                    dec_module  # 元のモジュールをキャッシュ (フォールバック用)
+                )
+        elif _is_tensorrt_available and _compiled_dec is not None:
+            # コンパイル済み Generator を使用
+            dec_module = _compiled_dec
+        elif not _is_tensorrt_available and _compiled_dec is None:
+            # TensorRT が利用不可の場合、元のモジュールをキャッシュ
+            _compiled_dec = dec_module
+        elif not _is_tensorrt_available and _compiled_dec is not None:
+            # キャッシュされた元のモジュールを使用 (フォールバック後)
+            dec_module = _compiled_dec
+        # else: # _is_tensorrt_available is False and _compiled_dec is not None は上の elif でカバーされる
+
+        # --- 推論実行 ---
+        if is_jp_extra:
+            # JP-Extra モデルの推論
+            _o, _attn, _y_mask, _hidden_states = cast(
+                SynthesizerTrnJPExtra, net_g
+            ).infer(
                 x_tst,
                 x_tst_lengths,
                 sid_tensor,
                 tones,
                 lang_ids,
-            ]
-            if is_jp_extra_net:
-                forward_args_pos.append(ja_bert)
-            else:
-                forward_args_pos.append(bert)
-                forward_args_pos.append(ja_bert)
-                forward_args_pos.append(en_bert)
-
-            output = net_g(
-                *forward_args_pos,
+                ja_bert,
                 style_vec=style_vec_tensor,
                 length_scale=length_scale,
                 sdp_ratio=sdp_ratio,
                 noise_scale=noise_scale,
                 noise_scale_w=noise_scale_w,
             )
-        else:
-            logger.debug("Using PyTorch model for inference.")
-            if is_jp_extra_net:
-                output = cast(SynthesizerTrnJPExtra, net_g).infer(
-                    x_tst,
-                    x_tst_lengths,
-                    sid_tensor,
-                    tones,
-                    lang_ids,
-                    ja_bert,
-                    style_vec=style_vec_tensor,
-                    length_scale=length_scale,
-                    sdp_ratio=sdp_ratio,
-                    noise_scale=noise_scale,
-                    noise_scale_w=noise_scale_w,
-                )
+            # Generator の呼び出し部分を差し替えるのではなく、infer 全体を呼び出した上で
+            # dec の部分だけ TensorRT 化されたモジュールを使うアプローチは難しい
+            # infer メソッド内部のロジックをここに展開する必要がある
+
+            # --- infer メソッド内のロジックを展開 ---
+            if net_g.n_speakers > 0:
+                g = net_g.emb_g(sid_tensor).unsqueeze(-1)
             else:
-                output = cast(SynthesizerTrn, net_g).infer(
-                    x_tst,
-                    x_tst_lengths,
-                    sid_tensor,
-                    tones,
-                    lang_ids,
-                    bert,
-                    ja_bert,
-                    en_bert,
-                    style_vec=style_vec_tensor,
-                    length_scale=length_scale,
-                    sdp_ratio=sdp_ratio,
-                    noise_scale=noise_scale,
-                    noise_scale_w=noise_scale_w,
+                # このケースは現状の infer 関数呼び出しでは y が渡されないため考慮不要
+                # g = net_g.ref_enc(y.transpose(1, 2)).unsqueeze(-1)
+                raise NotImplementedError(
+                    "Reference encoder case is not handled here yet."
                 )
+
+            x, m_p, logs_p, x_mask = net_g.enc_p(
+                x_tst,
+                x_tst_lengths,
+                tones,
+                lang_ids,
+                ja_bert,
+                style_vec=style_vec_tensor,
+                g=g,
+            )
+            logw = net_g.sdp(
+                x, x_mask, g=g, reverse=True, noise_scale=noise_scale_w
+            ) * (sdp_ratio) + net_g.dp(x, x_mask, g=g) * (1 - sdp_ratio)
+            w = torch.exp(logw) * x_mask * length_scale
+            w_ceil = torch.ceil(w)
+            y_lengths = torch.clamp_min(torch.sum(w_ceil, [1, 2]), 1).long()
+            y_mask = torch.unsqueeze(commons.sequence_mask(y_lengths, None), 1).to(
+                x_mask.dtype
+            )
+            attn_mask = torch.unsqueeze(x_mask, 2) * torch.unsqueeze(y_mask, -1)
+            attn = commons.generate_path(w_ceil, attn_mask)
+
+            m_p = torch.matmul(attn.squeeze(1), m_p.transpose(1, 2)).transpose(1, 2)
+            logs_p = torch.matmul(attn.squeeze(1), logs_p.transpose(1, 2)).transpose(
+                1, 2
+            )
+
+            z_p = m_p + torch.randn_like(m_p) * torch.exp(logs_p) * noise_scale
+            z = net_g.flow(z_p, y_mask, g=g, reverse=True)  # flow は元の net_g を使う
+
+            # --- TensorRT 化された (または元の) Generator を使用 ---
+            o = dec_module((z * y_mask)[:, :, :None], g=g)  # max_len は None (制限なし)
+            # -----------------------------------------
+            output = (o, attn, y_mask, (z, z_p, m_p, logs_p))
+
+        else:
+            # 通常モデルの推論
+            _o, _attn, _y_mask, _hidden_states = cast(SynthesizerTrn, net_g).infer(
+                x_tst,
+                x_tst_lengths,
+                sid_tensor,
+                tones,
+                lang_ids,
+                bert,
+                ja_bert,
+                en_bert,
+                style_vec=style_vec_tensor,
+                length_scale=length_scale,
+                sdp_ratio=sdp_ratio,
+                noise_scale=noise_scale,
+                noise_scale_w=noise_scale_w,
+            )
+            # --- infer メソッド内のロジックを展開 ---
+            if net_g.n_speakers > 0:
+                g = net_g.emb_g(sid_tensor).unsqueeze(-1)
+            else:
+                raise NotImplementedError(
+                    "Reference encoder case is not handled here yet."
+                )
+
+            x, m_p, logs_p, x_mask = net_g.enc_p(
+                x_tst,
+                x_tst_lengths,
+                tones,
+                lang_ids,
+                bert,
+                ja_bert,
+                en_bert,
+                style_vec=style_vec_tensor,
+                sid=sid_tensor,
+                g=g,
+            )
+
+            logw = net_g.sdp(
+                x, x_mask, g=g, reverse=True, noise_scale=noise_scale_w
+            ) * (sdp_ratio) + net_g.dp(x, x_mask, g=g) * (1 - sdp_ratio)
+            w = torch.exp(logw) * x_mask * length_scale
+            w_ceil = torch.ceil(w)
+            y_lengths = torch.clamp_min(torch.sum(w_ceil, [1, 2]), 1).long()
+            y_mask = torch.unsqueeze(commons.sequence_mask(y_lengths, None), 1).to(
+                x_mask.dtype
+            )
+            attn_mask = torch.unsqueeze(x_mask, 2) * torch.unsqueeze(y_mask, -1)
+            attn = commons.generate_path(w_ceil, attn_mask)
+
+            m_p = torch.matmul(attn.squeeze(1), m_p.transpose(1, 2)).transpose(1, 2)
+            logs_p = torch.matmul(attn.squeeze(1), logs_p.transpose(1, 2)).transpose(
+                1, 2
+            )
+
+            z_p = m_p + torch.randn_like(m_p) * torch.exp(logs_p) * noise_scale
+            z = net_g.flow(z_p, y_mask, g=g, reverse=True)  # flow は元の net_g を使う
+
+            # --- TensorRT 化された (または元の) Generator を使用 ---
+            o = dec_module((z * y_mask)[:, :, :None], g=g)  # max_len は None (制限なし)
+            # -----------------------------------------
+            output = (o, attn, y_mask, (z, z_p, m_p, logs_p))
 
         audio = output[0][0, 0].data.cpu().float().numpy()
 
@@ -493,7 +472,25 @@ def infer(
             sid_tensor,
             ja_bert,
             en_bert,
-            style_vec,
+            style_vec_tensor,  # style_vec ではなく style_vec_tensor を削除
+            o,
+            attn,
+            y_mask,
+            z,
+            z_p,
+            m_p,
+            logs_p,  # 追加の変数を削除
+            x,
+            logw,
+            w,
+            w_ceil,
+            y_lengths,
+            attn_mask,
+            g,  # 追加の変数を削除
+            _o,
+            _attn,
+            _y_mask,
+            _hidden_states,  # 元の infer の戻り値を削除
         )  # , emo
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
