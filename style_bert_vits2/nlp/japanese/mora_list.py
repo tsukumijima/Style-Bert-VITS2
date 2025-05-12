@@ -54,7 +54,7 @@ POSSIBILITY OF SUCH DAMAGE.
 # また pyopenjtalk-plus で追加されたモーラと、エイリアスとして「ヂャ」「ヂュ」「ヂョ」「ヂェ」を独自に追加している
 # 以下に定義されているモーラは、「ヂャ」「ヂュ」「ヂョ」「ヂェ」を除き全て pyopenjtalk-plus (に内蔵されている OpenJTalk) に定義されているもの
 # ref: https://github.com/VOICEVOX/voicevox_engine/pull/1473
-__MORA_LIST_MINIMUM: list[tuple[str, Optional[str], str]] = [
+__MORA_LIST_MINIMUM: list[tuple[str, str | None, str]] = [
     ("ヴォ", "v", "o"),
     ("ヴェ", "v", "e"),
     ("ヴィ", "v", "i"),
@@ -213,7 +213,7 @@ __MORA_LIST_MINIMUM: list[tuple[str, Optional[str], str]] = [
 
 # __MORA_LIST_MINIMUM と同じ子音＋母音の組に対応するエイリアス
 # 例えば "ズ" と "ヅ" はどちらとも ("z", "u") に対応する
-__MORA_LIST_ADDITIONAL: list[tuple[str, Optional[str], str]] = [
+__MORA_LIST_ADDITIONAL: list[tuple[str, str | None, str]] = [
     ("ヴョ", "by", "o"),
     ("ヴュ", "by", "u"),
     ("ヴャ", "by", "a"),

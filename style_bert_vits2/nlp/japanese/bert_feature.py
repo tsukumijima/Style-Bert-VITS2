@@ -23,7 +23,7 @@ def extract_bert_feature(
     device: str,
     assist_text: str | None = None,
     assist_text_weight: float = 0.7,
-    sep_text: Optional[list[str]] = None,
+    sep_text: list[str] | None = None,
 ) -> torch.Tensor:
     """
     日本語のテキストから BERT の特徴量を抽出する (PyTorch 推論)
@@ -98,7 +98,7 @@ def extract_bert_feature_onnx(
     onnx_providers: Sequence[str | tuple[str, dict[str, Any]]],
     assist_text: str | None = None,
     assist_text_weight: float = 0.7,
-    sep_text: Optional[list[str]] = None,
+    sep_text: list[str] | None = None,
 ) -> NDArray[Any]:
     """
     日本語のテキストから BERT の特徴量を抽出する (ONNX 推論)

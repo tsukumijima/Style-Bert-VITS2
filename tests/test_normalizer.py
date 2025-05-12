@@ -511,7 +511,10 @@ def test_normalize_text_url_email():
         == "エイチティーティーピー,テストドットジェイピー"
     )
     # 全角 URL
-    assert normalize_text("ｈｔｔｐｓ：／／ｅｘａｍｐｌｅ．ｃｏｍ") == "エイチティーティーピーエス,イグザンプルドットコム"
+    assert (
+        normalize_text("ｈｔｔｐｓ：／／ｅｘａｍｐｌｅ．ｃｏｍ")
+        == "エイチティーティーピーエス,イグザンプルドットコム"
+    )
     # メールアドレス
     assert (
         normalize_text("test@example.com")
@@ -579,13 +582,11 @@ def test_normalize_text_english():
     assert normalize_text("GPT-11") == "ジーピーティーイレブン"
     assert (
         # 小数点は変換しない (pyopenjtalk で日本語読みされる)
-        normalize_text("GPT-4.5")
-        == "ジーピーティー4.5"
+        normalize_text("GPT-4.5") == "ジーピーティー4.5"
     )
     assert (
         # 12 以降は変換しない (pyopenjtalk で日本語読みされる)
-        normalize_text("GPT-12")
-        == "ジーピーティー12"
+        normalize_text("GPT-12") == "ジーピーティー12"
     )
     assert normalize_text("iPhone11") == "アイフォンイレブン"
     assert normalize_text("iPhone 8") == "アイフォンエイト"
@@ -594,33 +595,27 @@ def test_normalize_text_english():
     assert normalize_text("Pixel 8") == "ピクセルエイト"
     assert (
         # 09 のように数字が0埋めされている場合は変換しない
-        normalize_text("Pixel 09")
-        == "ピクセル09"
+        normalize_text("Pixel 09") == "ピクセル09"
     )
     assert (
         # 8a のように数字の後にスペースなしで何か付く場合は変換しない
-        normalize_text("Pixel 8a")
-        == "ピクセル8a"
+        normalize_text("Pixel 8a") == "ピクセル8a"
     )
     assert (
         # 12 以降は変換しない (pyopenjtalk で日本語読みされる)
-        normalize_text("iPhone12")
-        == "アイフォン12"
+        normalize_text("iPhone12") == "アイフォン12"
     )
     assert (
         # 12 以降は変換しない (pyopenjtalk で日本語読みされる)
-        normalize_text("Android 14")
-        == "アンドロイド14"
+        normalize_text("Android 14") == "アンドロイド14"
     )
     assert (
         # 12 以降は変換しない (pyopenjtalk で日本語読みされる)
-        normalize_text("Windows 95")
-        == "ウィンドウズ95"
+        normalize_text("Windows 95") == "ウィンドウズ95"
     )
     assert (
         # 12 以降は変換しない (pyopenjtalk で日本語読みされる)
-        normalize_text("Windows95")
-        == "ウィンドウズ95"
+        normalize_text("Windows95") == "ウィンドウズ95"
     )
     assert normalize_text("Gemini-2") == "ジェミニツー"
     assert (

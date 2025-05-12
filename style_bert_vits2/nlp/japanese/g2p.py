@@ -1,6 +1,6 @@
 import re
 import sys
-from typing import Optional, TypedDict
+from typing import TypedDict
 
 from pyopenjtalk import NJDFeature, OpenJTalk
 
@@ -118,7 +118,7 @@ def g2p(
 
 def text_to_sep_kata(
     norm_text: str,
-    njd_features: Optional[list[NJDFeature]] = None,
+    njd_features: list[NJDFeature] | None = None,
     raise_yomi_error: bool = False,
     jtalk: OpenJTalk | None = None,
 ) -> tuple[list[str], list[str], list[str]]:
@@ -499,7 +499,9 @@ def __g2phone_tone_wo_punct(
         list[tuple[str, int]]: 音素とアクセントのペアのリスト
     """
 
-    prosodies = __pyopenjtalk_g2p_prosody(njd_features, drop_unvoiced_vowels=True, jtalk=jtalk)
+    prosodies = __pyopenjtalk_g2p_prosody(
+        njd_features, drop_unvoiced_vowels=True, jtalk=jtalk
+    )
     # logger.debug(f"prosodies: {prosodies}")
     result: list[tuple[str, int]] = []
     current_phrase: list[tuple[str, int]] = []
@@ -755,7 +757,7 @@ def __kata_to_phoneme_list(text: str) -> list[str]:
     spaced_phonemes = __MORA_PATTERN.sub(lambda m: mora2phonemes(m.group()), text)
 
     # 長音記号「ー」の処理
-    long_replacement = lambda m: m.group(1) + (" " + m.group(1)) * len(m.group(2))  # type: ignore  # noqa: E731
+    long_replacement = lambda m: m.group(1) + (" " + m.group(1)) * len(m.group(2))  # type: ignore
     spaced_phonemes = __LONG_PATTERN.sub(long_replacement, spaced_phonemes)
 
     return spaced_phonemes.strip().split(" ")
@@ -872,7 +874,9 @@ if __name__ == "__main__":
         sys.exit(1)
     bert_models.load_tokenizer(Languages.JP)
     start = time.time()
-    phones, tones, word2ph, sep_text, sep_kata, sep_kata_with_joshi = g2p(normalize_text(sys.argv[1]))
+    phones, tones, word2ph, sep_text, sep_kata, sep_kata_with_joshi = g2p(
+        normalize_text(sys.argv[1])
+    )
     end = time.time()
     print(f"time: {end - start:.4f}s")
     phone_tones = phone_tone2kata_tone(list(zip(phones, tones)))
@@ -881,6 +885,6 @@ if __name__ == "__main__":
     print(f"sep_text: {sep_text}")
     print(f"sep_kata: {sep_kata}")
     print(f"sep_kata_with_joshi: {sep_kata_with_joshi}")
-    assert (
-        len(phones) == len(tones) == sum(word2ph)
-    ), "phone, tones の長さと word2ph の和は一致するはず"
+    assert len(phones) == len(tones) == sum(word2ph), (
+        "phone, tones の長さと word2ph の和は一致するはず"
+    )

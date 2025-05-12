@@ -30,7 +30,7 @@ def extract_bert_feature(
     device: str,
     assist_text: str | None = None,
     assist_text_weight: float = 0.7,
-    sep_text: Optional[list[str]] = None,
+    sep_text: list[str] | None = None,
 ) -> torch.Tensor:
     """
     テキストから BERT の特徴量を抽出する (PyTorch 推論)
@@ -50,6 +50,7 @@ def extract_bert_feature(
 
     if language == Languages.JP:
         from style_bert_vits2.nlp.japanese.bert_feature import extract_bert_feature
+
         return extract_bert_feature(
             text,
             word2ph,
@@ -60,6 +61,7 @@ def extract_bert_feature(
         )
     elif language == Languages.EN:
         from style_bert_vits2.nlp.english.bert_feature import extract_bert_feature
+
         return extract_bert_feature(
             text,
             word2ph,
@@ -69,6 +71,7 @@ def extract_bert_feature(
         )
     elif language == Languages.ZH:
         from style_bert_vits2.nlp.chinese.bert_feature import extract_bert_feature
+
         return extract_bert_feature(
             text,
             word2ph,
@@ -80,7 +83,6 @@ def extract_bert_feature(
         raise ValueError(f"Language {language} not supported")
 
 
-
 def extract_bert_feature_onnx(
     text: str,
     word2ph: list[int],
@@ -88,7 +90,7 @@ def extract_bert_feature_onnx(
     onnx_providers: Sequence[str | tuple[str, dict[str, Any]]],
     assist_text: str | None = None,
     assist_text_weight: float = 0.7,
-    sep_text: Optional[list[str]] = None,
+    sep_text: list[str] | None = None,
 ) -> NDArray[Any]:
     """
     テキストから BERT の特徴量を抽出する (ONNX 推論)
@@ -108,6 +110,7 @@ def extract_bert_feature_onnx(
 
     if language == Languages.JP:
         from style_bert_vits2.nlp.japanese.bert_feature import extract_bert_feature_onnx
+
         return extract_bert_feature_onnx(
             text,
             word2ph,
@@ -118,6 +121,7 @@ def extract_bert_feature_onnx(
         )
     elif language == Languages.EN:
         from style_bert_vits2.nlp.english.bert_feature import extract_bert_feature_onnx
+
         return extract_bert_feature_onnx(
             text,
             word2ph,
@@ -127,6 +131,7 @@ def extract_bert_feature_onnx(
         )
     elif language == Languages.ZH:
         from style_bert_vits2.nlp.chinese.bert_feature import extract_bert_feature_onnx
+
         return extract_bert_feature_onnx(
             text,
             word2ph,
@@ -138,14 +143,21 @@ def extract_bert_feature_onnx(
         raise ValueError(f"Language {language} not supported")
 
 
-
 def clean_text(
     text: str,
     language: Languages,
     use_jp_extra: bool = True,
     raise_yomi_error: bool = False,
     jtalk: OpenJTalk | None = None,
-) -> tuple[str, list[str], list[int], list[int], list[str] | None, list[str] | None, list[str] | None]:
+) -> tuple[
+    str,
+    list[str],
+    list[int],
+    list[int],
+    list[str] | None,
+    list[str] | None,
+    list[str] | None,
+]:
     """
     テキストをクリーニングし、音素に変換する
 
@@ -215,7 +227,15 @@ def clean_text_with_given_phone_tone(
     use_jp_extra: bool = True,
     raise_yomi_error: bool = False,
     jtalk: OpenJTalk | None = None,
-) -> tuple[str, list[str], list[int], list[int], list[str] | None, list[str] | None, list[str] | None]:
+) -> tuple[
+    str,
+    list[str],
+    list[int],
+    list[int],
+    list[str] | None,
+    list[str] | None,
+    list[str] | None,
+]:
     """
     テキストをクリーニングし、音素に変換する
     変換時、given_phone や given_tone が与えられた場合はそれを調整して使う
@@ -241,12 +261,14 @@ def clean_text_with_given_phone_tone(
     """
 
     # 与えられたテキストをクリーニング
-    norm_text, phone, tone, word2ph, sep_text, sep_kata, sep_kata_with_joshi = clean_text(
-        text,
-        language,
-        use_jp_extra=use_jp_extra,
-        raise_yomi_error=raise_yomi_error,
-        jtalk=jtalk,
+    norm_text, phone, tone, word2ph, sep_text, sep_kata, sep_kata_with_joshi = (
+        clean_text(
+            text,
+            language,
+            use_jp_extra=use_jp_extra,
+            raise_yomi_error=raise_yomi_error,
+            jtalk=jtalk,
+        )
     )
 
     # phone と tone の両方が与えられた場合はそれを使う
@@ -299,7 +321,6 @@ def clean_text_with_given_phone_tone(
 
     # 日本語のみ、g2p 処理では対応しているが現行モデルでは対応していない特定音素を変換 (フォールバック)
     if language == Languages.JP:
-
         # 音素変換マップ
         PHONE_CONVERSION_MAP = {
             "kw": ("k", "u", "w"),  # 「クヮ」→「クワ」
@@ -315,11 +336,9 @@ def clean_text_with_given_phone_tone(
 
         # 音素変換が必要な場合のみ処理を実行
         if conversion_indices:
-
             # インデックスは後ろから処理することで、
             # 前の変換による位置ずれの影響を受けないようにする
             for orig_idx, orig_phone in reversed(conversion_indices):
-
                 # 変換後の音素を取得
                 converted_phones = PHONE_CONVERSION_MAP[orig_phone]
 

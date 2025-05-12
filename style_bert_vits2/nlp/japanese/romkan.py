@@ -38,7 +38,6 @@ import re
 import sys
 from collections.abc import Iterator
 from functools import cmp_to_key
-from typing import Union
 
 
 #
@@ -412,10 +411,10 @@ ROMKAN.update(
 
 # Sort in long order so that a longer Romaji sequence precedes.
 
-_len_cmp = lambda x: -len(x)  # type: ignore # noqa: E731
+_len_cmp = lambda x: -len(x)  # type: ignore
 ROMPAT = re.compile("|".join(sorted(ROMKAN.keys(), key=_len_cmp)))
 
-_kanpat_cmp = lambda x, y: (len(y) > len(x)) - (len(y) < len(x)) or (  # type: ignore # noqa: E731
+_kanpat_cmp = lambda x, y: (len(y) > len(x)) - (len(y) < len(x)) or (  # type: ignore
     len(KANROM[x]) > len(KANROM[x])
 ) - (len(KANROM[x]) < len(KANROM[x]))
 KANPAT = re.compile("|".join(sorted(KANROM.keys(), key=cmp_to_key(_kanpat_cmp))))
@@ -464,10 +463,10 @@ ROMKAN_H.update(
 
 # Sort in long order so that a longer Romaji sequence precedes.
 
-_len_cmp = lambda x: -len(x)  # type: ignore # noqa: E731
+_len_cmp = lambda x: -len(x)  # type: ignore
 ROMPAT_H = re.compile("|".join(sorted(ROMKAN_H.keys(), key=_len_cmp)))
 
-_kanpat_cmp = lambda x, y: (len(y) > len(x)) - (len(y) < len(x)) or (  # type: ignore # noqa: E731
+_kanpat_cmp = lambda x, y: (len(y) > len(x)) - (len(y) < len(x)) or (  # type: ignore
     len(KANROM_H[x]) > len(KANROM_H[x])
 ) - (len(KANROM_H[x]) < len(KANROM_H[x]))
 KANPAT_H = re.compile("|".join(sorted(KANROM_H.keys(), key=cmp_to_key(_kanpat_cmp))))
@@ -596,7 +595,7 @@ def to_roma(str: str) -> str:
     return tmp
 
 
-def is_consonant(str: str) -> Union[re.Match[str], None]:
+def is_consonant(str: str) -> re.Match[str] | None:
     """
     Return a MatchObject if a Latin letter is a consonant in Japanese.
     Return None otherwise.
@@ -607,7 +606,7 @@ def is_consonant(str: str) -> Union[re.Match[str], None]:
     return re.match("[ckgszjtdhfpbmyrwxn]", str)
 
 
-def is_vowel(str: str) -> Union[re.Match[str], None]:
+def is_vowel(str: str) -> re.Match[str] | None:
     """
     Return a MatchObject if a Latin letter is a vowel in Japanese.
     Return None otherwise.
@@ -626,7 +625,7 @@ def expand_consonant(str: str) -> list[str]:
 
     str = str.lower()
 
-    return sorted([mora for mora in ROMKAN if re.match("^%s.$" % str, mora)])
+    return sorted([mora for mora in ROMKAN if re.match("^%s.$" % str, mora)])  # noqa: UP031
 
 
 if __name__ == "__main__":
