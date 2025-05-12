@@ -9,6 +9,7 @@ from torch.overrides import TorchFunctionMode
 from style_bert_vits2.constants import Languages
 from style_bert_vits2.logging import logger
 from style_bert_vits2.models import commons, utils
+from style_bert_vits2.models.attentions import MultiHeadAttention
 from style_bert_vits2.models.hyper_parameters import HyperParameters
 from style_bert_vits2.models.models import SynthesizerTrn
 from style_bert_vits2.models.models_jp_extra import (
@@ -68,6 +69,8 @@ class SynthesizerTrnWrapperForTensorRT(torch.nn.Module):
         noise_scale: float = 0.667,
         noise_scale_w: float = 0.8,
     ):
+        # Dynamo の ShapeEnv に「x.size(1) == bert_or_ja_bert.size(2)」を学習させる
+        torch._check(x.size(1) == bert_or_ja_bert.size(2), None)  # type: ignore[attr-defined]
         if self.is_jp_extra:
             return cast(SynthesizerTrnJPExtra, self.synthesizer_model).infer(
                 x,
@@ -193,6 +196,9 @@ def get_net_g(
             logger.info(
                 f"Attempting to compile the model with Torch-TensorRT for device: {device}"
             )
+            for module in net_g_pytorch.modules():
+                if isinstance(module, MultiHeadAttention):
+                    module.window_size = None
             infer_wrapper = (
                 SynthesizerTrnWrapperForTensorRT(net_g_pytorch, is_jp_extra_model)
                 .eval()
@@ -255,8 +261,11 @@ def get_net_g(
                 torch_tensorrt.compile(
                     infer_wrapper,
                     inputs=compile_inputs,
+                    ir="dynamo",  # Explicitly specify Dynamo frontend
                     enabled_precisions=enabled_precisions,  # type: ignore
                     workspace_size=1 << 30,
+                    assume_dynamic_shape_support=True,  # Assume dynamic shape support for all ops
+                    pass_through_build_failures=True,  # Fallback to PyTorch on build failure
                 ),
             )
             logger.info("Model compiled successfully with Torch-TensorRT.")

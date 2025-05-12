@@ -366,18 +366,44 @@ class MultiHeadAttention(nn.Module):
         self, relative_embeddings: torch.Tensor, length: int
     ) -> torch.Tensor:
         assert self.window_size is not None
-        2 * self.window_size + 1  # type: ignore
+
         # Pad first before slice to avoid using cond ops.
-        pad_length = max(length - (self.window_size + 1), 0)
-        slice_start_position = max((self.window_size + 1) - length, 0)
-        slice_end_position = slice_start_position + 2 * length - 1
-        if pad_length > 0:
-            padded_relative_embeddings = F.pad(
-                relative_embeddings,
-                commons.convert_pad_shape([[0, 0], [pad_length, pad_length], [0, 0]]),
-            )
+        _is_compiling = torch.compiler.is_compiling()
+        if _is_compiling:
+            # For the TensorRT compilation path, 'length' (from input spec of infer.py) is >= 30.
+            # self.window_size is typically 4, so self.window_size + 1 = 5.
+            # Thus, length >= (self.window_size + 1) is true for the TRT path.
+            # This allows simplification of max functions.
+            slice_start_position = 0
+            # Since length >= (self.window_size + 1), then length - (self.window_size + 1) >= 0.
+            pad_length = length - (self.window_size + 1)
+            # Add assertion for Dynamo to understand pad_length is non-negative
+            if _is_compiling:
+                torch._check(pad_length >= 0, None)  # type: ignore[attr-defined]
         else:
-            padded_relative_embeddings = relative_embeddings
+            # Standard PyTorch execution path
+            pad_length = max(length - (self.window_size + 1), 0)
+            slice_start_position = max((self.window_size + 1) - length, 0)
+
+        slice_end_position = slice_start_position + 2 * length - 1
+
+        # for Dynamo/TensorRT compatibility, remove the if statement.
+        # if pad_length is 0, convert_pad_shape will generate zero padding,
+        # and F.pad will effectively do nothing, so it is equivalent to the original logic.
+        # if pad_length > 0:
+        #     padded_relative_embeddings = F.pad(
+        #         relative_embeddings,
+        #         commons.convert_pad_shape([[0, 0], [pad_length, pad_length], [0, 0]]),
+        #     )
+        # else:
+        #     padded_relative_embeddings = relative_embeddings
+        padding_shape = [[0, 0], [pad_length, pad_length], [0, 0]]
+        converted_pad_shape = commons.convert_pad_shape(padding_shape)
+        padded_relative_embeddings = F.pad(
+            relative_embeddings,
+            converted_pad_shape,
+        )
+
         used_relative_embeddings = padded_relative_embeddings[
             :, slice_start_position:slice_end_position
         ]
