@@ -126,6 +126,20 @@ def test_synthesize_onnx_cuda():
     )
 
 
+def test_synthesize_onnx_tensorrt():
+    synthesize(
+        inference_type="onnx",
+        onnx_providers=[
+            (
+                "TensorrtExecutionProvider",
+                {
+                    "trt_fp16_enable": True,
+                },
+            ),
+        ],
+    )
+
+
 def test_synthesize_onnx_directml():
     synthesize(
         inference_type="onnx",

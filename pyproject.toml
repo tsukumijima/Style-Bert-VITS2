@@ -109,6 +109,8 @@ dependencies = [
 test = "pytest -s tests/test_main.py::test_synthesize_onnx_cpu"
 # Usage: `hatch run test-onnx:test-cuda`
 test-cuda = "pytest -s tests/test_main.py::test_synthesize_onnx_cuda"
+# Usage: `hatch run test-onnx:test-tensorrt`
+test-tensorrt = "pytest -s tests/test_main.py::test_synthesize_onnx_tensorrt"
 # Usage: `hatch run test-onnx:test-directml`
 test-directml = "pytest -s tests/test_main.py::test_synthesize_onnx_directml"
 # Usage: `hatch run test-onnx:test-coreml`
