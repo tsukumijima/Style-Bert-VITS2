@@ -636,14 +636,17 @@ def train_and_evaluate(
                 - net_g.module.noise_scale_delta * global_step
             )
             net_g.module.current_mas_noise_scale = max(current_mas_noise_scale, 0.0)
-        x, x_lengths = x.cuda(local_rank, non_blocking=True), x_lengths.cuda(
-            local_rank, non_blocking=True
+        x, x_lengths = (
+            x.cuda(local_rank, non_blocking=True),
+            x_lengths.cuda(local_rank, non_blocking=True),
         )
-        spec, spec_lengths = spec.cuda(
-            local_rank, non_blocking=True
-        ), spec_lengths.cuda(local_rank, non_blocking=True)
-        y, y_lengths = y.cuda(local_rank, non_blocking=True), y_lengths.cuda(
-            local_rank, non_blocking=True
+        spec, spec_lengths = (
+            spec.cuda(local_rank, non_blocking=True),
+            spec_lengths.cuda(local_rank, non_blocking=True),
+        )
+        y, y_lengths = (
+            y.cuda(local_rank, non_blocking=True),
+            y_lengths.cuda(local_rank, non_blocking=True),
         )
         speakers = speakers.cuda(local_rank, non_blocking=True)
         tone = tone.cuda(local_rank, non_blocking=True)

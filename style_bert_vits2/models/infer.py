@@ -154,9 +154,9 @@ def get_text(
     else:
         raise ValueError("language_str should be ZH, JP or EN")
 
-    assert bert.shape[-1] == len(
-        phone
-    ), f"Bert seq len {bert.shape[-1]} != {len(phone)}"
+    assert bert.shape[-1] == len(phone), (
+        f"Bert seq len {bert.shape[-1]} != {len(phone)}"
+    )
 
     phone = torch.LongTensor(phone)
     tone = torch.LongTensor(tone)

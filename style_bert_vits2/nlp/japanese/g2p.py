@@ -118,8 +118,9 @@ def text_to_sep_kata(
     for parts in parsed:
         # word: 実際の単語の文字列
         # yomi: その読み、但し無声化サインの`’`は除去
-        word, yomi = replace_punctuation(parts["string"]), parts["pron"].replace(
-            "’", ""
+        word, yomi = (
+            replace_punctuation(parts["string"]),
+            parts["pron"].replace("’", ""),
         )
         """
         ここで `yomi` の取りうる値は以下の通りのはず。

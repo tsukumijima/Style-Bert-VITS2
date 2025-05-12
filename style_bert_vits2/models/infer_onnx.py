@@ -90,9 +90,9 @@ def get_text_onnx(
     else:
         raise ValueError("language_str should be ZH, JP or EN")
 
-    assert bert.shape[-1] == len(
-        phone
-    ), f"Bert seq len {bert.shape[-1]} != {len(phone)}"
+    assert bert.shape[-1] == len(phone), (
+        f"Bert seq len {bert.shape[-1]} != {len(phone)}"
+    )
 
     phone = np.array(phone, dtype=np.int64)
     tone = np.array(tone, dtype=np.int64)

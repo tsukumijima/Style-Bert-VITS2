@@ -287,7 +287,6 @@ class TTSModel:
         """
 
         if self.style_vector_inference is None:
-
             # pyannote.audio は scikit-learn などの大量の重量級ライブラリに依存しているため、
             # TTSModel.infer() に reference_audio_path を指定し音声からスタイルベクトルを推論する場合のみ遅延 import する
             try:

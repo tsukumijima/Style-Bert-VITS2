@@ -72,7 +72,8 @@ __PUNCTUATION_CLEANUP_PATTERN = re.compile(
     # ↓ ギリシャ文字
     + r"\u0370-\u03FF\u1F00-\u1FFF"
     # ↓ "!", "?", "…", ",", ".", "'", "-", 但し`…`はすでに`...`に変換されている
-    + "".join(PUNCTUATIONS) + r"]+",  # fmt: skip
+    + "".join(PUNCTUATIONS)
+    + r"]+",  # fmt: skip
 )
 # 数字・通貨記号の正規化パターン
 __CURRENCY_MAP = {"$": "ドル", "¥": "円", "£": "ポンド", "€": "ユーロ"}
@@ -121,7 +122,7 @@ def normalize_text(text: str) -> str:
     # 結合文字の濁点・半濁点を削除
     # 通常の「ば」等はそのままのこされる、「あ゛」は上で「あ゙」になりここで「あ」になる
     res = res.replace("\u3099", "")  # 結合文字の濁点を削除、る゙ → る
-    res = res.replace("\u309A", "")  # 結合文字の半濁点を削除、な゚ → な
+    res = res.replace("\u309a", "")  # 結合文字の半濁点を削除、な゚ → な
     return res
 
 

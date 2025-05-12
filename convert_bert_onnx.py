@@ -206,9 +206,13 @@ def validate_model_outputs(
             if "input_ids" in input_names:
                 onnx_inputs["input_ids"] = inputs["input_ids"].numpy().astype(np.int64)  # type: ignore
             if "token_type_ids" in input_names:
-                onnx_inputs["token_type_ids"] = inputs["token_type_ids"].numpy().astype(np.int64)  # type: ignore
+                onnx_inputs["token_type_ids"] = (
+                    inputs["token_type_ids"].numpy().astype(np.int64)  # type: ignore
+                )
             if "attention_mask" in input_names:
-                onnx_inputs["attention_mask"] = inputs["attention_mask"].numpy().astype(np.int64)  # type: ignore
+                onnx_inputs["attention_mask"] = (
+                    inputs["attention_mask"].numpy().astype(np.int64)  # type: ignore
+                )
 
             onnx_output = onnx_session.run(None, onnx_inputs)[0]
 
@@ -275,7 +279,7 @@ if __name__ == "__main__":
 
     class ONNXBert(nn.Module):
         def __init__(self):
-            super(ONNXBert, self).__init__()
+            super().__init__()
             self.model = bert_models.load_model(language)
 
         def forward(self, input_ids, token_type_ids, attention_mask):
@@ -396,7 +400,7 @@ if __name__ == "__main__":
     print(f"Original: {original_size:.2f}MB")
     print(f"Optimized (FP32): {fp32_size:.2f}MB")
     print(f"Optimized (FP16): {fp16_size:.2f}MB")
-    print(f"Size reduction: {(1 - fp16_size/original_size) * 100:.1f}%")
+    print(f"Size reduction: {(1 - fp16_size / original_size) * 100:.1f}%")
 
     # 一時ファイルの削除
     onnx_temp_model_path.unlink()

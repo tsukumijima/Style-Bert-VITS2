@@ -126,7 +126,6 @@ if __name__ == "__main__":
         model_paths.append(Path(args.model))
 
     for model_path in model_paths:
-
         # モデルの入出力先ファイルパスを取得
         onnx_temp_model_path = model_path.parent / f"{model_path.stem}_temp.onnx"
         onnx_optimized_model_path = model_path.parent / f"{model_path.stem}.onnx"
@@ -206,7 +205,6 @@ if __name__ == "__main__":
 
             # JP-Extra モデルアーキテクチャ向けの ONNX 変換ロジック
             if isinstance(tts_model.net_g, SynthesizerTrnJPExtra):
-
                 # SynthesizerTrnJPExtra の forward メソッドをオーバーライド
                 def forward_jp_extra(
                     x: torch.Tensor,
@@ -293,7 +291,6 @@ if __name__ == "__main__":
 
             # 非 JP-Extra モデルアーキテクチャ向けの ONNX 変換ロジック
             else:
-
                 # SynthesizerTrn の forward メソッドをオーバーライド
                 def forward_non_jp_extra(
                     x: torch.Tensor,

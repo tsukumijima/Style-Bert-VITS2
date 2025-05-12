@@ -36,6 +36,8 @@ from style_bert_vits2.constants import (
 from style_bert_vits2.logging import logger
 from style_bert_vits2.nlp import bert_models, onnx_bert_models
 from style_bert_vits2.nlp.japanese import pyopenjtalk_worker as pyopenjtalk
+from style_bert_vits2.nlp.japanese.g2p_utils import g2kata_tone
+from style_bert_vits2.nlp.japanese.normalizer import normalize_text
 from style_bert_vits2.nlp.japanese.user_dict import update_dict
 from style_bert_vits2.tts_model import TTSModel, TTSModelHolder
 from style_bert_vits2.utils import torch_device_to_onnx_providers
@@ -198,7 +200,7 @@ if __name__ == "__main__":
     ):
         """Infer text to speech(テキストから感情付き音声を生成する)"""
         logger.info(
-            f"{request.client.host}:{request.client.port}/voice  { unquote(str(request.query_params) )}"
+            f"{request.client.host}:{request.client.port}/voice  {unquote(str(request.query_params))}"
         )
         if request.method == "GET":
             logger.warning(
@@ -335,7 +337,7 @@ if __name__ == "__main__":
     ):
         """wavデータを取得する"""
         logger.info(
-            f"{request.client.host}:{request.client.port}/tools/get_audio  { unquote(str(request.query_params) )}"
+            f"{request.client.host}:{request.client.port}/tools/get_audio  {unquote(str(request.query_params))}"
         )
         if not os.path.isfile(path):
             raise_validation_error(f"path={path} not found", "path")

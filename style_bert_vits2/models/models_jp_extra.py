@@ -122,9 +122,7 @@ class TransformerCouplingBlock(nn.Module):
             #     isflow=True,
             #     gin_channels=self.gin_channels,
             # )
-            None
-            if share_parameter
-            else None
+            None if share_parameter else None
         )
 
         for i in range(n_flows):
@@ -423,9 +421,7 @@ class TextEncoder(nn.Module):
             + self.language_emb(language)
             + bert_emb
             + style_emb
-        ) * math.sqrt(
-            self.hidden_channels
-        )  # [b, t, h]
+        ) * math.sqrt(self.hidden_channels)  # [b, t, h]
         x = torch.transpose(x, 1, -1)  # [b, h, t]
         x_mask = torch.unsqueeze(commons.sequence_mask(x_lengths, x.size(2)), 1).to(
             x.dtype
@@ -548,7 +544,7 @@ class Generator(torch.nn.Module):
         upsample_kernel_sizes: list[int],
         gin_channels: int = 0,
     ) -> None:
-        super(Generator, self).__init__()
+        super().__init__()
         self.num_kernels = len(resblock_kernel_sizes)
         self.num_upsamples = len(upsample_rates)
         self.conv_pre = Conv1d(
@@ -586,9 +582,7 @@ class Generator(torch.nn.Module):
         if gin_channels != 0:
             self.cond = nn.Conv1d(gin_channels, upsample_initial_channel, 1)
 
-    def forward(
-        self, x: torch.Tensor, g: torch.Tensor | None = None
-    ) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, g: torch.Tensor | None = None) -> torch.Tensor:
         x = self.conv_pre(x)
         if g is not None:
             x = x + self.cond(g)
@@ -626,7 +620,7 @@ class DiscriminatorP(torch.nn.Module):
         stride: int = 3,
         use_spectral_norm: bool = False,
     ) -> None:
-        super(DiscriminatorP, self).__init__()
+        super().__init__()
         self.period = period
         self.use_spectral_norm = use_spectral_norm
         norm_f = weight_norm if use_spectral_norm is False else spectral_norm
@@ -705,7 +699,7 @@ class DiscriminatorP(torch.nn.Module):
 
 class DiscriminatorS(torch.nn.Module):
     def __init__(self, use_spectral_norm: bool = False) -> None:
-        super(DiscriminatorS, self).__init__()
+        super().__init__()
         norm_f = weight_norm if use_spectral_norm is False else spectral_norm
         self.convs = nn.ModuleList(
             [
@@ -735,7 +729,7 @@ class DiscriminatorS(torch.nn.Module):
 
 class MultiPeriodDiscriminator(torch.nn.Module):
     def __init__(self, use_spectral_norm: bool = False) -> None:
-        super(MultiPeriodDiscriminator, self).__init__()
+        super().__init__()
         periods = [2, 3, 5, 7, 11]
 
         discs = [DiscriminatorS(use_spectral_norm=use_spectral_norm)]
@@ -776,8 +770,8 @@ class WavLMDiscriminator(nn.Module):
         initial_channel: int = 64,
         use_spectral_norm: bool = False,
     ) -> None:
-        super(WavLMDiscriminator, self).__init__()
-        norm_f = weight_norm if use_spectral_norm == False else spectral_norm
+        super().__init__()
+        norm_f = weight_norm if not use_spectral_norm else spectral_norm
         self.pre = norm_f(
             Conv1d(slm_hidden * slm_layers, initial_channel, 1, 1, padding=0)
         )

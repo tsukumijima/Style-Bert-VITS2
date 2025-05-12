@@ -46,7 +46,11 @@ __loaded_tokenizers: dict[
 def load_model(
     language: Languages,
     pretrained_model_name_or_path: str | None = None,
-    device_map: str | dict[str, int | str | torch.device] | int | torch.device | None = None,
+    device_map: str
+    | dict[str, int | str | torch.device]
+    | int
+    | torch.device
+    | None = None,
     cache_dir: str | None = None,
     revision: str = "main",
 ) -> PreTrainedModel | DebertaV2Model:

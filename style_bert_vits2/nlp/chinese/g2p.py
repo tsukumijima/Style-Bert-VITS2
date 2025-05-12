@@ -15,7 +15,7 @@ with open(Path(__file__).parent / "opencpop-strict.txt", encoding="utf-8") as f:
 
 
 def g2p(text: str) -> tuple[list[str], list[int], list[int]]:
-    pattern = r"(?<=[{0}])\s*".format("".join(PUNCTUATIONS))
+    pattern = r"(?<=[{}])\s*".format("".join(PUNCTUATIONS))
     sentences = [i for i in re.split(pattern, text) if i.strip() != ""]
     phones, tones, word2ph = __g2p(sentences)
     assert sum(word2ph) == len(phones)

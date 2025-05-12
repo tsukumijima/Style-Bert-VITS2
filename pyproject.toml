@@ -169,11 +169,15 @@ ignore = [
     "E501",    # 1行の長さを超えている場合の警告を抑制
     "E722",    # Do not use bare 'except' を抑制
     "E731",    # Do not assign a `lambda` expression, use a `def` を抑制
+    "E741",    # Ambiguous variable name を抑制
     "F401",    # Module imported but unused を抑制
     "F841",    # Local variable is assigned to but never used を抑制
     "RUF001",  # 全角記号など `ambiguous unicode character` も使いたいため
     "RUF002",  # 全角記号など `ambiguous unicode character` も使いたいため
     "RUF003",  # 全角記号など `ambiguous unicode character` も使いたいため
+    "RUF005",  # collection-literal-concatenation を抑制
+    "RUF017",  # quadratic-list-summation を抑制
+    "RUF034",  # useless-if-else を抑制
 ]
 
 [tool.ruff.lint.isort]
