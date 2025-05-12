@@ -464,12 +464,9 @@ def adjust_word2ph(
                     else:
                         adjusted_word2ph[i] += per_element
 
-    # この時点で given_phone の長さと adjusted_word2ph に記録されている音素数の合計が一致しているはず
-    # それでも一致しないとしたら、len(generated_phone) に比べて len(given_phone) があまりに少なすぎて、
-    # 各文字ごとに最低 1 以上の音素を割り当てることが不可能だったことを意味する
-    assert len(given_phone) == sum(adjusted_word2ph), f"{len(given_phone)} != {sum(adjusted_word2ph)}"  # fmt: skip
-
     # 最初に削除した前後のダミー要素を追加して返す
+    # この時点で given_phone の長さと adjusted_word2ph に記録されている音素数の合計が一致していない場合、
+    # 呼び出し元の clean_text_with_given_phone_tone() から InvalidPhoneError が送出される
     return [1] + adjusted_word2ph + [1]
 
 
