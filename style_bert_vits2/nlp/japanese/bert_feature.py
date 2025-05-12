@@ -34,7 +34,8 @@ def extract_bert_feature(
         device (str): 推論に利用するデバイス
         assist_text (str | None, optional): 補助テキスト (デフォルト: None)
         assist_text_weight (float, optional): 補助テキストの重み (デフォルト: 0.7)
-        sep_text (Optional[list[str]], optional): 単語単位の単語のリスト (デフォルト: None)
+        sep_text (list[str] | None, optional): 単語単位の単語のリスト (デフォルト: None)
+
     Returns:
         torch.Tensor: BERT の特徴量
     """
@@ -109,7 +110,7 @@ def extract_bert_feature_onnx(
         onnx_providers (list[str]): ONNX 推論で利用する ExecutionProvider (CPUExecutionProvider, CUDAExecutionProvider など)
         assist_text (str | None, optional): 補助テキスト (デフォルト: None)
         assist_text_weight (float, optional): 補助テキストの重み (デフォルト: 0.7)
-        sep_text (Optional[list[str]], optional): 単語単位の単語のリスト (デフォルト: None)
+        sep_text (list[str] | None, optional): 単語単位の単語のリスト (デフォルト: None)
 
     Returns:
         NDArray[Any]: BERT の特徴量

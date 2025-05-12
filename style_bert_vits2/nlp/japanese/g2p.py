@@ -132,7 +132,7 @@ def text_to_sep_kata(
 
     Args:
         norm_text (str): 正規化済みテキスト
-        njd_features (Optional[list[NJDFeature]], optional): pyopenjtalk.run_frontend() の結果。None の場合は内部で実行する。
+        njd_features (list[NJDFeature] | None, optional): pyopenjtalk.run_frontend() の結果。None の場合は内部で実行する。
         raise_yomi_error (bool, optional): False の場合、読めない文字が「'」として発音される。Defaults to False.
         jtalk (OpenJTalk | None, optional): 未指定時は pyopenjtalk モジュール内部で保持されているインスタンスが自動的に利用される。
 
