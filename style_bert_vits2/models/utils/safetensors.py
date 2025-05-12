@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import Any
 
 import torch
 from safetensors import safe_open
@@ -9,11 +9,11 @@ from style_bert_vits2.logging import logger
 
 
 def load_safetensors(
-    checkpoint_path: Union[str, Path],
+    checkpoint_path: str | Path,
     model: torch.nn.Module,
     for_infer: bool = False,
-    device: Union[str, torch.device] = "cpu",
-) -> tuple[torch.nn.Module, Optional[int]]:
+    device: str | torch.device = "cpu",
+) -> tuple[torch.nn.Module, int | None]:
     """
     指定されたパスから safetensors モデルを読み込み、モデルとイテレーションを返す。
 
@@ -27,7 +27,7 @@ def load_safetensors(
     """
 
     tensors: dict[str, Any] = {}
-    iteration: Optional[int] = None
+    iteration: int | None = None
     with safe_open(str(checkpoint_path), framework="pt", device=device) as f:  # type: ignore
         for key in f.keys():
             if key == "iteration":
@@ -56,7 +56,7 @@ def load_safetensors(
 def save_safetensors(
     model: torch.nn.Module,
     iteration: int,
-    checkpoint_path: Union[str, Path],
+    checkpoint_path: str | Path,
     is_half: bool = False,
     for_infer: bool = False,
 ) -> None:

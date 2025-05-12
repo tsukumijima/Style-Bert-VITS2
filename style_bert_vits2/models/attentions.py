@@ -1,5 +1,5 @@
 import math
-from typing import Any, Optional
+from typing import Any
 
 import torch
 from torch import nn
@@ -71,9 +71,9 @@ class Encoder(nn.Module):
                     kwargs["cond_layer_idx"] if "cond_layer_idx" in kwargs else 2
                 )
                 # logger.debug(self.gin_channels, self.cond_layer_idx)
-                assert (
-                    self.cond_layer_idx < self.n_layers
-                ), "cond_layer_idx should be less than n_layers"
+                assert self.cond_layer_idx < self.n_layers, (
+                    "cond_layer_idx should be less than n_layers"
+                )
         self.drop = nn.Dropout(p_dropout)
         self.attn_layers = nn.ModuleList()
         self.norm_layers_1 = nn.ModuleList()
@@ -102,7 +102,7 @@ class Encoder(nn.Module):
             self.norm_layers_2.append(LayerNorm(hidden_channels))
 
     def forward(
-        self, x: torch.Tensor, x_mask: torch.Tensor, g: Optional[torch.Tensor] = None
+        self, x: torch.Tensor, x_mask: torch.Tensor, g: torch.Tensor | None = None
     ) -> torch.Tensor:
         attn_mask = x_mask.unsqueeze(2) * x_mask.unsqueeze(-1)
         x = x * x_mask
@@ -223,9 +223,9 @@ class MultiHeadAttention(nn.Module):
         out_channels: int,
         n_heads: int,
         p_dropout: float = 0.0,
-        window_size: Optional[int] = None,
+        window_size: int | None = None,
         heads_share: bool = True,
-        block_length: Optional[int] = None,
+        block_length: int | None = None,
         proximal_bias: bool = False,
         proximal_init: bool = False,
     ) -> None:
@@ -273,7 +273,7 @@ class MultiHeadAttention(nn.Module):
                 self.conv_k.bias.copy_(self.conv_q.bias)
 
     def forward(
-        self, x: torch.Tensor, c: torch.Tensor, attn_mask: Optional[torch.Tensor] = None
+        self, x: torch.Tensor, c: torch.Tensor, attn_mask: torch.Tensor | None = None
     ) -> torch.Tensor:
         q = self.conv_q(x)
         k = self.conv_k(c)
@@ -289,7 +289,7 @@ class MultiHeadAttention(nn.Module):
         query: torch.Tensor,
         key: torch.Tensor,
         value: torch.Tensor,
-        mask: Optional[torch.Tensor] = None,
+        mask: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         # reshape [b, d, t] -> [b, n_h, t, d_k]
         b, d, t_s, t_t = (*key.size(), query.size(2))
@@ -299,9 +299,9 @@ class MultiHeadAttention(nn.Module):
 
         scores = torch.matmul(query / math.sqrt(self.k_channels), key.transpose(-2, -1))
         if self.window_size is not None:
-            assert (
-                t_s == t_t
-            ), "Relative attention is only available for self-attention."
+            assert t_s == t_t, (
+                "Relative attention is only available for self-attention."
+            )
             key_relative_embeddings = self._get_relative_embeddings(self.emb_rel_k, t_s)
             rel_logits = self._matmul_with_relative_keys(
                 query / math.sqrt(self.k_channels), key_relative_embeddings
@@ -316,9 +316,9 @@ class MultiHeadAttention(nn.Module):
         if mask is not None:
             scores = scores.masked_fill(mask == 0, -1e4)
             if self.block_length is not None:
-                assert (
-                    t_s == t_t
-                ), "Local attention is only available for self-attention."
+                assert t_s == t_t, (
+                    "Local attention is only available for self-attention."
+                )
                 block_mask = (
                     torch.ones_like(scores)
                     .triu(-self.block_length)
@@ -441,7 +441,7 @@ class FFN(nn.Module):
         filter_channels: int,
         kernel_size: int,
         p_dropout: float = 0.0,
-        activation: Optional[str] = None,
+        activation: str | None = None,
         causal: bool = False,
     ) -> None:
         super().__init__()

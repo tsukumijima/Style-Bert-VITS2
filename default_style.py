@@ -1,6 +1,5 @@
 import json
 from pathlib import Path
-from typing import Union
 
 import numpy as np
 
@@ -9,10 +8,10 @@ from style_bert_vits2.logging import logger
 
 
 def save_neutral_vector(
-    wav_dir: Union[Path, str],
-    output_dir: Union[Path, str],
-    config_path: Union[Path, str],
-    config_output_path: Union[Path, str],
+    wav_dir: Path | str,
+    output_dir: Path | str,
+    config_path: Path | str,
+    config_output_path: Path | str,
 ):
     wav_dir = Path(wav_dir)
     output_dir = Path(output_dir)
@@ -37,10 +36,10 @@ def save_neutral_vector(
 
 
 def save_styles_by_dirs(
-    wav_dir: Union[Path, str],
-    output_dir: Union[Path, str],
-    config_path: Union[Path, str],
-    config_output_path: Union[Path, str],
+    wav_dir: Path | str,
+    output_dir: Path | str,
+    config_path: Path | str,
+    config_output_path: Path | str,
 ):
     wav_dir = Path(wav_dir)
     output_dir = Path(output_dir)

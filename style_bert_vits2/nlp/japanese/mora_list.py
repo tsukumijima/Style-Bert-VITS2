@@ -47,8 +47,6 @@ OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 POSSIBILITY OF SUCH DAMAGE.
 """
 
-from typing import Optional
-
 
 # (カタカナ, 子音, 母音)の順。子音がない場合は None を入れる。
 # 但し「ン」と「ッ」は母音のみという扱いで、「ン」は「N」、「ッ」は「q」とする。
@@ -251,7 +249,7 @@ MORA_PHONEMES_TO_MORA_KATA: dict[str, str] = {
 
 # モーラのカタカナ表記と音素の対応表
 # 例: "ヴォ" -> ("v", "o"), "ア" -> (None, "a")
-MORA_KATA_TO_MORA_PHONEMES: dict[str, tuple[Optional[str], str]] = {
+MORA_KATA_TO_MORA_PHONEMES: dict[str, tuple[str | None, str]] = {
     kana: (consonant, vowel)
     for [kana, consonant, vowel] in __MORA_LIST_MINIMUM + __MORA_LIST_ADDITIONAL
 }

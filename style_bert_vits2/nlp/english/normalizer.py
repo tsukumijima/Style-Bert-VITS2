@@ -90,13 +90,13 @@ def __expand_dollars(m: re.Match[str]) -> str:
     if dollars and cents:
         dollar_unit = "dollar" if dollars == 1 else "dollars"
         cent_unit = "cent" if cents == 1 else "cents"
-        return "%s %s, %s %s" % (dollars, dollar_unit, cents, cent_unit)
+        return f"{dollars} {dollar_unit}, {cents} {cent_unit}"
     elif dollars:
         dollar_unit = "dollar" if dollars == 1 else "dollars"
-        return "%s %s" % (dollars, dollar_unit)
+        return f"{dollars} {dollar_unit}"
     elif cents:
         cent_unit = "cent" if cents == 1 else "cents"
-        return "%s %s" % (cents, cent_unit)
+        return f"{cents} {cent_unit}"
     else:
         return "zero dollars"
 
@@ -120,10 +120,11 @@ def __expand_number(m: re.Match[str]) -> str:
             return __INFLECT.number_to_words(num // 100) + " hundred"  # type: ignore
         else:
             return __INFLECT.number_to_words(
-                num, andword="", zero="oh", group=2  # type: ignore
-            ).replace(
-                ", ", " "
-            )  # type: ignore
+                num,  # type: ignore
+                andword="",
+                zero="oh",
+                group=2,
+            ).replace(", ", " ")  # type: ignore
     else:
         return __INFLECT.number_to_words(num, andword="")  # type: ignore
 

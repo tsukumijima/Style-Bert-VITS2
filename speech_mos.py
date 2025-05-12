@@ -142,7 +142,7 @@ plt.ylabel("MOS")
 # ステップ数の軸ラベルを1000単位で表示するように調整
 plt.xticks(
     ticks=np.arange(0, max(steps) + 1000, 2000),
-    labels=[f"{int(x/1000)}" for x in np.arange(0, max(steps) + 1000, 2000)],
+    labels=[f"{int(x / 1000)}" for x in np.arange(0, max(steps) + 1000, 2000)],
 )
 
 # 縦の補助線を追加

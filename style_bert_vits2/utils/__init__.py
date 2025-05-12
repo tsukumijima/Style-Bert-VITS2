@@ -1,12 +1,12 @@
 from collections.abc import Sequence
-from typing import Any, Union
+from typing import Any
 
 import onnxruntime
 
 
 def torch_device_to_onnx_providers(
     device: str,
-) -> Sequence[Union[str, tuple[str, dict[str, Any]]]]:
+) -> Sequence[str | tuple[str, dict[str, Any]]]:
     """
     PyTorch のデバイス種別を ONNX の ExecutionProvider に変換する
 
@@ -41,7 +41,7 @@ def torch_device_to_onnx_providers(
 
 def get_onnx_device_options(
     onnx_session: onnxruntime.InferenceSession,
-    onnx_providers: Sequence[Union[str, tuple[str, dict[str, Any]]]],
+    onnx_providers: Sequence[str | tuple[str, dict[str, Any]]],
 ) -> tuple[str, int, onnxruntime.RunOptions]:
     """
     ONNX 推論時のデバイス関連のオプションを取得する

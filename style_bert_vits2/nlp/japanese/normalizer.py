@@ -357,7 +357,8 @@ __PUNCTUATION_CLEANUP_PATTERN = re.compile(
     # スラッシュは pyopenjtalk での形態素解析処理で重要なので、例外的に正規化後も残す (g2p 処理内で "." に変換される)
     # pyopenjtalk は「漢字の直後に2つ以上の連続する半角ハイフンがある場合」にその漢字の読みが取得できなくなる謎のバグがあるため、
     # 正規化処理でダッシュが変換されるなどして2つ以上の連続する半角ハイフンが生まれた場合、Long EM Dash に変換してから g2p 処理に渡す
-    + "".join(re.escape(p) for p in (PUNCTUATIONS + ["/", '—'])) + r"]+"  # fmt: skip
+    + "".join(re.escape(p) for p in (PUNCTUATIONS + ["/", "—"]))
+    + r"]+"  # fmt: skip
 )
 
 # 数字・通貨記号の正規化パターン
@@ -488,7 +489,9 @@ def normalize_text(text: str) -> str:
     # どのみち Unicode 正規化で行われる処理ではあるが、__replace_symbols() は Unicode 正規化前に実行しなければ正常に動作しない
     # 一方で __replace_symbols() は半角英数字の入力を前提に実装されており、全角英数記号が入ると変換処理（正規表現マッチ）が意図通り実行されない可能性がある
     # これを回避するため、__replace_symbols() の実行前に半角英数記号を半角に変換している
-    text = jaconv.z2h(text, kana=False, digit=True, ascii=True, ignore="\u3000")  # 全角スペースは変換しない
+    text = jaconv.z2h(
+        text, kana=False, digit=True, ascii=True, ignore="\u3000"
+    )  # 全角スペースは変換しない
 
     # Unicode 正規化前に記号を変換
     # 正規化前でないと ℃ などが unicodedata.normalize() で分割されてしまう
@@ -517,7 +520,7 @@ def normalize_text(text: str) -> str:
     # 結合文字の濁点・半濁点を削除
     # 通常の「ば」等はそのままのこされる、「あ゛」は上で「あ゙」になりここで「あ」になる
     res = res.replace("\u3099", "")  # 結合文字の濁点を削除、る゙ → る
-    res = res.replace("\u309A", "")  # 結合文字の半濁点を削除、な゚ → な
+    res = res.replace("\u309a", "")  # 結合文字の半濁点を削除、な゚ → な
 
     # pyopenjtalk は「漢字の直後に2つ以上の連続する半角ハイフンがある場合」にその漢字の読みが取得できなくなる謎のバグがあるため、
     # 正規化処理でダッシュが変換されるなどして2つ以上の連続する半角ハイフンが生まれた場合、Long EM Dash に変換してから g2p 処理に渡す
@@ -741,7 +744,7 @@ def __replace_symbols(text: str) -> str:
     text = __FRACTION_PATTERN.sub(convert_fraction, text)
 
     # 単独の0時を零時に変換
-    text = __ZERO_HOUR_PATTERN.sub(lambda m: f'{m.group(1) or ""}零時', text)
+    text = __ZERO_HOUR_PATTERN.sub(lambda m: f"{m.group(1) or ''}零時", text)
 
     # 時刻の処理（漢字で書かれた時分秒）
     def convert_time(match: re.Match[str]) -> str:
@@ -750,23 +753,23 @@ def __replace_symbols(text: str) -> str:
         seconds = int(match.group(3)) if match.group(3) else None
 
         # 時刻として処理
-        result = f'{num2words(hours, lang="ja")}時'
+        result = f"{num2words(hours, lang='ja')}時"
 
         # 分の処理：0分で秒がない場合は省略、秒がある場合は零分を追加
         if minutes == 0:
             if seconds is not None:
                 result += "零分"
         elif 0 <= minutes <= 59:
-            result += f'{num2words(minutes, lang="ja")}分'
+            result += f"{num2words(minutes, lang='ja')}分"
         else:
-            result += f'{num2words(minutes, lang="ja")}'
+            result += f"{num2words(minutes, lang='ja')}"
 
         # 秒の処理
         if seconds is not None:
             if 0 <= seconds <= 59:
-                result += f'{num2words(seconds, lang="ja")}秒'
+                result += f"{num2words(seconds, lang='ja')}秒"
             else:
-                result += f'{num2words(seconds, lang="ja")}'
+                result += f"{num2words(seconds, lang='ja')}"
         return result
 
     # 時刻パターンの処理（漢字で書かれた時分秒）
@@ -786,29 +789,29 @@ def __replace_symbols(text: str) -> str:
 
         if looks_like_time:
             # 時刻として処理
-            result = f'{num2words(hours, lang="ja")}時'
+            result = f"{num2words(hours, lang='ja')}時"
 
             # 分の処理：0分で秒がない場合は省略、秒がある場合は零分を追加
             if minutes == 0:
                 if seconds is not None:
                     result += "零分"
             elif 0 <= minutes <= 59:
-                result += f'{num2words(minutes, lang="ja")}分'
+                result += f"{num2words(minutes, lang='ja')}分"
             else:
-                result += f'{num2words(minutes, lang="ja")}'
+                result += f"{num2words(minutes, lang='ja')}"
 
             # 秒の処理
             if seconds is not None:
                 if 0 <= seconds <= 59:
-                    result += f'{num2words(seconds, lang="ja")}秒'
+                    result += f"{num2words(seconds, lang='ja')}秒"
                 else:
-                    result += f'{num2words(seconds, lang="ja")}'
+                    result += f"{num2words(seconds, lang='ja')}"
             return result
         else:
             # アスペクト比として処理
-            result = f'{num2words(match.group(1), lang="ja")}タイ{num2words(match.group(2), lang="ja")}'
+            result = f"{num2words(match.group(1), lang='ja')}タイ{num2words(match.group(2), lang='ja')}"
             if seconds is not None:
-                result += f'タイ{num2words(seconds, lang="ja")}'
+                result += f"タイ{num2words(seconds, lang='ja')}"
             return result
 
     # 時刻またはアスペクト比パターンの処理（コロンで区切られた時分秒）
@@ -818,7 +821,7 @@ def __replace_symbols(text: str) -> str:
     ## 稀にランダムな英数字 ID にマッチしたことで OverflowError が発生するが、続行に支障はないため無視する
     try:
         text = __EXPONENT_PATTERN.sub(
-            lambda m: f'{num2words(float(m.group(0)), lang="ja")}', text
+            lambda m: f"{num2words(float(m.group(0)), lang='ja')}", text
         )
     except OverflowError:
         pass
@@ -1138,7 +1141,6 @@ def __convert_english_to_katakana(text: str) -> str:
 
             # "iPhone 11" "Pixel8" のようなパターンに一致しない場合のみ処理
             if not __ENGLISH_WORD_WITH_NUMBER_PATTERN.search(word):
-
                 # 数字（小数点含む）とそれ以外の部分を分割
                 parts = []
                 last_end = 0
@@ -1234,7 +1236,6 @@ def __convert_english_to_katakana(text: str) -> str:
         # この処理はあくまで辞書ベースで解決できなかった場合の最終手段なので、CamelCase を分割して個々の単語ごとに処理する際はこの処理は通らない
         # ref: https://github.com/Patchethium/e2k
         if alpha_chunks and enable_romaji_c2k is True:
-
             # 英単語の末尾に 11 以下の数字 (1.0 のような小数表記を除く) がつく場合の処理 (例: iPhone 11, Pixel8)
             number_match = __ENGLISH_WORD_WITH_NUMBER_PATTERN.match(word)
             if number_match:
@@ -1293,7 +1294,7 @@ def __convert_english_to_katakana(text: str) -> str:
 
         # Unicode のカタカナブロックは U+30A0 ~ U+30FF
         for c in s:
-            if not ("\u30A0" <= c <= "\u30FF"):
+            if not ("\u30a0" <= c <= "\u30ff"):
                 return False
         return True
 
@@ -1304,16 +1305,16 @@ def __convert_english_to_katakana(text: str) -> str:
     quotes = [
         "\u2018",  # LEFT SINGLE QUOTATION MARK ‘
         "\u2019",  # RIGHT SINGLE QUOTATION MARK ’
-        "\u201A",  # SINGLE LOW-9 QUOTATION MARK ‚
-        "\u201B",  # SINGLE HIGH-REVERSED-9 QUOTATION MARK ‛
+        "\u201a",  # SINGLE LOW-9 QUOTATION MARK ‚
+        "\u201b",  # SINGLE HIGH-REVERSED-9 QUOTATION MARK ‛
         "\u2032",  # PRIME ′
         "\u0060",  # GRAVE ACCENT `
-        "\u00B4",  # ACUTE ACCENT ´
+        "\u00b4",  # ACUTE ACCENT ´
         "\u2033",  # DOUBLE PRIME ″
-        "\u301D",  # REVERSED DOUBLE PRIME QUOTATION MARK 〝
-        "\u301E",  # DOUBLE PRIME QUOTATION MARK 〞
-        "\u301F",  # LOW DOUBLE PRIME QUOTATION MARK 〟
-        "\uFF07",  # FULLWIDTH APOSTROPHE ＇
+        "\u301d",  # REVERSED DOUBLE PRIME QUOTATION MARK 〝
+        "\u301e",  # DOUBLE PRIME QUOTATION MARK 〞
+        "\u301f",  # LOW DOUBLE PRIME QUOTATION MARK 〟
+        "\uff07",  # FULLWIDTH APOSTROPHE ＇
     ]
     # 全てのクオート記号を ' に置換
     for quote in quotes:

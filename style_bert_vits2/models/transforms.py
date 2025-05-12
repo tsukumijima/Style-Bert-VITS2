@@ -1,5 +1,3 @@
-from typing import Optional
-
 import numpy as np
 import torch
 from torch.nn import functional as F
@@ -16,13 +14,12 @@ def piecewise_rational_quadratic_transform(
     unnormalized_heights: torch.Tensor,
     unnormalized_derivatives: torch.Tensor,
     inverse: bool = False,
-    tails: Optional[str] = None,
+    tails: str | None = None,
     tail_bound: float = 1.0,
     min_bin_width: float = DEFAULT_MIN_BIN_WIDTH,
     min_bin_height: float = DEFAULT_MIN_BIN_HEIGHT,
     min_derivative: float = DEFAULT_MIN_DERIVATIVE,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-
     if tails is None:
         spline_fn = rational_quadratic_spline
         spline_kwargs = {}
@@ -63,7 +60,6 @@ def unconstrained_rational_quadratic_spline(
     min_bin_height: float = DEFAULT_MIN_BIN_HEIGHT,
     min_derivative: float = DEFAULT_MIN_DERIVATIVE,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-
     inside_interval_mask = (inputs >= -tail_bound) & (inputs <= tail_bound)
     outside_interval_mask = ~inside_interval_mask
 
@@ -116,7 +112,6 @@ def rational_quadratic_spline(
     min_bin_height: float = DEFAULT_MIN_BIN_HEIGHT,
     min_derivative: float = DEFAULT_MIN_DERIVATIVE,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-
     if torch.min(inputs) < left or torch.max(inputs) > right:
         raise ValueError("Input to a transform is not within its domain")
 

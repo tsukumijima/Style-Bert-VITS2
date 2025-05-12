@@ -13,7 +13,7 @@ import gc
 import time
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import Any
 
 import onnxruntime
 from huggingface_hub import hf_hub_download
@@ -34,15 +34,15 @@ __loaded_models: dict[Languages, onnxruntime.InferenceSession] = {}
 # 各言語ごとのロード済みの BERT トークナイザーを格納する辞書
 __loaded_tokenizers: dict[
     Languages,
-    Union[PreTrainedTokenizer, PreTrainedTokenizerFast, DebertaV2TokenizerFast],
+    PreTrainedTokenizer | PreTrainedTokenizerFast | DebertaV2TokenizerFast,
 ] = {}
 
 
 def load_model(
     language: Languages,
-    pretrained_model_name_or_path: Optional[str] = None,
-    onnx_providers: Sequence[Union[str, tuple[str, dict[str, Any]]]] = [("CPUExecutionProvider", {"arena_extend_strategy": "kSameAsRequested"})],
-    cache_dir: Optional[str] = None,
+    pretrained_model_name_or_path: str | None = None,
+    onnx_providers: Sequence[str | tuple[str, dict[str, Any]]] = [("CPUExecutionProvider", {"arena_extend_strategy": "kSameAsRequested"})],
+    cache_dir: str | None = None,
     revision: str = "main",
     enable_cpu_mem_arena: bool | None = None,
 ) -> onnxruntime.InferenceSession:  # fmt: skip
@@ -150,10 +150,10 @@ def load_model(
 
 def load_tokenizer(
     language: Languages,
-    pretrained_model_name_or_path: Optional[str] = None,
-    cache_dir: Optional[str] = None,
+    pretrained_model_name_or_path: str | None = None,
+    cache_dir: str | None = None,
     revision: str = "main",
-) -> Union[PreTrainedTokenizer, PreTrainedTokenizerFast, DebertaV2TokenizerFast]:
+) -> PreTrainedTokenizer | PreTrainedTokenizerFast | DebertaV2TokenizerFast:
     """
     指定された言語の ONNX 版 BERT トークナイザーをロードし、ロード済みの ONNX 版 BERT トークナイザーを返す。
     一度ロードされていれば、ロード済みの ONNX 版 BERT トークナイザーを即座に返す。

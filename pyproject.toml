@@ -130,18 +130,15 @@ test = "pytest -s tests/test_normalizer.py"
 
 [tool.hatch.envs.style]
 detached = true
-dependencies = ["black[jupyter]", "isort"]
+dependencies = ["ruff"]
 [tool.hatch.envs.style.scripts]
 # Usage: `hatch run style:check`
 check = [
-    "black --check --diff .",
-    "isort --check-only --diff --profile black --gitignore --lai 2 . --sg \"Data/*\" --sg \"inputs/*\" --sg \"model_assets/*\" --sg \"static/*\"",
+    "ruff check .",
 ]
 # Usage: `hatch run style:fmt`
 fmt = [
-    "black .",
-    "isort --profile black --gitignore --lai 2 . --sg \"Data/*\" --sg \"inputs/*\" --sg \"model_assets/*\" --sg \"static/*\"",
-    "check",
+    "ruff check --fix . && ruff format .",
 ]
 
 [tool.coverage.run]
@@ -158,7 +155,45 @@ tests = ["tests", "*/style-bert-vits2/tests"]
 exclude_lines = ["no cov", "if __name__ == .__main__.:", "if TYPE_CHECKING:"]
 
 [tool.ruff]
-extend-select = ["I"]
+# 1行の長さを最大88文字に設定
+line-length = 88
+# インデントの幅を4スペースに設定
+indent-width = 4
+# Python 3.10 を利用する
+target-version = "py310"
+# 以下のディレクトリは対象から除外する
+extend-exclude = [
+    "Data/",
+    "inputs/",
+    "model_assets/",
+    "static/",
+]
+
+[tool.ruff.lint]
+# flake8, pycodestyle, pyupgrade, isort, Ruff 固有のルールを使う
+select = ["F", "E", "W", "UP", "I", "RUF"]
+ignore = [
+    "E402",    # Module level import not at top of file を抑制 (style_bert_vits2 モジュール外のコードで発生する)
+    "E501",    # 1行の長さを超えている場合の警告を抑制
+    "E722",    # Do not use bare 'except' を抑制
+    "E731",    # Do not assign a `lambda` expression, use a `def` を抑制
+    "E741",    # Ambiguous variable name を抑制
+    "F401",    # Module imported but unused を抑制
+    "F841",    # Local variable is assigned to but never used を抑制
+    "RUF001",  # 全角記号など `ambiguous unicode character` も使いたいため
+    "RUF002",  # 全角記号など `ambiguous unicode character` も使いたいため
+    "RUF003",  # 全角記号など `ambiguous unicode character` も使いたいため
+    "RUF005",  # collection-literal-concatenation を抑制
+    "RUF017",  # quadratic-list-summation を抑制
+    "RUF034",  # useless-if-else を抑制
+]
 
 [tool.ruff.lint.isort]
+# インポートブロックの後に2行空ける
 lines-after-imports = 2
+
+[tool.ruff.format]
+# ダブルクオートを使う
+quote-style = "double"
+# インデントにはスペースを使う
+indent-style = "space"
