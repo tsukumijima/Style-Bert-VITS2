@@ -33,7 +33,6 @@ dependencies = [
     "num2words",
     "numba",
     "numpy<2",
-    "onnxruntime",
     "pydantic>=2.0",
     "pyopenjtalk-plus",
     "pypinyin",
@@ -46,6 +45,11 @@ dependencies = [
 torch = [
     "accelerate",
     "torch>=2.1",
+]
+onnxruntime = [
+    "onnxruntime; (sys_platform != 'linux' or platform_machine != 'x86_64') and sys_platform != 'win32'",
+    "onnxruntime-directml; sys_platform == 'win32'",
+    "onnxruntime-gpu; sys_platform == 'linux' and platform_machine == 'x86_64'",
 ]
 
 [project.urls]
@@ -101,9 +105,8 @@ dependencies = [
     "coverage[toml]>=6.5",
     "pytest",
     "scipy",
-    "onnxruntime-directml; sys_platform == 'win32'",
-    "onnxruntime-gpu; sys_platform != 'darwin'",
 ]
+features = ["onnxruntime"]
 [tool.hatch.envs.test-onnx.scripts]
 # Usage: `hatch run test-onnx:test`
 test = "pytest -s tests/test_main.py::test_synthesize_onnx_cpu"

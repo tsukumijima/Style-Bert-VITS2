@@ -16,9 +16,9 @@ num2words
 numpy<2
 onnx
 onnxconverter-common
-onnxruntime
+onnxruntime; (sys_platform != 'linux' or platform_machine != 'x86_64') and sys_platform != 'win32'
 onnxruntime-directml; sys_platform == 'win32'
-onnxruntime-gpu; sys_platform != 'darwin'
+onnxruntime-gpu; sys_platform == 'linux' and platform_machine == 'x86_64'
 onnxsim
 # protobuf==4.25
 psutil
