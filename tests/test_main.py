@@ -66,6 +66,16 @@ RANDOM_SAMPLE_TEXTS: list[str] = [
     "本日はご来店いただき、誠にありがとうございました。またのお越しをスタッフ一同、心よりお待ちしております。",
 ]
 
+# 推論に使用するモデル
+TEST_MODELS: list[str] = [
+    "koharune-ami",
+    "amitaro",
+    # "jvnv-F1-jp",
+    # "jvnv-F2-jp",
+    # "jvnv-M1-jp",
+    # "jvnv-M2-jp",
+]
+
 
 def synthesize(
     inference_type: Literal["torch", "onnx"] = "torch",
@@ -78,9 +88,8 @@ def synthesize(
     # 音声合成モデルが配置されていれば、音声合成を実行
     model_holder = TTSModelHolder(BASE_DIR / "model_assets", device, onnx_providers)
     if len(model_holder.models_info) > 0:
-        # "koharune-ami" または "amitaro" モデルを探す
         for model_info in model_holder.models_info:
-            if model_info.name == "koharune-ami" or model_info.name == "amitaro":
+            if model_info.name in TEST_MODELS:
                 # Safetensors 形式または ONNX 形式のモデルファイルに絞り込む
                 if inference_type == "torch":
                     model_files = [
