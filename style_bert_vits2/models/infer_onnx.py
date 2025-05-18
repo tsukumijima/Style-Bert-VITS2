@@ -4,6 +4,7 @@ from typing import Any
 import numpy as np
 import onnxruntime
 from numpy.typing import NDArray
+from pyopenjtalk import OpenJTalk
 
 from style_bert_vits2.constants import Languages
 from style_bert_vits2.models.hyper_parameters import HyperParameters
@@ -42,6 +43,7 @@ def get_text_onnx(
     assist_text_weight: float = 0.7,
     given_phone: list[str] | None = None,
     given_tone: list[int] | None = None,
+    jtalk: OpenJTalk | None = None,
 ) -> tuple[
     NDArray[Any], NDArray[Any], NDArray[Any], NDArray[Any], NDArray[Any], NDArray[Any]
 ]:
@@ -54,6 +56,7 @@ def get_text_onnx(
         use_jp_extra=use_jp_extra,
         # 推論時のみ呼び出されるので、raise_yomi_error は False に設定
         raise_yomi_error=False,
+        jtalk=jtalk,
     )
     phone, tone, language = cleaned_text_to_sequence(phone, tone, language_str)
 
@@ -119,6 +122,7 @@ def infer_onnx(
     assist_text_weight: float = 0.7,
     given_phone: list[str] | None = None,
     given_tone: list[int] | None = None,
+    jtalk: OpenJTalk | None = None,
 ) -> NDArray[Any]:
     is_jp_extra = hps.version.endswith("JP-Extra")
     bert, ja_bert, en_bert, phones, tones, lang_ids = get_text_onnx(
@@ -130,6 +134,7 @@ def infer_onnx(
         assist_text_weight=assist_text_weight,
         given_phone=given_phone,
         given_tone=given_tone,
+        jtalk=jtalk,
     )
     if skip_start:
         phones = phones[3:]

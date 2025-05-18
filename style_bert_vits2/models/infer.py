@@ -2,6 +2,7 @@ from typing import Any, cast
 
 import torch
 from numpy.typing import NDArray
+from pyopenjtalk import OpenJTalk
 from torch.overrides import TorchFunctionMode
 from torch.utils import _device
 
@@ -129,6 +130,7 @@ def get_text(
     assist_text_weight: float = 0.7,
     given_phone: list[str] | None = None,
     given_tone: list[int] | None = None,
+    jtalk: OpenJTalk | None = None,
 ) -> tuple[
     torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor
 ]:
@@ -141,6 +143,7 @@ def get_text(
         use_jp_extra=use_jp_extra,
         # 推論時のみ呼び出されるので、raise_yomi_error は False に設定
         raise_yomi_error=False,
+        jtalk=jtalk,
     )
     phone, tone, language = cleaned_text_to_sequence(phone, tone, language_str)
 
@@ -206,6 +209,7 @@ def infer(
     assist_text_weight: float = 0.7,
     given_phone: list[str] | None = None,
     given_tone: list[int] | None = None,
+    jtalk: OpenJTalk | None = None,
 ) -> NDArray[Any]:
     is_jp_extra = hps.version.endswith("JP-Extra")
     bert, ja_bert, en_bert, phones, tones, lang_ids = get_text(
@@ -217,6 +221,7 @@ def infer(
         assist_text_weight=assist_text_weight,
         given_phone=given_phone,
         given_tone=given_tone,
+        jtalk=jtalk,
     )
     if skip_start:
         phones = phones[3:]
