@@ -9,11 +9,15 @@ from tqdm import tqdm
 
 from config import get_config
 from mel_processing import mel_spectrogram_torch, spectrogram_torch
+from style_bert_vits2.constants import Languages
 from style_bert_vits2.logging import logger
 from style_bert_vits2.models import commons
 from style_bert_vits2.models.hyper_parameters import HyperParametersData
 from style_bert_vits2.models.utils import load_filepaths_and_text, load_wav_to_torch
-from style_bert_vits2.nlp import cleaned_text_to_sequence
+from style_bert_vits2.nlp import (
+    cleaned_text_to_sequence,
+    convert_unsupported_phones_for_current_model,
+)
 
 
 config = get_config()
@@ -158,6 +162,11 @@ class TextAudioSpeakerLoader(torch.utils.data.Dataset):
         return spec, audio_norm
 
     def get_text(self, text, word2ph, phone, tone, language_str, wav_path):
+        # g2p 処理では対応しているが現行モデルでは対応していない特定音素を、対応する音素にフォールバックする
+        # 変更は引数で与えられた phone / tone / word2ph に in-place で適用される
+        convert_unsupported_phones_for_current_model(
+            phone, tone, word2ph, Languages[language_str]
+        )
         phone, tone, language = cleaned_text_to_sequence(phone, tone, language_str)
         if self.add_blank:
             phone = commons.intersperse(phone, 0)

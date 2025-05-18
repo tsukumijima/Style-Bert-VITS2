@@ -10,7 +10,11 @@ from style_bert_vits2.constants import Languages
 from style_bert_vits2.logging import logger
 from style_bert_vits2.models import commons
 from style_bert_vits2.models.hyper_parameters import HyperParameters
-from style_bert_vits2.nlp import cleaned_text_to_sequence, extract_bert_feature
+from style_bert_vits2.nlp import (
+    cleaned_text_to_sequence,
+    convert_unsupported_phones_for_current_model,
+    extract_bert_feature,
+)
 from style_bert_vits2.nlp.japanese import pyopenjtalk_worker
 from style_bert_vits2.nlp.japanese.user_dict import update_dict
 from style_bert_vits2.utils.stdout_wrapper import SAFE_STDOUT
@@ -40,6 +44,11 @@ def process_line(x: tuple[str, bool]):
     tone = [int(i) for i in tone.split(" ")]
     word2ph = [int(i) for i in word2ph.split(" ")]
     word2ph = [i for i in word2ph]
+    # g2p 処理では対応しているが現行モデルでは対応していない特定音素を、対応する音素にフォールバックする
+    # 変更は引数で与えられた phone / tone / word2ph に in-place で適用される
+    convert_unsupported_phones_for_current_model(
+        phone, tone, word2ph, Languages[language_str]
+    )
     phone, tone, language = cleaned_text_to_sequence(
         phone, tone, Languages[language_str]
     )

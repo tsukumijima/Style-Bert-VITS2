@@ -320,6 +320,30 @@ def clean_text_with_given_phone_tone(
         tone = given_tone
 
     # 日本語のみ、g2p 処理では対応しているが現行モデルでは対応していない特定音素を変換 (フォールバック)
+    convert_unsupported_phones_for_current_model(phone, tone, word2ph, language)
+
+    return norm_text, phone, tone, word2ph, sep_text, sep_kata, sep_kata_with_joshi
+
+
+def convert_unsupported_phones_for_current_model(
+    phone: list[str],
+    tone: list[int],
+    word2ph: list[int],
+    language: Languages,
+) -> None:
+    """
+    g2p 処理では対応しているが現行モデルでは対応していない特定音素を、対応する音素にフォールバックする
+    変更は引数で与えられた phone / tone / word2ph に in-place で適用される
+    必ず phone / tone を cleaned_text_to_sequence() に渡す前に、一度だけ実行すること
+
+    Args:
+        phone (list[str]): 音素リスト
+        tone (list[int]): アクセントリスト
+        word2ph (list[int]): 各文字に割り当てられた音素数のリスト
+        language (Languages): 言語
+    """
+
+    # 日本語のみ、g2p 処理では対応しているが現行モデルでは対応していない特定音素を変換 (フォールバック)
     if language == Languages.JP:
         # 音素変換マップ
         PHONE_CONVERSION_MAP = {
@@ -362,13 +386,11 @@ def clean_text_with_given_phone_tone(
                     phone_count += count
 
                 # 該当する文字の音素数を更新
-                ## 1つの音素が3つの音素に変換されるので、2つ増える
+                ## kw, gw の場合、1つの音素が3つの音素に変換されるので、2つ増える
                 word2ph[char_idx] += len(converted_phones) - 1
 
         # ここでは必ず音素数が一致するはず
         assert len(phone) == len(tone) == sum(word2ph)
-
-    return norm_text, phone, tone, word2ph, sep_text, sep_kata, sep_kata_with_joshi
 
 
 def cleaned_text_to_sequence(
