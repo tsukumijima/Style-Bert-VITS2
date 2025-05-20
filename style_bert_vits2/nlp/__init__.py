@@ -143,7 +143,7 @@ def extract_bert_feature_onnx(
         raise ValueError(f"Language {language} not supported")
 
 
-def clean_text(
+def _clean_text(
     text: str,
     language: Languages,
     use_jp_extra: bool = True,
@@ -160,6 +160,8 @@ def clean_text(
 ]:
     """
     テキストをクリーニングし、音素に変換する
+    この関数では実装の都合上 convert_unsupported_phones_for_current_model() を呼び出さないため、
+    必ずこの _clean_text() の代わりに clean_text_with_given_phone_tone() を使うこと
 
     Args:
         text (str): クリーニングするテキスト
@@ -239,6 +241,7 @@ def clean_text_with_given_phone_tone(
     """
     テキストをクリーニングし、音素に変換する
     変換時、given_phone や given_tone が与えられた場合はそれを調整して使う
+    この関数は内部で convert_unsupported_phones_for_current_model() を自動的に呼び出し、対応していない音素をフォールバックする
 
     Args:
         text (str): クリーニングするテキスト
@@ -262,7 +265,7 @@ def clean_text_with_given_phone_tone(
 
     # 与えられたテキストをクリーニング
     norm_text, phone, tone, word2ph, sep_text, sep_kata, sep_kata_with_joshi = (
-        clean_text(
+        _clean_text(
             text,
             language,
             use_jp_extra=use_jp_extra,
@@ -288,7 +291,7 @@ def clean_text_with_given_phone_tone(
                 # use_jp_extra でない場合は given_phone 内の「N」を「n」に変換
                 if not use_jp_extra:
                     given_phone = [p if p != "N" else "n" for p in given_phone]
-                # clean_text() から取得した word2ph を調整結果で上書き
+                # _clean_text() から取得した word2ph を調整結果で上書き
                 word2ph = adjust_word2ph(word2ph, phone, given_phone)
                 # 上記処理により word2ph の合計が given_phone の長さと一致するはず
                 # それでも一致しないとしたら、len(generated_phone) に比べて len(given_phone) があまりに少なすぎて、
@@ -310,7 +313,7 @@ def clean_text_with_given_phone_tone(
             )
         tone = given_tone
 
-    # tone だけが与えられた場合は clean_text() で生成した phone と合わせて使う
+    # tone だけが与えられた場合は _clean_text() で生成した phone と合わせて使う
     elif given_tone is not None:
         # 生成した phone と指定された tone 両方の長さが一致していなければならない
         if len(phone) != len(given_tone):
@@ -320,6 +323,7 @@ def clean_text_with_given_phone_tone(
         tone = given_tone
 
     # 日本語のみ、g2p 処理では対応しているが現行モデルでは対応していない特定音素を変換 (フォールバック)
+    # この処理は given_phone / given_tone が調整された後に実行する必要がある
     convert_unsupported_phones_for_current_model(phone, tone, word2ph, language)
 
     return norm_text, phone, tone, word2ph, sep_text, sep_kata, sep_kata_with_joshi
@@ -334,7 +338,7 @@ def convert_unsupported_phones_for_current_model(
     """
     g2p 処理では対応しているが現行モデルでは対応していない特定音素を、対応する音素にフォールバックする
     変更は引数で与えられた phone / tone / word2ph に in-place で適用される
-    必ず phone / tone を cleaned_text_to_sequence() に渡す前に、一度だけ実行すること
+    必ず phone / tone を cleaned_text_to_sequence() に渡す前に、一度だけ実行する必要がある
 
     Args:
         phone (list[str]): 音素リスト
@@ -342,6 +346,10 @@ def convert_unsupported_phones_for_current_model(
         word2ph (list[int]): 各文字に割り当てられた音素数のリスト
         language (Languages): 言語
     """
+
+    # ここでは必ず音素数・アクセント数・word2ph の長さが一致するはず（事前チェックとして念のため）
+    # 通常起こり得ないが、万が一一致しない場合、誤った対応関係で学習される可能性があるためデータセットに含めるべきでない
+    assert len(phone) == len(tone) == sum(word2ph)
 
     # 日本語のみ、g2p 処理では対応しているが現行モデルでは対応していない特定音素を変換 (フォールバック)
     if language == Languages.JP:
@@ -389,7 +397,7 @@ def convert_unsupported_phones_for_current_model(
                 ## kw, gw の場合、1つの音素が3つの音素に変換されるので、2つ増える
                 word2ph[char_idx] += len(converted_phones) - 1
 
-        # ここでは必ず音素数が一致するはず
+        # ここでは必ず音素数・アクセント数・word2ph の長さが一致するはず
         assert len(phone) == len(tone) == sum(word2ph)
 
 
@@ -400,7 +408,7 @@ def cleaned_text_to_sequence(
     音素リスト・アクセントリスト・言語を、テキスト内の対応する ID に変換する
 
     Args:
-        cleaned_phones (list[str]): clean_text() でクリーニングされた音素のリスト
+        cleaned_phones (list[str]): clean_text_with_given_phone_tone() でクリーニングされた音素のリスト
         tones (list[int]): 各音素のアクセント
         language (Languages): テキストの言語
 
