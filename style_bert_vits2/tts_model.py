@@ -491,7 +491,14 @@ class TTSModel:
                             )
                         )
                         if i != len(texts) - 1:
-                            audios.append(np.zeros(int(44100 * split_interval)))
+                            audios.append(
+                                np.zeros(
+                                    int(
+                                        self.hyper_parameters.data.sampling_rate
+                                        * split_interval
+                                    )
+                                )
+                            )
                     audio = np.concatenate(audios)
 
         # ONNX 推論時
@@ -550,7 +557,14 @@ class TTSModel:
                         )
                     )
                     if i != len(texts) - 1:
-                        audios.append(np.zeros(int(44100 * split_interval)))
+                        audios.append(
+                            np.zeros(
+                                int(
+                                    self.hyper_parameters.data.sampling_rate
+                                    * split_interval
+                                )
+                            )
+                        )
                 audio = np.concatenate(audios)
 
         logger.info(
