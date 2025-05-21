@@ -1,5 +1,6 @@
 from typing import Any, cast
 
+import numpy as np
 import torch
 from numpy.typing import NDArray
 from pyopenjtalk import OpenJTalk
@@ -210,7 +211,7 @@ def infer(
     given_phone: list[str] | None = None,
     given_tone: list[int] | None = None,
     jtalk: OpenJTalk | None = None,
-) -> NDArray[Any]:
+) -> NDArray[np.float32]:
     is_jp_extra = hps.version.endswith("JP-Extra")
     bert, ja_bert, en_bert, phones, tones, lang_ids = get_text(
         text,

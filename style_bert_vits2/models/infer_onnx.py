@@ -123,7 +123,7 @@ def infer_onnx(
     given_phone: list[str] | None = None,
     given_tone: list[int] | None = None,
     jtalk: OpenJTalk | None = None,
-) -> NDArray[Any]:
+) -> NDArray[np.float32]:
     is_jp_extra = hps.version.endswith("JP-Extra")
     bert, ja_bert, en_bert, phones, tones, lang_ids = get_text_onnx(
         text,
