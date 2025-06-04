@@ -90,21 +90,9 @@ def load_model(
 
     import torch
 
-    # 現在要求されている精度のキーを作成
-    current_dtype_key = "fp16" if use_fp16 else "fp32"
-
-    # すでにロード済みの場合、精度が一致しているかをチェック
+    # すでにロード済みの場合はそのまま返す
     if language in __loaded_models:
-        loaded_dtype_key = __loaded_model_dtypes.get(language, "fp32")
-        if loaded_dtype_key == current_dtype_key:
-            # 同じ精度でロード済みなのでそのまま返す
-            return __loaded_models[language]
-        else:
-            # 異なる精度でロード済みなので、古いモデルをアンロードして新しい精度でロード
-            logger.info(
-                f"Unloading {language.name} BERT model (loaded with {loaded_dtype_key}, requested {current_dtype_key})"
-            )
-            unload_model(language)
+        return __loaded_models[language]
 
     # pretrained_model_name_or_path が指定されていない場合はデフォルトのパスを利用
     if pretrained_model_name_or_path is None:
@@ -141,6 +129,7 @@ def load_model(
         )
 
     # ロード済みモデルの精度情報を記録
+    current_dtype_key = "fp16" if use_fp16 else "fp32"
     __loaded_model_dtypes[language] = current_dtype_key
 
     precision_info = " (FP16)" if use_fp16 else " (default precision)"
