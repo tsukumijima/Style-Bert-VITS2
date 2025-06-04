@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import gc
 import time
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Literal
 
 from transformers import (
     AutoModelForMaskedLM,
@@ -36,6 +36,9 @@ if TYPE_CHECKING:
 # 各言語ごとのロード済みの BERT モデルを格納する辞書
 __loaded_models: dict[Languages, PreTrainedModel | DebertaV2Model] = {}
 
+# 各言語ごとのロード済みモデルの精度情報を格納する辞書
+__loaded_model_dtypes: dict[Languages, Literal["fp16", "fp32"]] = {}
+
 # 各言語ごとのロード済みの BERT トークナイザーを格納する辞書
 __loaded_tokenizers: dict[
     Languages,
@@ -53,6 +56,7 @@ def load_model(
     | None = None,
     cache_dir: str | None = None,
     revision: str = "main",
+    use_fp16: bool = False,
 ) -> PreTrainedModel | DebertaV2Model:
     """
     指定された言語の BERT モデルをロードし、ロード済みの BERT モデルを返す。
@@ -61,6 +65,8 @@ def load_model(
     ロードにはそれなりに時間がかかるため、ライブラリ利用前に明示的に pretrained_model_name_or_path を指定してロードしておくべき。
     device_map は既に指定された言語の BERT モデルがロードされている場合は効果がない。
     cache_dir と revision は pretrain_model_name_or_path がリポジトリ名の場合のみ有効。
+    use_fp16 を True にすると torch_dtype=torch.float16 でロードされ、メモリ使用量を大幅に削減し推論を高速化できる。
+    最新の GPU では FP16 による精度低下はほとんどないため、実用的な選択肢である。
 
     Style-Bert-VITS2 では、BERT モデルに下記の 3 つが利用されている。
     これ以外の BERT モデルを指定した場合は正常に動作しない可能性が高い。
@@ -76,14 +82,29 @@ def load_model(
             ref: https://huggingface.co/docs/accelerate/usage_guides/big_modeling
         cache_dir (str | None): モデルのキャッシュディレクトリ。指定しない場合はデフォルトのキャッシュディレクトリが利用される (デフォルト: None)
         revision (str): モデルの Hugging Face 上の Git リビジョン。指定しない場合は最新の main ブランチの内容が利用される (デフォルト: None)
+        use_fp16 (bool): FP16 (半精度) でモデルをロードするかどうか。True の場合、メモリ使用量を削減し推論を高速化する (デフォルト: False)
 
     Returns:
         PreTrainedModel | DebertaV2Model: ロード済みの BERT モデル
     """
 
-    # すでにロード済みの場合はそのまま返す
+    import torch
+
+    # 現在要求されている精度のキーを作成
+    current_dtype_key = "fp16" if use_fp16 else "fp32"
+
+    # すでにロード済みの場合、精度が一致しているかをチェック
     if language in __loaded_models:
-        return __loaded_models[language]
+        loaded_dtype_key = __loaded_model_dtypes.get(language, "fp32")
+        if loaded_dtype_key == current_dtype_key:
+            # 同じ精度でロード済みなのでそのまま返す
+            return __loaded_models[language]
+        else:
+            # 異なる精度でロード済みなので、古いモデルをアンロードして新しい精度でロード
+            logger.info(
+                f"Unloading {language.name} BERT model (loaded with {loaded_dtype_key}, requested {current_dtype_key})"
+            )
+            unload_model(language)
 
     # pretrained_model_name_or_path が指定されていない場合はデフォルトのパスを利用
     if pretrained_model_name_or_path is None:
@@ -91,18 +112,23 @@ def load_model(
             f"The default {language.name} BERT model does not exist on the file system. Please specify the path to the pre-trained model."  # fmt: skip
         pretrained_model_name_or_path = str(DEFAULT_BERT_MODEL_PATHS[language])
 
+    # torch_dtype と low_cpu_mem_usage の設定
+    torch_dtype = None
+    low_cpu_mem_usage = True  # 常に True にしてメモリ効率を向上
+    if use_fp16:
+        torch_dtype = torch.float16
+
     # BERT モデルをロードし、辞書に格納して返す
     ## 英語のみ DebertaV2Model でロードする必要がある
     start_time = time.time()
     if language == Languages.EN:
-        __loaded_models[language] = cast(
-            DebertaV2Model,
-            DebertaV2Model.from_pretrained(
-                pretrained_model_name_or_path,
-                device_map=device_map,
-                cache_dir=cache_dir,
-                revision=revision,
-            ),
+        __loaded_models[language] = DebertaV2Model.from_pretrained(
+            pretrained_model_name_or_path,
+            device_map=device_map,
+            cache_dir=cache_dir,
+            revision=revision,
+            torch_dtype=torch_dtype,
+            low_cpu_mem_usage=low_cpu_mem_usage,
         )
     else:
         __loaded_models[language] = AutoModelForMaskedLM.from_pretrained(
@@ -110,9 +136,16 @@ def load_model(
             device_map=device_map,
             cache_dir=cache_dir,
             revision=revision,
+            torch_dtype=torch_dtype,
+            low_cpu_mem_usage=low_cpu_mem_usage,
         )
+
+    # ロード済みモデルの精度情報を記録
+    __loaded_model_dtypes[language] = current_dtype_key
+
+    precision_info = " (FP16)" if use_fp16 else " (default precision)"
     logger.info(
-        f"Loaded the {language.name} BERT model from {pretrained_model_name_or_path} ({time.time() - start_time:.2f}s)"
+        f"Loaded the {language.name} BERT model from {pretrained_model_name_or_path}{precision_info} ({time.time() - start_time:.2f}s)"
     )
 
     return __loaded_models[language]
@@ -227,6 +260,21 @@ def is_tokenizer_loaded(language: Languages) -> bool:
     return language in __loaded_tokenizers
 
 
+def get_model_dtype(language: Languages) -> Literal["fp16", "fp32"] | None:
+    """
+    指定された言語の BERT モデルの精度情報を返す。
+    モデルがロードされていない場合は None を返す。
+
+    Args:
+        language (Languages): 精度情報を取得する言語
+
+    Returns:
+        Literal["fp16", "fp32"] | None: 'fp16' または 'fp32'、モデルがロードされていない場合は None
+    """
+
+    return __loaded_model_dtypes.get(language)
+
+
 def unload_model(language: Languages) -> None:
     """
     指定された言語の BERT モデルをアンロードする。
@@ -239,6 +287,7 @@ def unload_model(language: Languages) -> None:
 
     if language in __loaded_models:
         del __loaded_models[language]
+        __loaded_model_dtypes.pop(language, None)  # 精度情報をクリア
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
         gc.collect()
@@ -266,6 +315,7 @@ def unload_all_models() -> None:
 
     for language in list(__loaded_models.keys()):
         unload_model(language)
+    __loaded_model_dtypes.clear()  # 念のため、全ての精度情報もクリア
     logger.info("Unloaded all BERT models")
 
 
