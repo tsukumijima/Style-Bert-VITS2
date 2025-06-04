@@ -609,7 +609,7 @@ class Generator(torch.nn.Module):
         for layer in self.ups:
             remove_weight_norm(layer)
         for layer in self.resblocks:
-            layer.remove_weight_norm()
+            layer.remove_weight_norm()  # type: ignore
 
 
 class DiscriminatorP(torch.nn.Module):

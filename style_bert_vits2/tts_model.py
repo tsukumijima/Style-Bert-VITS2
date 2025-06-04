@@ -74,7 +74,7 @@ class TTSModel:
             style_vec_path (Path | NDArray[Any]): スタイルベクトル (style_vectors.npy) のパス (直接 NDArray を指定することも可能)
             device (str): PyTorch 推論での音声合成時に利用するデバイス (cpu, cuda, mps など)
             onnx_providers (list[str | tuple[str, dict[str, Any]]]): ONNX 推論で利用する ExecutionProvider (CPUExecutionProvider, CUDAExecutionProvider など)
-            use_fp16 (bool): FP16 精度で推論を行うかどうか（メモリ使用量削減と高速化のため）
+            use_fp16 (bool): FP16 で推論を行うかどうか (ONNX 推論時は無視される)
         """
 
         self.model_path: Path = model_path
@@ -628,7 +628,7 @@ class TTSModelHolder:
             device (str): PyTorch 推論での音声合成時に利用するデバイス (cpu, cuda, mps など)
             onnx_providers (list[str]): ONNX 推論で利用する ExecutionProvider (CPUExecutionProvider, CUDAExecutionProvider など)
             ignore_onnx (bool, optional): ONNX モデルを除外するかどうか. Defaults to False.
-            use_fp16 (bool, optional): FP16 推論を有効にするかどうか. Defaults to False.
+            use_fp16 (bool, optional): FP16 で推論を行うかどうか (ONNX 推論時は無視される). Defaults to False.
         """
 
         self.root_dir: Path = model_root_dir
