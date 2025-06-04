@@ -604,7 +604,7 @@ class Generator(torch.nn.Module):
         for layer in self.ups:
             remove_weight_norm(layer)
         for layer in self.resblocks:
-            layer.remove_weight_norm()
+            layer.remove_weight_norm()  # type: ignore
 
 
 class DiscriminatorP(torch.nn.Module):
@@ -1060,6 +1060,7 @@ class SynthesizerTrn(nn.Module):
         max_len: int | None = None,
         sdp_ratio: float = 0.0,
         y: torch.Tensor | None = None,
+        use_fp16_inference: bool = False,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, tuple[torch.Tensor, ...]]:
         # x, m_p, logs_p, x_mask = self.enc_p(x, x_lengths, tone, language, bert)
         # g = self.gst(y)
@@ -1068,12 +1069,32 @@ class SynthesizerTrn(nn.Module):
         else:
             assert y is not None
             g = self.ref_enc(y.transpose(1, 2)).unsqueeze(-1)
+
+        # BERT モデルが FP16 でロードされている場合は特徴量も FP16 になるので、明示的に FP32 に変換することでエラーを防ぐ
+        if use_fp16_inference is True:
+            bert = bert.float()
+            ja_bert = ja_bert.float()
+            en_bert = en_bert.float()
+
+        # 精度クリティカルな部分 (Encoder, SDP, Flow) は常に FP32 で実行
         x, m_p, logs_p, x_mask = self.enc_p(
-            x, x_lengths, tone, language, bert, ja_bert, en_bert, style_vec, sid, g=g
+            x,
+            x_lengths,
+            tone,
+            language,
+            bert,
+            ja_bert,
+            en_bert,
+            style_vec,
+            sid,
+            g=g,
         )
+
+        # SDP (Stochastic Duration Predictor) / DP (Duration Predictor)
         logw = self.sdp(x, x_mask, g=g, reverse=True, noise_scale=noise_scale_w) * (
             sdp_ratio
         ) + self.dp(x, x_mask, g=g) * (1 - sdp_ratio)
+
         w = torch.exp(logw) * x_mask * length_scale
         w_ceil = torch.ceil(w)
         y_lengths = torch.clamp_min(torch.sum(w_ceil, [1, 2]), 1).long()
@@ -1091,6 +1112,28 @@ class SynthesizerTrn(nn.Module):
         )  # [b, t', t], [b, t, d] -> [b, d, t']
 
         z_p = m_p + torch.randn_like(m_p) * torch.exp(logs_p) * noise_scale
+
+        # Flow
         z = self.flow(z_p, y_mask, g=g, reverse=True)
-        o = self.dec((z * y_mask)[:, :, :max_len], g=g)
+
+        # torch.autocast() 用のデバイスタイプを取得
+        device = x.device
+        device_type = (
+            device.type if hasattr(device, "type") else str(device).split(":")[0]
+        )
+
+        # Generator (Decoder) のみ FP16 / AMP (Automatic Mixed Precision) で実行
+        if use_fp16_inference is True:
+            # z テンソルを Generator の入力用に FP16 に変換
+            z_input = (z * y_mask)[:, :, :max_len]
+            with torch.autocast(
+                device_type=device_type,
+                dtype=torch.float16,
+            ):
+                # Generator への入力を FP16 に変換
+                o = self.dec(z_input.half(), g=g.half())
+        else:
+            # FP16 を使わない場合は通常通り実行
+            o = self.dec((z * y_mask)[:, :, :max_len], g=g)
+
         return o, attn, y_mask, (z, z_p, m_p, logs_p)

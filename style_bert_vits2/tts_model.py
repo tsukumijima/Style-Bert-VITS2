@@ -469,6 +469,7 @@ class TTSModel:
                         style_vec=style_vector,
                         given_phone=given_phone,
                         given_tone=given_tone,
+                        use_fp16_inference=self.use_fp16,
                     )
 
             # 改行ごとに分割して音声を生成
@@ -478,6 +479,7 @@ class TTSModel:
                 with torch.no_grad():
                     for i, t in enumerate(texts):
                         audios.append(
+                            # given_phone/tone は改行ごとに分割する際は渡さない
                             infer(
                                 text=t,
                                 sdp_ratio=sdp_ratio,
@@ -492,6 +494,7 @@ class TTSModel:
                                 assist_text=assist_text,
                                 assist_text_weight=assist_text_weight,
                                 style_vec=style_vector,
+                                use_fp16_inference=self.use_fp16,
                             )
                         )
                         if i != len(texts) - 1:
