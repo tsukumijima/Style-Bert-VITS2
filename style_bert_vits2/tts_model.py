@@ -62,6 +62,7 @@ class TTSModel:
         style_vec_path: Path | NDArray[Any],
         device: str = "cpu",
         onnx_providers: Sequence[str | tuple[str, dict[str, Any]]] = [("CPUExecutionProvider", {"arena_extend_strategy": "kSameAsRequested"})],
+        use_fp16: bool = False,
     ) -> None:  # fmt: skip
         """
         Style-Bert-VITS2 の音声合成モデルを初期化する。
@@ -73,11 +74,13 @@ class TTSModel:
             style_vec_path (Path | NDArray[Any]): スタイルベクトル (style_vectors.npy) のパス (直接 NDArray を指定することも可能)
             device (str): PyTorch 推論での音声合成時に利用するデバイス (cpu, cuda, mps など)
             onnx_providers (list[str | tuple[str, dict[str, Any]]]): ONNX 推論で利用する ExecutionProvider (CPUExecutionProvider, CUDAExecutionProvider など)
+            use_fp16 (bool): FP16 精度で推論を行うかどうか（メモリ使用量削減と高速化のため）
         """
 
         self.model_path: Path = model_path
         self.device: str = device
         self.onnx_providers: Sequence[str | tuple[str, dict[str, Any]]] = onnx_providers  # fmt: skip
+        self.use_fp16: bool = use_fp16
 
         # ONNX 形式のモデルかどうか
         if self.model_path.suffix in [".onnx", ".aivmx"]:
@@ -148,6 +151,7 @@ class TTSModel:
                 version=self.hyper_parameters.version,
                 device=self.device,
                 hps=self.hyper_parameters,
+                use_fp16=self.use_fp16,
             )
             logger.info(
                 f'Model loaded successfully from {self.model_path} to "{self.device}" device ({time.time() - start_time:.2f}s)'
@@ -601,6 +605,7 @@ class TTSModelHolder:
         device: str,
         onnx_providers: Sequence[str | tuple[str, dict[str, Any]]],
         ignore_onnx: bool = False,
+        use_fp16: bool = False,
     ) -> None:
         """
         Style-Bert-VITS2 の音声合成モデルを管理するクラスを初期化する。
@@ -623,12 +628,14 @@ class TTSModelHolder:
             device (str): PyTorch 推論での音声合成時に利用するデバイス (cpu, cuda, mps など)
             onnx_providers (list[str]): ONNX 推論で利用する ExecutionProvider (CPUExecutionProvider, CUDAExecutionProvider など)
             ignore_onnx (bool, optional): ONNX モデルを除外するかどうか. Defaults to False.
+            use_fp16 (bool, optional): FP16 推論を有効にするかどうか. Defaults to False.
         """
 
         self.root_dir: Path = model_root_dir
         self.device: str = device
         self.onnx_providers: Sequence[str | tuple[str, dict[str, Any]]] = onnx_providers  # fmt: skip
         self.ignore_onnx: bool = ignore_onnx
+        self.use_fp16: bool = use_fp16
         self.model_files_dict: dict[str, list[Path]] = {}
         self.current_model: TTSModel | None = None
         self.model_names: list[str] = []
@@ -711,6 +718,7 @@ class TTSModelHolder:
                 style_vec_path=self.root_dir / model_name / "style_vectors.npy",
                 device=self.device,
                 onnx_providers=self.onnx_providers,
+                use_fp16=self.use_fp16,
             )
 
         return self.current_model
@@ -741,6 +749,7 @@ class TTSModelHolder:
             style_vec_path=self.root_dir / model_name / "style_vectors.npy",
             device=self.device,
             onnx_providers=self.onnx_providers,
+            use_fp16=self.use_fp16,
         )
         speakers = list(self.current_model.spk2id.keys())
         styles = list(self.current_model.style2id.keys())

@@ -1,3 +1,4 @@
+from contextlib import nullcontext
 from typing import Any, cast
 
 import numpy as np
@@ -44,7 +45,11 @@ class EmptyInitOnDevice(TorchFunctionMode):
 
 
 def get_net_g(
-    model_path: str, version: str, device: str, hps: HyperParameters
+    model_path: str,
+    version: str,
+    device: str,
+    hps: HyperParameters,
+    use_fp16: bool = False,
 ) -> SynthesizerTrn | SynthesizerTrnJPExtra:
     with EmptyInitOnDevice(device):
         if version.endswith("JP-Extra"):
@@ -119,7 +124,51 @@ def get_net_g(
         _ = utils.safetensors.load_safetensors(model_path, net_g, True, device=device)
     else:
         raise ValueError(f"Unknown model format: {model_path}")
+
+    # FP16 変換を適用
+    if use_fp16 is True:
+        logger.info("Converting model to FP16 for inference")
+        net_g = _convert_model_to_fp16(net_g)
+
     return net_g
+
+
+def _convert_model_to_fp16(
+    model: SynthesizerTrn | SynthesizerTrnJPExtra,
+) -> SynthesizerTrn | SynthesizerTrnJPExtra:
+    """
+    モデルを FP16 推論用に変換する。
+    torch.autocast との組み合わせで使用することを前提とし、
+    数値安定性のため、一部の層は FP32 のまま保持する。
+
+    Args:
+        model: 変換対象のモデル
+
+    Returns:
+        FP16 に変換されたモデル
+    """
+
+    # 精度を維持すべき層の型を定義
+    fp32_layer_types = (
+        torch.nn.LayerNorm,
+        torch.nn.BatchNorm1d,
+        torch.nn.BatchNorm2d,
+        torch.nn.GroupNorm,
+        torch.nn.Embedding,
+    )
+
+    # まずモデル全体を FP16 に変換
+    model = model.half()
+
+    # 特定の層を FP32 に戻す
+    for name, module in model.named_modules():
+        if isinstance(module, fp32_layer_types):
+            logger.debug(
+                f"Keeping {name} ({type(module).__name__}) in FP32 for numerical stability"
+            )
+            module.float()
+
+    return model
 
 
 def get_text(
@@ -240,7 +289,10 @@ def infer(
         ja_bert = ja_bert[:, :-2]
         en_bert = en_bert[:, :-2]
 
-    with torch.no_grad():
+    # FP16 が有効かどうかを判定（モデルの最初のパラメータの dtype で判定）
+    use_fp16_inference = next(net_g.parameters()).dtype == torch.float16
+
+    with torch.inference_mode():
         x_tst = phones.unsqueeze(0)
         tones = tones.unsqueeze(0)
         lang_ids = lang_ids.unsqueeze(0)
@@ -248,40 +300,53 @@ def infer(
         ja_bert = ja_bert.unsqueeze(0)
         en_bert = en_bert.unsqueeze(0)
         x_tst_lengths = torch.LongTensor([phones.size(0)]).to(device)
+
+        # スタイルベクトルは精度劣化を避けるため FP16 には変換せず、元の精度（通常 FP32）を保持する
         style_vec_tensor = torch.from_numpy(style_vec).to(device).unsqueeze(0)
         del phones
         sid_tensor = torch.LongTensor([sid]).to(device)
 
-        if is_jp_extra:
-            output = cast(SynthesizerTrnJPExtra, net_g).infer(
-                x_tst,
-                x_tst_lengths,
-                sid_tensor,
-                tones,
-                lang_ids,
-                ja_bert,
-                style_vec=style_vec_tensor,
-                length_scale=length_scale,
-                sdp_ratio=sdp_ratio,
-                noise_scale=noise_scale,
-                noise_scale_w=noise_scale_w,
+        # FP16 推論の場合は torch.autocast を使用して安全な mixed precision を実現
+        autocast_context = (
+            torch.autocast(
+                device_type=device.split(":")[0] if ":" in device else device,
+                dtype=torch.float16,
             )
-        else:
-            output = cast(SynthesizerTrn, net_g).infer(
-                x_tst,
-                x_tst_lengths,
-                sid_tensor,
-                tones,
-                lang_ids,
-                bert,
-                ja_bert,
-                en_bert,
-                style_vec=style_vec_tensor,
-                length_scale=length_scale,
-                sdp_ratio=sdp_ratio,
-                noise_scale=noise_scale,
-                noise_scale_w=noise_scale_w,
-            )
+            if use_fp16_inference and device != "cpu"
+            else nullcontext()
+        )
+
+        with autocast_context:
+            if is_jp_extra:
+                output = cast(SynthesizerTrnJPExtra, net_g).infer(
+                    x_tst,
+                    x_tst_lengths,
+                    sid_tensor,
+                    tones,
+                    lang_ids,
+                    ja_bert,
+                    style_vec=style_vec_tensor,
+                    length_scale=length_scale,
+                    sdp_ratio=sdp_ratio,
+                    noise_scale=noise_scale,
+                    noise_scale_w=noise_scale_w,
+                )
+            else:
+                output = cast(SynthesizerTrn, net_g).infer(
+                    x_tst,
+                    x_tst_lengths,
+                    sid_tensor,
+                    tones,
+                    lang_ids,
+                    bert,
+                    ja_bert,
+                    en_bert,
+                    style_vec=style_vec_tensor,
+                    length_scale=length_scale,
+                    sdp_ratio=sdp_ratio,
+                    noise_scale=noise_scale,
+                    noise_scale_w=noise_scale_w,
+                )
 
         audio = output[0][0, 0].data.cpu().float().numpy()
 
