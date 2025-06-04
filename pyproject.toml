@@ -37,7 +37,10 @@ dependencies = [
     "pypinyin",
     "pyworld-prebuilt",
     "safetensors",
-    "transformers",
+    # transformers 4.50.0 以降、なぜか ku-nlp/deberta-v2-large-japanese-char-wwm (日本語用 BERT) が
+    # ロード時にハングアップするため、やむを得ず当面の間 4.50.0 未満に固定する
+    # ref: https://github.com/huggingface/transformers/issues/36803
+    "transformers<4.50.0",
 ]
 
 [project.optional-dependencies]

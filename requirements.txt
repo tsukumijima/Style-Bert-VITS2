@@ -29,5 +29,5 @@ stable_ts
 tensorboard
 torch
 torchaudio
-transformers
+transformers<4.50.0
 umap-learn

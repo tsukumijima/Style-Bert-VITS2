@@ -29,5 +29,5 @@ pyworld-prebuilt
 # tensorboard
 torch
 torchaudio
-transformers
+transformers<4.50.0
 umap-learn

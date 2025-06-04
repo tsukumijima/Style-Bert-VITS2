@@ -22,5 +22,5 @@ pyworld-prebuilt
 torch
 torchaudio
 torchvision
-transformers
+transformers<4.50.0
 umap-learn
