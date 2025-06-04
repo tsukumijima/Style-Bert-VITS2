@@ -211,6 +211,7 @@ def infer(
     given_phone: list[str] | None = None,
     given_tone: list[int] | None = None,
     jtalk: OpenJTalk | None = None,
+    clear_cuda_cache: bool = True,
 ) -> NDArray[np.float32]:
     is_jp_extra = hps.version.endswith("JP-Extra")
     bert, ja_bert, en_bert, phones, tones, lang_ids = get_text(
@@ -295,7 +296,9 @@ def infer(
             en_bert,
             style_vec,
         )  # , emo
-        if torch.cuda.is_available():
+
+        # CUDA メモリを解放する (デフォルトでは True)
+        if clear_cuda_cache and torch.cuda.is_available():
             torch.cuda.empty_cache()
 
         return audio
