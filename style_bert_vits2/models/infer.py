@@ -127,7 +127,7 @@ def get_net_g(
 
     # 一番実行速度の遅い Generator (Decoder) のみを FP16 に変換
     # それ以外のモジュールはほとんどが精度センシティブな処理で、FP32 でなければ精度や数値安定性の問題で動作しない
-    if use_fp16 and device != "cpu":
+    if use_fp16 is True:
         net_g.dec.half()
         logger.info("Generator module converted to FP16 for selective mixed precision")
 
@@ -308,7 +308,7 @@ def infer(
     given_phone: list[str] | None = None,
     given_tone: list[int] | None = None,
     jtalk: OpenJTalk | None = None,
-    use_fp16_inference: bool = False,
+    use_fp16: bool = False,
     clear_cuda_cache: bool = True,
 ) -> NDArray[np.float32]:
     """
@@ -357,7 +357,7 @@ def infer(
                 sdp_ratio=sdp_ratio,
                 noise_scale=noise_scale,
                 noise_scale_w=noise_scale_w,
-                use_fp16_inference=use_fp16_inference,
+                use_fp16=use_fp16,
             )
         else:
             output = cast(SynthesizerTrn, net_g).infer(
@@ -374,7 +374,7 @@ def infer(
                 sdp_ratio=sdp_ratio,
                 noise_scale=noise_scale,
                 noise_scale_w=noise_scale_w,
-                use_fp16_inference=use_fp16_inference,
+                use_fp16=use_fp16,
             )
 
         audio = output[0][0, 0].data.cpu().float().numpy()
@@ -417,7 +417,7 @@ def infer_stream(
     given_phone: list[str] | None = None,
     given_tone: list[int] | None = None,
     jtalk: OpenJTalk | None = None,
-    use_fp16_inference: bool = False,
+    use_fp16: bool = False,
     clear_cuda_cache: bool = True,
     chunk_size: int = 65,  # 下記記事を参考に最適な値を調整
     overlap_size: int = 22,  # 下記記事を参照 (L=11, 11+11=22)
@@ -473,7 +473,7 @@ def infer_stream(
                 sdp_ratio=sdp_ratio,
                 noise_scale=noise_scale,
                 noise_scale_w=noise_scale_w,
-                use_fp16_inference=use_fp16_inference,
+                use_fp16=use_fp16,
             )
         else:
             z, y_mask, g, attn, z_p, m_p, logs_p = cast(
@@ -492,7 +492,7 @@ def infer_stream(
                 sdp_ratio=sdp_ratio,
                 noise_scale=noise_scale,
                 noise_scale_w=noise_scale_w,
-                use_fp16_inference=use_fp16_inference,
+                use_fp16=use_fp16,
             )
 
         # Generator 部分のストリーミング処理
@@ -520,7 +520,7 @@ def infer_stream(
             chunk = z_input[:, :, start_idx:end_idx]
 
             # FP16 推論の処理
-            if use_fp16_inference is True:
+            if use_fp16 is True:
                 with torch.autocast(
                     device_type=device_type,
                     dtype=torch.float16,

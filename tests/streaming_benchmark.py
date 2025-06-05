@@ -327,7 +327,7 @@ def run_benchmark(
                 infer_time, infer_duration, normal_audio = measure_infer_performance(
                     model,
                     text,
-                    use_fp16_inference=USE_FP16,
+                    use_fp16=USE_FP16,
                     clear_cuda_cache=True,
                 )
                 infer_times.append(infer_time)
@@ -346,7 +346,7 @@ def run_benchmark(
                         model_file,
                         text,
                         device,
-                        use_fp16_inference=USE_FP16,
+                        use_fp16=USE_FP16,
                         clear_cuda_cache=True,
                     )
                 )

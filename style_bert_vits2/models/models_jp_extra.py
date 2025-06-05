@@ -1114,7 +1114,7 @@ class SynthesizerTrn(nn.Module):
         noise_scale_w: float = 0.8,
         sdp_ratio: float = 0.0,
         y: torch.Tensor | None = None,
-        use_fp16_inference: bool = False,
+        use_fp16: bool = False,
     ) -> tuple[
         torch.Tensor,
         torch.Tensor,
@@ -1140,7 +1140,7 @@ class SynthesizerTrn(nn.Module):
             g = self.ref_enc(y.transpose(1, 2)).unsqueeze(-1)
 
         # BERT モデルが FP16 でロードされている場合は特徴量も FP16 になるので、明示的に FP32 に変換することでエラーを防ぐ
-        if use_fp16_inference is True:
+        if use_fp16 is True:
             bert = bert.float()
 
         # 精度クリティカルな部分 (Encoder, SDP, Flow) は常に FP32 で実行
@@ -1197,7 +1197,7 @@ class SynthesizerTrn(nn.Module):
         max_len: int | None = None,
         sdp_ratio: float = 0.0,
         y: torch.Tensor | None = None,
-        use_fp16_inference: bool = False,
+        use_fp16: bool = False,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, tuple[torch.Tensor, ...]]:
         # Generator 実行前の共通処理
         z, y_mask, g, attn, z_p, m_p, logs_p = self.infer_input_feature(
@@ -1213,7 +1213,7 @@ class SynthesizerTrn(nn.Module):
             noise_scale_w,
             sdp_ratio,
             y,
-            use_fp16_inference,
+            use_fp16,
         )
 
         # torch.autocast() 用のデバイスタイプを取得
@@ -1223,7 +1223,7 @@ class SynthesizerTrn(nn.Module):
         )
 
         # Generator (Decoder) のみ FP16 / AMP (Automatic Mixed Precision) で実行
-        if use_fp16_inference is True:
+        if use_fp16 is True:
             # z テンソルを Generator の入力用に FP16 に変換
             z_input = (z * y_mask)[:, :, :max_len]
             with torch.autocast(

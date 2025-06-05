@@ -103,7 +103,7 @@ def load_model(
     # torch_dtype と low_cpu_mem_usage の設定
     torch_dtype = None
     low_cpu_mem_usage = True  # 常に True にしてメモリ効率を向上
-    if use_fp16:
+    if use_fp16 is True:
         torch_dtype = torch.float16
 
     # BERT モデルをロードし、辞書に格納して返す
