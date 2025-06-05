@@ -452,7 +452,7 @@ class TTSModel:
 
             # 通常のテキストから音声を生成
             if not line_split:
-                with torch.no_grad():
+                with torch.inference_mode():
                     audio = infer(
                         text=text,
                         sdp_ratio=sdp_ratio,
@@ -476,7 +476,7 @@ class TTSModel:
             else:
                 texts = [t for t in text.split("\n") if t != ""]
                 audios = []
-                with torch.no_grad():
+                with torch.inference_mode():
                     for i, t in enumerate(texts):
                         audios.append(
                             # given_phone/tone は改行ごとに分割する際は渡さない

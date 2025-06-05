@@ -80,28 +80,28 @@ def get_text_onnx(
     assert bert_ori.shape[-1] == len(phone), phone
 
     if language_str == Languages.ZH:
-        bert = bert_ori
+        zh_bert = bert_ori
         ja_bert = np.zeros((1024, len(phone)), dtype=np.float32)
         en_bert = np.zeros((1024, len(phone)), dtype=np.float32)
     elif language_str == Languages.JP:
-        bert = np.zeros((1024, len(phone)), dtype=np.float32)
+        zh_bert = np.zeros((1024, len(phone)), dtype=np.float32)
         ja_bert = bert_ori
         en_bert = np.zeros((1024, len(phone)), dtype=np.float32)
     elif language_str == Languages.EN:
-        bert = np.zeros((1024, len(phone)), dtype=np.float32)
+        zh_bert = np.zeros((1024, len(phone)), dtype=np.float32)
         ja_bert = np.zeros((1024, len(phone)), dtype=np.float32)
         en_bert = bert_ori
     else:
         raise ValueError("language_str should be ZH, JP or EN")
 
-    assert bert.shape[-1] == len(phone), (
-        f"Bert seq len {bert.shape[-1]} != {len(phone)}"
+    assert zh_bert.shape[-1] == len(phone), (
+        f"Bert seq len {zh_bert.shape[-1]} != {len(phone)}"
     )
 
     phone = np.array(phone, dtype=np.int64)
     tone = np.array(tone, dtype=np.int64)
     language = np.array(language, dtype=np.int64)
-    return bert, ja_bert, en_bert, phone, tone, language
+    return zh_bert, ja_bert, en_bert, phone, tone, language
 
 
 def infer_onnx(
@@ -124,8 +124,13 @@ def infer_onnx(
     given_tone: list[int] | None = None,
     jtalk: OpenJTalk | None = None,
 ) -> NDArray[np.float32]:
+    """
+    ONNX 版音声合成モデルの推論を実行する関数。
+    """
     is_jp_extra = hps.version.endswith("JP-Extra")
-    bert, ja_bert, en_bert, phones, tones, lang_ids = get_text_onnx(
+    # テキストから BERT 特徴量・音素列・アクセント列・言語 ID を取得
+    # zh_bert, ja_bert, en_bert のうち、指定された言語に対応する1つのみが実際の特徴量を持ち、残りの2つは空のテンソルになる
+    zh_bert, ja_bert, en_bert, phones, tones, lang_ids = get_text_onnx(
         text,
         language,
         hps,
@@ -140,21 +145,21 @@ def infer_onnx(
         phones = phones[3:]
         tones = tones[3:]
         lang_ids = lang_ids[3:]
-        bert = bert[:, 3:]
+        zh_bert = zh_bert[:, 3:]
         ja_bert = ja_bert[:, 3:]
         en_bert = en_bert[:, 3:]
     if skip_end:
         phones = phones[:-2]
         tones = tones[:-2]
         lang_ids = lang_ids[:-2]
-        bert = bert[:, :-2]
+        zh_bert = zh_bert[:, :-2]
         ja_bert = ja_bert[:, :-2]
         en_bert = en_bert[:, :-2]
 
     x_tst = np.expand_dims(phones, axis=0)
     tones = np.expand_dims(tones, axis=0)
     lang_ids = np.expand_dims(lang_ids, axis=0)
-    bert = np.expand_dims(bert, axis=0)
+    zh_bert = np.expand_dims(zh_bert, axis=0)
     ja_bert = np.expand_dims(ja_bert, axis=0)
     en_bert = np.expand_dims(en_bert, axis=0)
     x_tst_lengths = np.array([phones.shape[0]], dtype=np.int64)
@@ -185,7 +190,7 @@ def infer_onnx(
             sid_tensor,
             tones,
             lang_ids,
-            bert,
+            zh_bert,
             ja_bert,
             en_bert,
             style_vec_tensor,
@@ -216,14 +221,14 @@ def infer_onnx(
 
     del (
         x_tst,
-        tones,
-        lang_ids,
-        bert,
         x_tst_lengths,
         sid_tensor,
+        tones,
+        lang_ids,
+        zh_bert,
         ja_bert,
         en_bert,
         style_vec,
-    )  # , emo
+    )
 
     return audio

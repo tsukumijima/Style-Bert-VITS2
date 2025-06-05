@@ -1,3 +1,4 @@
+from collections.abc import Iterator
 from typing import Any, cast
 
 import numpy as np
@@ -179,28 +180,113 @@ def get_text(
     assert bert_ori.shape[-1] == len(phone), phone
 
     if language_str == Languages.ZH:
-        bert = bert_ori
+        zh_bert = bert_ori
         ja_bert = torch.zeros(1024, len(phone), device=device)
         en_bert = torch.zeros(1024, len(phone), device=device)
     elif language_str == Languages.JP:
-        bert = torch.zeros(1024, len(phone), device=device)
+        zh_bert = torch.zeros(1024, len(phone), device=device)
         ja_bert = bert_ori
         en_bert = torch.zeros(1024, len(phone), device=device)
     elif language_str == Languages.EN:
-        bert = torch.zeros(1024, len(phone), device=device)
+        zh_bert = torch.zeros(1024, len(phone), device=device)
         ja_bert = torch.zeros(1024, len(phone), device=device)
         en_bert = bert_ori
     else:
         raise ValueError("language_str should be ZH, JP or EN")
 
-    assert bert.shape[-1] == len(phone), (
-        f"Bert seq len {bert.shape[-1]} != {len(phone)}"
+    assert zh_bert.shape[-1] == len(phone), (
+        f"Bert seq len {zh_bert.shape[-1]} != {len(phone)}"
     )
 
     phone = torch.LongTensor(phone).to(device)
     tone = torch.LongTensor(tone).to(device)
     language = torch.LongTensor(language).to(device)
-    return bert, ja_bert, en_bert, phone, tone, language
+    return zh_bert, ja_bert, en_bert, phone, tone, language
+
+
+def prepare_inference_data(
+    text: str,
+    style_vec: NDArray[Any],
+    sid: int,  # In the original Bert-VITS2, its speaker_name: str, but here it's id
+    language: Languages,
+    hps: HyperParameters,
+    device: str,
+    skip_start: bool = False,
+    skip_end: bool = False,
+    assist_text: str | None = None,
+    assist_text_weight: float = 0.7,
+    given_phone: list[str] | None = None,
+    given_tone: list[int] | None = None,
+    jtalk: OpenJTalk | None = None,
+) -> tuple[
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+]:
+    """
+    推論に必要なデータの前処理を行う共通関数。
+    infer() と infer_stream() で共通に使用される。
+
+    Returns:
+        tuple: (x_tst, x_tst_lengths, sid_tensor, tones, lang_ids, zh_bert, ja_bert, en_bert, style_vec_tensor)
+    """
+    # テキストから BERT 特徴量・音素列・アクセント列・言語 ID を取得
+    # zh_bert, ja_bert, en_bert のうち、指定された言語に対応する1つのみが実際の特徴量を持ち、残りの2つは空のテンソルになる
+    zh_bert, ja_bert, en_bert, phones, tones, lang_ids = get_text(
+        text,
+        language,
+        hps,
+        device,
+        assist_text=assist_text,
+        assist_text_weight=assist_text_weight,
+        given_phone=given_phone,
+        given_tone=given_tone,
+        jtalk=jtalk,
+    )
+    if skip_start:
+        phones = phones[3:]
+        tones = tones[3:]
+        lang_ids = lang_ids[3:]
+        zh_bert = zh_bert[:, 3:]
+        ja_bert = ja_bert[:, 3:]
+        en_bert = en_bert[:, 3:]
+    if skip_end:
+        phones = phones[:-2]
+        tones = tones[:-2]
+        lang_ids = lang_ids[:-2]
+        zh_bert = zh_bert[:, :-2]
+        ja_bert = ja_bert[:, :-2]
+        en_bert = en_bert[:, :-2]
+
+    x_tst = phones.unsqueeze(0)
+    tones = tones.unsqueeze(0)
+    lang_ids = lang_ids.unsqueeze(0)
+    zh_bert = zh_bert.unsqueeze(0)
+    ja_bert = ja_bert.unsqueeze(0)
+    en_bert = en_bert.unsqueeze(0)
+    x_tst_lengths = torch.LongTensor([phones.size(0)]).to(device)
+    style_vec_tensor = torch.from_numpy(style_vec).to(device).unsqueeze(0)
+
+    del phones
+    sid_tensor = torch.LongTensor([sid]).to(device)
+
+    return (
+        x_tst,
+        x_tst_lengths,
+        sid_tensor,
+        tones,
+        lang_ids,
+        zh_bert,
+        ja_bert,
+        en_bert,
+        style_vec_tensor,
+    )
 
 
 def infer(
@@ -225,45 +311,38 @@ def infer(
     use_fp16_inference: bool = False,
     clear_cuda_cache: bool = True,
 ) -> NDArray[np.float32]:
+    """
+    PyTorch 版音声合成モデルの推論を実行する関数。
+    """
     is_jp_extra = hps.version.endswith("JP-Extra")
-    bert, ja_bert, en_bert, phones, tones, lang_ids = get_text(
-        text,
-        language,
-        hps,
-        device,
-        assist_text=assist_text,
-        assist_text_weight=assist_text_weight,
-        given_phone=given_phone,
-        given_tone=given_tone,
-        jtalk=jtalk,
-    )
-    if skip_start:
-        phones = phones[3:]
-        tones = tones[3:]
-        lang_ids = lang_ids[3:]
-        bert = bert[:, 3:]
-        ja_bert = ja_bert[:, 3:]
-        en_bert = en_bert[:, 3:]
-    if skip_end:
-        phones = phones[:-2]
-        tones = tones[:-2]
-        lang_ids = lang_ids[:-2]
-        bert = bert[:, :-2]
-        ja_bert = ja_bert[:, :-2]
-        en_bert = en_bert[:, :-2]
 
+    # 推論データの前処理（共通処理）
     with torch.inference_mode():
-        x_tst = phones.unsqueeze(0)
-        tones = tones.unsqueeze(0)
-        lang_ids = lang_ids.unsqueeze(0)
-        bert = bert.unsqueeze(0)
-        ja_bert = ja_bert.unsqueeze(0)
-        en_bert = en_bert.unsqueeze(0)
-        x_tst_lengths = torch.LongTensor([phones.size(0)]).to(device)
-        style_vec_tensor = torch.from_numpy(style_vec).to(device).unsqueeze(0)
-
-        del phones
-        sid_tensor = torch.LongTensor([sid]).to(device)
+        (
+            x_tst,
+            x_tst_lengths,
+            sid_tensor,
+            tones,
+            lang_ids,
+            zh_bert,
+            ja_bert,
+            en_bert,
+            style_vec_tensor,
+        ) = prepare_inference_data(
+            text,
+            style_vec=style_vec,
+            sid=sid,
+            language=language,
+            hps=hps,
+            device=device,
+            skip_start=skip_start,
+            skip_end=skip_end,
+            assist_text=assist_text,
+            assist_text_weight=assist_text_weight,
+            given_phone=given_phone,
+            given_tone=given_tone,
+            jtalk=jtalk,
+        )
 
         if is_jp_extra:
             output = cast(SynthesizerTrnJPExtra, net_g).infer(
@@ -287,7 +366,7 @@ def infer(
                 sid_tensor,
                 tones,
                 lang_ids,
-                bert,
+                zh_bert,
                 ja_bert,
                 en_bert,
                 style_vec=style_vec_tensor,
@@ -302,18 +381,203 @@ def infer(
 
         del (
             x_tst,
-            tones,
-            lang_ids,
-            bert,
             x_tst_lengths,
             sid_tensor,
+            tones,
+            lang_ids,
+            zh_bert,
             ja_bert,
             en_bert,
             style_vec,
-        )  # , emo
+        )
 
         # CUDA メモリを解放する (デフォルトでは True)
         if clear_cuda_cache and torch.cuda.is_available():
             torch.cuda.empty_cache()
 
         return audio
+
+
+def infer_stream(
+    text: str,
+    style_vec: NDArray[Any],
+    sdp_ratio: float,
+    noise_scale: float,
+    noise_scale_w: float,
+    length_scale: float,
+    sid: int,  # In the original Bert-VITS2, its speaker_name: str, but here it's id
+    language: Languages,
+    hps: HyperParameters,
+    net_g: SynthesizerTrn | SynthesizerTrnJPExtra,
+    device: str,
+    skip_start: bool = False,
+    skip_end: bool = False,
+    assist_text: str | None = None,
+    assist_text_weight: float = 0.7,
+    given_phone: list[str] | None = None,
+    given_tone: list[int] | None = None,
+    jtalk: OpenJTalk | None = None,
+    use_fp16_inference: bool = False,
+    clear_cuda_cache: bool = True,
+    chunk_size: int = 65,  # 下記記事を参考に最適な値を調整
+    overlap_size: int = 22,  # 下記記事を参照 (L=11, 11+11=22)
+) -> Iterator[NDArray[np.float32]]:
+    """
+    PyTorch 版音声合成モデルのストリーミング推論を実行する関数。
+    Generator 部分のみストリーミング処理を行い、音声チャンクを逐次 yield する。
+    ref: https://qiita.com/__dAi00/items/970f0fe66286510537dd
+    """
+    is_jp_extra = hps.version.endswith("JP-Extra")
+
+    # 推論データの前処理（共通処理）
+    with torch.inference_mode():
+        (
+            x_tst,
+            x_tst_lengths,
+            sid_tensor,
+            tones,
+            lang_ids,
+            zh_bert,
+            ja_bert,
+            en_bert,
+            style_vec_tensor,
+        ) = prepare_inference_data(
+            text,
+            style_vec=style_vec,
+            sid=sid,
+            language=language,
+            hps=hps,
+            device=device,
+            skip_start=skip_start,
+            skip_end=skip_end,
+            assist_text=assist_text,
+            assist_text_weight=assist_text_weight,
+            given_phone=given_phone,
+            given_tone=given_tone,
+            jtalk=jtalk,
+        )
+
+        # Generator 実行前の共通処理を実行
+        if is_jp_extra:
+            z, y_mask, g, attn, z_p, m_p, logs_p = cast(
+                SynthesizerTrnJPExtra, net_g
+            ).infer_input_feature(
+                x_tst,
+                x_tst_lengths,
+                sid_tensor,
+                tones,
+                lang_ids,
+                ja_bert,
+                style_vec=style_vec_tensor,
+                length_scale=length_scale,
+                sdp_ratio=sdp_ratio,
+                noise_scale=noise_scale,
+                noise_scale_w=noise_scale_w,
+                use_fp16_inference=use_fp16_inference,
+            )
+        else:
+            z, y_mask, g, attn, z_p, m_p, logs_p = cast(
+                SynthesizerTrn, net_g
+            ).infer_input_feature(
+                x_tst,
+                x_tst_lengths,
+                sid_tensor,
+                tones,
+                lang_ids,
+                zh_bert,
+                ja_bert,
+                en_bert,
+                style_vec=style_vec_tensor,
+                length_scale=length_scale,
+                sdp_ratio=sdp_ratio,
+                noise_scale=noise_scale,
+                noise_scale_w=noise_scale_w,
+                use_fp16_inference=use_fp16_inference,
+            )
+
+        # Generator 部分のストリーミング処理
+        z_input = z * y_mask
+        total_length = z_input.shape[2]  # 入力特徴量の総フレーム数
+
+        # torch.autocast() 用のデバイスタイプを取得
+        device_obj = torch.device(device)
+        device_type = (
+            device_obj.type
+            if hasattr(device_obj, "type")
+            else str(device).split(":")[0]
+        )
+
+        # 全体のアップサンプリング率を計算
+        # hps.model.upsample_rates の積が Decoder の総アップサンプリング率
+        total_upsample_factor = np.prod(hps.model.upsample_rates).item()
+        # overlap_size は入力特徴量空間でのオーバーラップフレーム数 (e.g., 22)
+        # margin_frames は片側のマージンフレーム数 (e.g., 11)
+        margin_frames = overlap_size // 2
+
+        for start_idx in range(0, total_length, chunk_size - overlap_size):
+            end_idx = min(start_idx + chunk_size, total_length)
+            # 現在処理する入力特徴量のチャンク
+            chunk = z_input[:, :, start_idx:end_idx]
+
+            # FP16 推論の処理
+            if use_fp16_inference is True:
+                with torch.autocast(
+                    device_type=device_type,
+                    dtype=torch.float16,
+                ):
+                    # Generator への入力を FP16 に変換
+                    # chunk_output は音声波形チャンク (B, 1, T_samples)
+                    chunk_output = net_g.dec(chunk.half(), g=g.half())
+            else:
+                # FP16 を使わない場合は通常通り実行
+                chunk_output = net_g.dec(chunk, g=g)
+
+            # オーバーラップ処理: 音声サンプル単位でトリミング
+            current_output_length_samples = chunk_output.shape[2]
+
+            trim_left_samples = 0
+            # 最初のチャンクでない場合、左マージンに対応するサンプル数を計算してトリム
+            if start_idx != 0:
+                trim_left_samples = margin_frames * total_upsample_factor
+
+            trim_right_samples = 0
+            # 最後のチャンクでない場合、右マージンに対応するサンプル数を計算してトリム
+            if end_idx != total_length:
+                trim_right_samples = margin_frames * total_upsample_factor
+
+            # 有効な音声部分の開始・終了インデックス（サンプル単位）
+            start_slice_idx = trim_left_samples
+            end_slice_idx = current_output_length_samples - trim_right_samples
+
+            if start_slice_idx < end_slice_idx:
+                # 有効な音声部分をスライス
+                valid_audio_chunk_tensor = chunk_output[
+                    :, :, start_slice_idx:end_slice_idx
+                ]
+                # 音声チャンクを numpy 配列に変換して yield
+                audio_chunk = valid_audio_chunk_tensor[0, 0].data.cpu().float().numpy()
+                if audio_chunk.size > 0:
+                    yield audio_chunk
+            else:
+                # 有効な音声部分がない場合は何も yield しない
+                pass
+
+        del (
+            x_tst,
+            x_tst_lengths,
+            sid_tensor,
+            tones,
+            lang_ids,
+            zh_bert,
+            ja_bert,
+            en_bert,
+            style_vec,
+            z,
+            y_mask,
+            g,
+            z_input,
+        )
+
+        # CUDA メモリを解放する (デフォルトでは True)
+        if clear_cuda_cache and torch.cuda.is_available():
+            torch.cuda.empty_cache()

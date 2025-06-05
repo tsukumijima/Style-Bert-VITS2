@@ -1043,7 +1043,7 @@ class SynthesizerTrn(nn.Module):
             (x, logw, logw_),
         )
 
-    def infer(
+    def infer_input_feature(
         self,
         x: torch.Tensor,
         x_lengths: torch.Tensor,
@@ -1057,11 +1057,25 @@ class SynthesizerTrn(nn.Module):
         noise_scale: float = 0.667,
         length_scale: float = 1.0,
         noise_scale_w: float = 0.8,
-        max_len: int | None = None,
         sdp_ratio: float = 0.0,
         y: torch.Tensor | None = None,
         use_fp16_inference: bool = False,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, tuple[torch.Tensor, ...]]:
+    ) -> tuple[
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+    ]:
+        """
+        Generator への入力特徴量（潜在変数）を生成する。通常推論・ストリーミング推論の両方で共通。
+
+        Returns:
+            tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+                z (latent), y_mask, g (global conditioning), attn (attention), z_p, m_p, logs_p
+        """
         # x, m_p, logs_p, x_mask = self.enc_p(x, x_lengths, tone, language, bert)
         # g = self.gst(y)
         if self.n_speakers > 0:
@@ -1116,6 +1130,46 @@ class SynthesizerTrn(nn.Module):
         # Flow
         z = self.flow(z_p, y_mask, g=g, reverse=True)
 
+        return z, y_mask, g, attn, z_p, m_p, logs_p
+
+    def infer(
+        self,
+        x: torch.Tensor,
+        x_lengths: torch.Tensor,
+        sid: torch.Tensor,
+        tone: torch.Tensor,
+        language: torch.Tensor,
+        bert: torch.Tensor,
+        ja_bert: torch.Tensor,
+        en_bert: torch.Tensor,
+        style_vec: torch.Tensor,
+        noise_scale: float = 0.667,
+        length_scale: float = 1.0,
+        noise_scale_w: float = 0.8,
+        max_len: int | None = None,
+        sdp_ratio: float = 0.0,
+        y: torch.Tensor | None = None,
+        use_fp16_inference: bool = False,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, tuple[torch.Tensor, ...]]:
+        # Generator 実行前の共通処理
+        z, y_mask, g, attn, z_p, m_p, logs_p = self.infer_input_feature(
+            x,
+            x_lengths,
+            sid,
+            tone,
+            language,
+            bert,
+            ja_bert,
+            en_bert,
+            style_vec,
+            noise_scale,
+            length_scale,
+            noise_scale_w,
+            sdp_ratio,
+            y,
+            use_fp16_inference,
+        )
+
         # torch.autocast() 用のデバイスタイプを取得
         device = x.device
         device_type = (
@@ -1136,4 +1190,4 @@ class SynthesizerTrn(nn.Module):
             # FP16 を使わない場合は通常通り実行
             o = self.dec((z * y_mask)[:, :, :max_len], g=g)
 
-        return o, attn, y_mask, (z, z_p, m_p, logs_p)
+        return (o, attn, y_mask, (z, z_p, m_p, logs_p))
