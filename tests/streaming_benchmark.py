@@ -12,7 +12,7 @@ https://qiita.com/__dAi00/items/970f0fe66286510537dd の結果と同様の測定
 - 生成音声の長さごとの効果の変化
 
 使用方法:
-    python -m tests.streaming_benchmark [--device cuda] [--model koharune-ami] [--runs 3]
+    .venv/bin/python -m tests.streaming_benchmark [--device cuda] [--model koharune-ami] [--runs 3]
 """
 
 import argparse
