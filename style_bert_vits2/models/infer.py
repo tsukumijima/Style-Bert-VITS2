@@ -179,22 +179,40 @@ def get_text(
     del word2ph
     assert bert_ori.shape[-1] == len(phone), phone
 
-    if language_str == Languages.ZH:
-        zh_bert = bert_ori
-        ja_bert = torch.zeros(1024, len(phone), device=device)
-        en_bert = torch.zeros(1024, len(phone), device=device)
-    elif language_str == Languages.JP:
-        zh_bert = torch.zeros(1024, len(phone), device=device)
-        ja_bert = bert_ori
-        en_bert = torch.zeros(1024, len(phone), device=device)
-    elif language_str == Languages.EN:
-        zh_bert = torch.zeros(1024, len(phone), device=device)
-        ja_bert = torch.zeros(1024, len(phone), device=device)
-        en_bert = bert_ori
+    if use_jp_extra is True:
+        # JP-Extra モデルでは ja_bert のみが推論時に参照され、他の特徴量は一切参照されない
+        # 他の特徴量を空テンソルにすることで、VRAM 使用量を削減できる
+        if language_str == Languages.JP:
+            zh_bert = torch.empty(0, 0, device=device)
+            ja_bert = bert_ori
+            en_bert = torch.empty(0, 0, device=device)
+        elif language_str == Languages.ZH:
+            zh_bert = bert_ori
+            ja_bert = torch.empty(0, 0, device=device)
+            en_bert = torch.empty(0, 0, device=device)
+        elif language_str == Languages.EN:
+            zh_bert = torch.empty(0, 0, device=device)
+            ja_bert = torch.empty(0, 0, device=device)
+            en_bert = bert_ori
+        else:
+            raise ValueError("language_str should be ZH, JP or EN")
     else:
-        raise ValueError("language_str should be ZH, JP or EN")
+        if language_str == Languages.ZH:
+            zh_bert = bert_ori
+            ja_bert = torch.zeros(1024, len(phone), device=device)
+            en_bert = torch.zeros(1024, len(phone), device=device)
+        elif language_str == Languages.JP:
+            zh_bert = torch.zeros(1024, len(phone), device=device)
+            ja_bert = bert_ori
+            en_bert = torch.zeros(1024, len(phone), device=device)
+        elif language_str == Languages.EN:
+            zh_bert = torch.zeros(1024, len(phone), device=device)
+            ja_bert = torch.zeros(1024, len(phone), device=device)
+            en_bert = bert_ori
+        else:
+            raise ValueError("language_str should be ZH, JP or EN")
 
-    assert zh_bert.shape[-1] == len(phone), (
+    assert zh_bert.shape[-1] == len(phone) or zh_bert.numel() == 0, (
         f"Bert seq len {zh_bert.shape[-1]} != {len(phone)}"
     )
 
@@ -427,6 +445,9 @@ def infer_stream(
     Generator 部分のみストリーミング処理を行い、音声チャンクを逐次 yield する。
     ref: https://qiita.com/__dAi00/items/970f0fe66286510537dd
     """
+    assert chunk_size > overlap_size, (
+        f"chunk_size ({chunk_size}) must be larger than overlap_size ({overlap_size}) to avoid infinite loop."
+    )
     is_jp_extra = hps.version.endswith("JP-Extra")
 
     # 推論データの前処理（共通処理）
