@@ -84,9 +84,15 @@ def synthesize(
         ("CPUExecutionProvider", {"arena_extend_strategy": "kSameAsRequested"}),
     ],
     use_random_texts: bool = False,
+    use_fp16: bool = False,
 ):
     # 音声合成モデルが配置されていれば、音声合成を実行
-    model_holder = TTSModelHolder(BASE_DIR / "model_assets", device, onnx_providers)
+    model_holder = TTSModelHolder(
+        BASE_DIR / "model_assets",
+        device=device,
+        onnx_providers=onnx_providers,
+        use_fp16=use_fp16,
+    )
     if len(model_holder.models_info) > 0:
         for model_info in model_holder.models_info:
             if model_info.name in TEST_MODELS:
@@ -186,6 +192,16 @@ def test_synthesize_cuda():
 
 def test_synthesize_cuda_random_texts():
     synthesize(inference_type="torch", device="cuda", use_random_texts=True)
+
+
+def test_synthesize_cuda_fp16():
+    synthesize(inference_type="torch", device="cuda", use_fp16=True)
+
+
+def test_synthesize_cuda_random_texts_fp16():
+    synthesize(
+        inference_type="torch", device="cuda", use_random_texts=True, use_fp16=True
+    )
 
 
 def test_synthesize_onnx_cpu():
