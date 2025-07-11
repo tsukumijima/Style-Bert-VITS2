@@ -402,6 +402,7 @@ class TextEncoder(nn.Module):
         style_vec: torch.Tensor,
         sid: torch.Tensor,
         g: torch.Tensor | None = None,
+        use_fp16: bool = False,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         bert_emb = self.bert_proj(bert).transpose(1, 2)
         ja_bert_emb = self.ja_bert_proj(ja_bert).transpose(1, 2)
@@ -422,7 +423,7 @@ class TextEncoder(nn.Module):
             x.dtype
         )
 
-        x = self.encoder(x * x_mask, x_mask, g=g)
+        x = self.encoder(x * x_mask, x_mask, g=g, use_fp16=use_fp16)
         stats = self.proj(x) * x_mask
 
         m, logs = torch.split(stats, self.out_channels, dim=1)
@@ -1090,7 +1091,7 @@ class SynthesizerTrn(nn.Module):
             ja_bert = ja_bert.float()
             en_bert = en_bert.float()
 
-        # 精度クリティカルな部分 (Encoder, SDP, Flow) は常に FP32 で実行
+        # Encoder は基本 FP32 で実行し、相対位置エンコーディング部分のみ FP16 化
         x, m_p, logs_p, x_mask = self.enc_p(
             x,
             x_lengths,
@@ -1102,7 +1103,10 @@ class SynthesizerTrn(nn.Module):
             style_vec,
             sid,
             g=g,
+            use_fp16=use_fp16,
         )
+
+        # 精度クリティカルな部分 (SDP/DP, Flow) は常に FP32 で実行する
 
         # SDP (Stochastic Duration Predictor) / DP (Duration Predictor)
         logw = self.sdp(x, x_mask, g=g, reverse=True, noise_scale=noise_scale_w) * (
@@ -1170,19 +1174,16 @@ class SynthesizerTrn(nn.Module):
             use_fp16,
         )
 
-        # torch.autocast() 用のデバイスタイプを取得
-        device = x.device
-        device_type = (
-            device.type if hasattr(device, "type") else str(device).split(":")[0]
-        )
-
-        # Generator (Decoder) のみ FP16 / AMP (Automatic Mixed Precision) で実行
+        # Generator (Decoder) のみ全体を FP16 / AMP (Automatic Mixed Precision) で実行
         if use_fp16 is True:
             # z テンソルを Generator の入力用に FP16 に変換
             z_input = (z * y_mask)[:, :, :max_len]
+            # デバイスタイプを動的に取得
+            device_type = z_input.device.type
             with torch.autocast(
                 device_type=device_type,
                 dtype=torch.float16,
+                enabled=True,
             ):
                 # Generator への入力を FP16 に変換
                 o = self.dec(z_input.half(), g=g.half())

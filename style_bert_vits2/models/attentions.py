@@ -102,7 +102,11 @@ class Encoder(nn.Module):
             self.norm_layers_2.append(LayerNorm(hidden_channels))
 
     def forward(
-        self, x: torch.Tensor, x_mask: torch.Tensor, g: torch.Tensor | None = None
+        self,
+        x: torch.Tensor,
+        x_mask: torch.Tensor,
+        g: torch.Tensor | None = None,
+        use_fp16: bool = False,
     ) -> torch.Tensor:
         attn_mask = x_mask.unsqueeze(2) * x_mask.unsqueeze(-1)
         x = x * x_mask
@@ -113,7 +117,7 @@ class Encoder(nn.Module):
                 g = g.transpose(1, 2)
                 x = x + g
                 x = x * x_mask
-            y = self.attn_layers[i](x, x, attn_mask)
+            y = self.attn_layers[i](x, x, attn_mask, use_fp16=use_fp16)
             y = self.drop(y)
             x = self.norm_layers_1[i](x + y)
 
@@ -273,13 +277,17 @@ class MultiHeadAttention(nn.Module):
                 self.conv_k.bias.copy_(self.conv_q.bias)
 
     def forward(
-        self, x: torch.Tensor, c: torch.Tensor, attn_mask: torch.Tensor | None = None
+        self,
+        x: torch.Tensor,
+        c: torch.Tensor,
+        attn_mask: torch.Tensor | None = None,
+        use_fp16: bool = False,
     ) -> torch.Tensor:
         q = self.conv_q(x)
         k = self.conv_k(c)
         v = self.conv_v(c)
 
-        x, self.attn = self.attention(q, k, v, mask=attn_mask)
+        x, self.attn = self.attention(q, k, v, mask=attn_mask, use_fp16=use_fp16)
 
         x = self.conv_o(x)
         return x
@@ -290,6 +298,7 @@ class MultiHeadAttention(nn.Module):
         key: torch.Tensor,
         value: torch.Tensor,
         mask: torch.Tensor | None = None,
+        use_fp16: bool = False,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         # reshape [b, d, t] -> [b, n_h, t, d_k]
         b, d, t_s, t_t = (*key.size(), query.size(2))
@@ -302,12 +311,34 @@ class MultiHeadAttention(nn.Module):
             assert t_s == t_t, (
                 "Relative attention is only available for self-attention."
             )
-            key_relative_embeddings = self._get_relative_embeddings(self.emb_rel_k, t_s)
-            rel_logits = self._matmul_with_relative_keys(
-                query / math.sqrt(self.k_channels), key_relative_embeddings
-            )
-            scores_local = self._relative_position_to_absolute_position(rel_logits)
-            scores = scores + scores_local
+            # メモリ削減のため、相対位置計算のみ FP16 で実行
+            if use_fp16 is True:
+                device_type = query.device.type  # デバイスタイプを動的に取得
+                with torch.autocast(
+                    device_type=device_type,
+                    dtype=torch.float16,
+                    enabled=True,
+                ):
+                    key_relative_embeddings = self._get_relative_embeddings(
+                        self.emb_rel_k, t_s
+                    )
+                    rel_logits = self._matmul_with_relative_keys(
+                        query / math.sqrt(self.k_channels), key_relative_embeddings
+                    )
+                    scores_local = self._relative_position_to_absolute_position(
+                        rel_logits
+                    )
+                # 計算後、scores を元の dtype に戻す
+                scores = scores + scores_local.to(scores.dtype)
+            else:
+                key_relative_embeddings = self._get_relative_embeddings(
+                    self.emb_rel_k, t_s
+                )
+                rel_logits = self._matmul_with_relative_keys(
+                    query / math.sqrt(self.k_channels), key_relative_embeddings
+                )
+                scores_local = self._relative_position_to_absolute_position(rel_logits)
+                scores = scores + scores_local
         if self.proximal_bias:
             assert t_s == t_t, "Proximal bias is only available for self-attention."
             scores = scores + self._attention_bias_proximal(t_s).to(
@@ -390,19 +421,44 @@ class MultiHeadAttention(nn.Module):
         ret: [b, h, l, l]
         """
         batch, heads, length, _ = x.size()
-        # Concat columns of pad to shift from relative to absolute indexing.
-        x = F.pad(x, commons.convert_pad_shape([[0, 0], [0, 0], [0, 0], [0, 1]]))
+        # # Concat columns of pad to shift from relative to absolute indexing.
+        # x = F.pad(x, commons.convert_pad_shape([[0, 0], [0, 0], [0, 0], [0, 1]]))
 
-        # Concat extra elements so to add up to shape (len+1, 2*len-1).
-        x_flat = x.view([batch, heads, length * 2 * length])
-        x_flat = F.pad(
-            x_flat, commons.convert_pad_shape([[0, 0], [0, 0], [0, length - 1]])
+        # # Concat extra elements so to add up to shape (len+1, 2*len-1).
+        # x_flat = x.view([batch, heads, length * 2 * length])
+        # x_flat = F.pad(
+        #     x_flat, commons.convert_pad_shape([[0, 0], [0, 0], [0, length - 1]])
+        # )
+
+        # # Reshape and slice out the padded elements.
+        # x_final = x_flat.view([batch, heads, length + 1, 2 * length - 1])[
+        #     :, :, :length, length - 1 :
+        # ]
+
+        # --- new implementation (for memory efficiency) ---
+
+        # Generate row and column indices using broadcasting
+        row_indices = (
+            torch.arange(length, device=x.device).unsqueeze(1).expand(length, length)
+        )  # [length, length]
+        col_indices = row_indices + (
+            length - 1
+        )  # Shift to match relative positioning: [length, length]
+
+        # Flatten the indices for gathering
+        flat_indices = col_indices.view(-1)  # [length * length]
+
+        # Flatten x for gathering: [batch, heads, length * (2 * length - 1)]
+        x_flat = x.view(batch, heads, -1)
+
+        # Gather the required elements directly without padding or large intermediates
+        x_gathered = torch.gather(
+            x_flat, dim=2, index=flat_indices.expand(batch, heads, -1)
         )
 
-        # Reshape and slice out the padded elements.
-        x_final = x_flat.view([batch, heads, length + 1, 2 * length - 1])[
-            :, :, :length, length - 1 :
-        ]
+        # Reshape back to [batch, heads, length, length]
+        x_final = x_gathered.view(batch, heads, length, length)
+
         return x_final
 
     def _absolute_position_to_relative_position(self, x: torch.Tensor) -> torch.Tensor:
