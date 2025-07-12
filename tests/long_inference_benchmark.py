@@ -37,8 +37,6 @@ from style_bert_vits2.nlp import bert_models
 from style_bert_vits2.tts_model import TTSModel, TTSModelHolder
 
 
-USE_FP16 = True
-
 # 測定用サンプルテキスト (300文字以上)
 BENCHMARK_TEXTS = [
     {
@@ -121,6 +119,7 @@ def run_benchmark(
     device: str = "cpu",
     model_name: str = "koharune-ami",
     num_runs: int = 5,
+    use_fp16: bool = True,
 ) -> None:
     """
     ベンチマークを実行する。
@@ -131,6 +130,7 @@ def run_benchmark(
     print(f"デバイス: {device}")
     print(f"モデル: {model_name}")
     print(f"測定回数: {num_runs}")
+    print(f"FP16: {use_fp16}")
     print("=" * 80)
 
     # モデルホルダーを初期化
@@ -140,7 +140,7 @@ def run_benchmark(
         onnx_providers=[
             ("CPUExecutionProvider", {"arena_extend_strategy": "kSameAsRequested"})
         ],
-        use_fp16=USE_FP16,
+        use_fp16=use_fp16,
     )
     if len(model_holder.models_info) == 0:
         print("エラー: 音声合成モデルが見つかりませんでした。")
@@ -203,7 +203,7 @@ def run_benchmark(
                     model,
                     text,
                     device,
-                    use_fp16=USE_FP16,
+                    use_fp16=use_fp16,
                 )
                 infer_times.append(infer_time)
                 peak_memories.append(peak_memory)
@@ -295,19 +295,35 @@ def main() -> None:
         default=5,
         help="各テストケースの実行回数 (default: 5)",
     )
+    parser.add_argument(
+        "--fp16",
+        dest="use_fp16",
+        action="store_true",
+        help="FP16 で推論を行う (default)",
+    )
+    parser.add_argument(
+        "--no-fp16",
+        dest="use_fp16",
+        action="store_false",
+        help="FP16 を無効化する",
+    )
+    parser.set_defaults(use_fp16=True)
 
     args = parser.parse_args()
 
     try:
         # Preload BERT model
         logger.info("Preloading BERT model...")
-        bert_models.load_model(Languages.JP, device_map=args.device, use_fp16=True)
+        bert_models.load_model(
+            Languages.JP, device_map=args.device, use_fp16=args.use_fp16
+        )
         logger.info("BERT model preloaded successfully")
 
         run_benchmark(
             device=args.device,
             model_name=args.model,
             num_runs=args.runs,
+            use_fp16=args.use_fp16,
         )
     except KeyboardInterrupt:
         print("\nベンチマークが中断されました。")
