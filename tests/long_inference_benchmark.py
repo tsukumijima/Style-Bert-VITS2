@@ -50,11 +50,11 @@ BENCHMARK_TEXTS = [
     },
     {
         "text": "あのイーハトーヴォのすきとおった風、夏でも底に冷たさをもつ青いそら、うつくしい森で飾られたモリーオ市、郊外のぎらぎらひかる草の波。またそのなかでいっしょになったたくさんのひとたち、ファゼーロとロザーロ、羊飼のミーロや、顔の赤いこどもたち、地主のテーモ、山猫博士のボーガント・デストゥパーゴなど、いまこの暗い巨きな家にはたったひとりがいません。夏の夕暮れどきに白い月がのぼり、草の波から出る霧がそのへんをいつそう白くしたころ、たくさんのおじいさんやおばあさんが、木の机の前にすわって、青い蝋燭をたてて、なにやら熱心に読書をしています。そこにはまた、青い服を着たこどもたちが、たくさん集まって、なにやら楽しげに遊んでいます。",
-        "description": "長文",
+        "description": "長文1",
     },
     {
         "text": "あのイーハトーヴォのすきとおった風、夏でも底に冷たさをもつ青いそら、うつくしい森で飾られたモリーオ市、郊外のぎらぎらひかる草の波。またそのなかでいっしょになったたくさんのひとたち、ファゼーロとロザーロ、羊飼のミーロや、顔の赤いこどもたち、地主のテーモ、山猫博士のボーガント・デストゥパーゴなど、いまこの暗い巨きな家にはたったひとりがいません。夏の夕暮れどきに白い月がのぼり、草の波から出る霧がそのへんをいつそう白くしたころ、たくさんのおじいさんやおばあさんが、木の机の前にすわって、青い蝋燭をたてて、なにやら熱心に読書をしています。そこにはまた、青い服を着たこどもたちが、たくさん集まって、なにやら楽しげに遊んでいます。そこにはまた、青い服を着たこどもたちが、たくさん集まって、なにやら楽しげに遊んでいます。そこにはまた、青い服を着たこどもたちが、たくさん集まって、なにやら楽しげに遊んでいます。そこにはまた、青い服を着たこどもたちが、たくさん集まって、なにやら楽しげに遊んでいます。そこにはまた、青い服を着たこどもたちが、たくさん集まって、なにやら楽しげに遊んでいます。",
-        "description": "長文",
+        "description": "長文2",
     },
 ]
 
@@ -85,34 +85,35 @@ def measure_infer_performance(
     style_vec = model.get_style_vector(0, 1.0)  # デフォルトスタイル
 
     # 推論を実行
-    audio_data = infer(
-        text=text,
-        style_vec=style_vec,
-        sdp_ratio=DEFAULT_SDP_RATIO,
-        noise_scale=DEFAULT_NOISE,
-        noise_scale_w=DEFAULT_NOISEW,
-        length_scale=DEFAULT_LENGTH,
-        sid=0,
-        language=Languages.JP,
-        hps=model.hyper_parameters,
-        net_g=net_g,
-        device=model.device,
-        **infer_kwargs,
-    )
+    with torch.inference_mode():
+        audio_data = infer(
+            text=text,
+            style_vec=style_vec,
+            sdp_ratio=DEFAULT_SDP_RATIO,
+            noise_scale=DEFAULT_NOISE,
+            noise_scale_w=DEFAULT_NOISEW,
+            length_scale=DEFAULT_LENGTH,
+            sid=0,
+            language=Languages.JP,
+            hps=model.hyper_parameters,
+            net_g=net_g,
+            device=model.device,
+            **infer_kwargs,
+        )
 
-    end_time = time.perf_counter()
-    total_time = end_time - start_time
+        end_time = time.perf_counter()
+        total_time = end_time - start_time
 
-    # ピークメモリ使用量を取得
-    if device == "cuda":
-        peak_memory = torch.cuda.max_memory_allocated() / (1024 * 1024)  # MB
-    else:
-        peak_memory = 0.0  # CPUでは測定しない
+        # ピークメモリ使用量を取得
+        if device == "cuda":
+            peak_memory = torch.cuda.max_memory_allocated() / (1024 * 1024)  # MB
+        else:
+            peak_memory = 0.0  # CPUでは測定しない
 
-    # 生成音声の長さを計算
-    audio_duration = len(audio_data) / model.hyper_parameters.data.sampling_rate
+        # 生成音声の長さを計算
+        audio_duration = len(audio_data) / model.hyper_parameters.data.sampling_rate
 
-    return total_time, peak_memory, audio_duration, audio_data
+        return total_time, peak_memory, audio_duration, audio_data
 
 
 def run_benchmark(

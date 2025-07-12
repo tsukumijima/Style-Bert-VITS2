@@ -20,6 +20,7 @@ import time
 from typing import Any, cast
 
 import numpy as np
+import torch
 from numpy.typing import NDArray
 
 from style_bert_vits2.constants import (
@@ -110,28 +111,29 @@ def measure_infer_performance(
     style_vec = model.get_style_vector(0, 1.0)  # デフォルトスタイル
 
     # 比較のために低レベル API で推論を実行
-    audio_data = infer(
-        text=text,
-        style_vec=style_vec,
-        sdp_ratio=DEFAULT_SDP_RATIO,
-        noise_scale=DEFAULT_NOISE,
-        noise_scale_w=DEFAULT_NOISEW,
-        length_scale=DEFAULT_LENGTH,
-        sid=0,
-        language=Languages.JP,
-        hps=model.hyper_parameters,
-        net_g=net_g,
-        device=model.device,
-        **infer_kwargs,
-    )
+    with torch.inference_mode():
+        audio_data = infer(
+            text=text,
+            style_vec=style_vec,
+            sdp_ratio=DEFAULT_SDP_RATIO,
+            noise_scale=DEFAULT_NOISE,
+            noise_scale_w=DEFAULT_NOISEW,
+            length_scale=DEFAULT_LENGTH,
+            sid=0,
+            language=Languages.JP,
+            hps=model.hyper_parameters,
+            net_g=net_g,
+            device=model.device,
+            **infer_kwargs,
+        )
 
-    end_time = time.perf_counter()
-    total_time = end_time - start_time
+        end_time = time.perf_counter()
+        total_time = end_time - start_time
 
-    # 生成音声の長さを計算
-    audio_duration = len(audio_data) / model.hyper_parameters.data.sampling_rate
+        # 生成音声の長さを計算
+        audio_duration = len(audio_data) / model.hyper_parameters.data.sampling_rate
 
-    return total_time, audio_duration, audio_data
+        return total_time, audio_duration, audio_data
 
 
 def measure_infer_stream_performance(
@@ -163,38 +165,39 @@ def measure_infer_stream_performance(
     audio_chunks = []
 
     # ストリーミング推論を実行
-    audio_generator = infer_stream(
-        text=text,
-        style_vec=style_vec,
-        sdp_ratio=DEFAULT_SDP_RATIO,
-        noise_scale=DEFAULT_NOISE,
-        noise_scale_w=DEFAULT_NOISEW,
-        length_scale=DEFAULT_LENGTH,
-        sid=0,
-        language=Languages.JP,
-        hps=model.hyper_parameters,
-        net_g=net_g,
-        device=device,
-        **infer_kwargs,
-    )
+    with torch.inference_mode():
+        audio_generator = infer_stream(
+            text=text,
+            style_vec=style_vec,
+            sdp_ratio=DEFAULT_SDP_RATIO,
+            noise_scale=DEFAULT_NOISE,
+            noise_scale_w=DEFAULT_NOISEW,
+            length_scale=DEFAULT_LENGTH,
+            sid=0,
+            language=Languages.JP,
+            hps=model.hyper_parameters,
+            net_g=net_g,
+            device=device,
+            **infer_kwargs,
+        )
 
-    for i, audio_chunk in enumerate(audio_generator):
-        if i == 0:
-            # 初回チャンクが生成された時刻を記録
-            first_chunk_time = time.perf_counter() - start_time
-        audio_chunks.append(audio_chunk)
+        for i, audio_chunk in enumerate(audio_generator):
+            if i == 0:
+                # 初回チャンクが生成された時刻を記録
+                first_chunk_time = time.perf_counter() - start_time
+            audio_chunks.append(audio_chunk)
 
-    end_time = time.perf_counter()
-    total_time = end_time - start_time
+        end_time = time.perf_counter()
+        total_time = end_time - start_time
 
-    # 全音声チャンクを結合
-    if audio_chunks:
-        full_audio = np.concatenate(audio_chunks)
-        audio_duration = len(full_audio) / model.hyper_parameters.data.sampling_rate
-    else:
-        audio_duration = 0.0
+        # 全音声チャンクを結合
+        if audio_chunks:
+            full_audio = np.concatenate(audio_chunks)
+            audio_duration = len(full_audio) / model.hyper_parameters.data.sampling_rate
+        else:
+            audio_duration = 0.0
 
-    return first_chunk_time or 0.0, total_time, audio_duration, audio_chunks
+        return first_chunk_time or 0.0, total_time, audio_duration, audio_chunks
 
 
 def save_audio_file(
