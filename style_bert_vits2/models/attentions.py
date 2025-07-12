@@ -302,17 +302,37 @@ class MultiHeadAttention(nn.Module):
     ) -> tuple[torch.Tensor, torch.Tensor]:
         # reshape [b, d, t] -> [b, n_h, t, d_k]
         b, d, t_s, t_t = (*key.size(), query.size(2))
-        query = query.view(b, self.n_heads, self.k_channels, t_t).transpose(2, 3)
-        key = key.view(b, self.n_heads, self.k_channels, t_s).transpose(2, 3)
-        value = value.view(b, self.n_heads, self.k_channels, t_s).transpose(2, 3)
 
-        scores = torch.matmul(query / math.sqrt(self.k_channels), key.transpose(-2, -1))
-        if self.window_size is not None:
-            assert t_s == t_t, (
-                "Relative attention is only available for self-attention."
+        # FP16 推論時のみ、SDPA を使用する
+        if use_fp16 is True:
+            d_k = self.k_channels
+            # SDPA 用にクエリ、キー、バリューを [b * n_heads, t, d_k] にリシェイプ
+            query_sdpa = (
+                query.view(b, self.n_heads, d_k, t_t)
+                .transpose(1, 2)
+                .contiguous()
+                .view(b * self.n_heads, t_t, d_k)
             )
-            # メモリ削減のため、相対位置計算のみ FP16 で実行
-            if use_fp16 is True:
+            key_sdpa = (
+                key.view(b, self.n_heads, d_k, t_s)
+                .transpose(1, 2)
+                .contiguous()
+                .view(b * self.n_heads, t_s, d_k)
+            )
+            value_sdpa = (
+                value.view(b, self.n_heads, d_k, t_s)
+                .transpose(1, 2)
+                .contiguous()
+                .view(b * self.n_heads, t_s, d_k)
+            )
+
+            # attn_bias の計算 (相対位置用)
+            attn_bias = None
+            if self.window_size is not None:
+                assert t_s == t_t, (
+                    "Relative attention is only available for self-attention."
+                )
+                # メモリ削減のため、相対位置計算のみ FP16 で実行
                 device_type = query.device.type  # デバイスタイプを動的に取得
                 with torch.autocast(
                     device_type=device_type,
@@ -323,14 +343,102 @@ class MultiHeadAttention(nn.Module):
                         self.emb_rel_k, t_s
                     )
                     rel_logits = self._matmul_with_relative_keys(
-                        query / math.sqrt(self.k_channels), key_relative_embeddings
+                        query_sdpa / math.sqrt(d_k), key_relative_embeddings
                     )
                     scores_local = self._relative_position_to_absolute_position(
                         rel_logits
                     )
-                # 計算後、scores を元の dtype に戻す
-                scores = scores + scores_local.to(scores.dtype)
-            else:
+                attn_bias = scores_local.to(
+                    query_sdpa.dtype
+                )  # [b*n_heads, t_t, t_s] に調整
+
+            # マスクを SDPA 用に調整 (mask==0 の場所を -inf に)
+            attn_mask_sdpa = None
+            if mask is not None:
+                # mask [b, 1, t_t, t_s] を [b, n_heads, t_t, t_s] に repeat してから view
+                attn_mask_sdpa = mask.repeat(1, self.n_heads, 1, 1).view(
+                    b * self.n_heads, t_t, t_s
+                )
+                attn_mask_sdpa = attn_mask_sdpa.masked_fill(
+                    attn_mask_sdpa == 0, float("-inf")
+                )
+
+            # SDPA 呼び出し (scale は自動適用)
+            output = F.scaled_dot_product_attention(
+                query_sdpa,
+                key_sdpa,
+                value_sdpa,
+                attn_mask=attn_mask_sdpa,
+                dropout_p=self.p_dropout if self.training else 0.0,
+                is_causal=False,  # カスタムマスクを使うのでFalse
+            )
+
+            # 出力のリシェイプ [b, d, t_t]
+            output = (
+                output.view(b, self.n_heads, t_t, d_k)
+                .transpose(1, 2)
+                .contiguous()
+                .view(b, d, t_t)
+            )
+
+            # p_attn の計算 (SDPA から直接得られないため別途)
+            scores = torch.matmul(
+                query_sdpa / math.sqrt(d_k), key_sdpa.transpose(-2, -1)
+            )
+            if attn_bias is not None:
+                scores = scores + attn_bias
+            p_attn = F.softmax(scores, dim=-1)
+
+            # 相対位置の value 部分
+            if self.window_size is not None:
+                relative_weights = self._absolute_position_to_relative_position(p_attn)
+                value_relative_embeddings = self._get_relative_embeddings(
+                    self.emb_rel_v, t_s
+                )
+                rel_value = self._matmul_with_relative_values(
+                    relative_weights, value_relative_embeddings
+                )
+                output = output + rel_value.view(b, self.n_heads, t_t, d_k).transpose(
+                    1, 2
+                ).contiguous().view(b, d, t_t)
+
+            # proximal_bias の適用
+            if self.proximal_bias:
+                assert t_s == t_t, "Proximal bias is only available for self-attention."
+                bias = self._attention_bias_proximal(t_s).to(
+                    device=scores.device, dtype=scores.dtype
+                )
+                # bias [1,1,t_t,t_s] を [b*heads, t_t, t_s] に拡張
+                bias = bias.repeat(b * self.n_heads, 1, 1)
+                scores = scores + bias
+                p_attn = F.softmax(scores, dim=-1)  # 再計算
+
+            # block_length の扱い (local attention)
+            if self.block_length is not None:
+                assert t_s == t_t, (
+                    "Local attention is only available for self-attention."
+                )
+                block_mask = (
+                    torch.ones((b * self.n_heads, t_t, t_s), device=scores.device)
+                    .triu(-self.block_length)
+                    .tril(self.block_length)
+                )
+                scores = scores.masked_fill(block_mask == 0, float("-inf"))
+                p_attn = F.softmax(scores, dim=-1)
+
+        # FP16 推論時以外は、従来通りの実装を使用する
+        else:
+            query = query.view(b, self.n_heads, self.k_channels, t_t).transpose(2, 3)
+            key = key.view(b, self.n_heads, self.k_channels, t_s).transpose(2, 3)
+            value = value.view(b, self.n_heads, self.k_channels, t_s).transpose(2, 3)
+
+            scores = torch.matmul(
+                query / math.sqrt(self.k_channels), key.transpose(-2, -1)
+            )
+            if self.window_size is not None:
+                assert t_s == t_t, (
+                    "Relative attention is only available for self-attention."
+                )
                 key_relative_embeddings = self._get_relative_embeddings(
                     self.emb_rel_k, t_s
                 )
@@ -339,37 +447,38 @@ class MultiHeadAttention(nn.Module):
                 )
                 scores_local = self._relative_position_to_absolute_position(rel_logits)
                 scores = scores + scores_local
-        if self.proximal_bias:
-            assert t_s == t_t, "Proximal bias is only available for self-attention."
-            scores = scores + self._attention_bias_proximal(t_s).to(
-                device=scores.device, dtype=scores.dtype
-            )
-        if mask is not None:
-            scores = scores.masked_fill(mask == 0, -1e4)
-            if self.block_length is not None:
-                assert t_s == t_t, (
-                    "Local attention is only available for self-attention."
+            if self.proximal_bias:
+                assert t_s == t_t, "Proximal bias is only available for self-attention."
+                scores = scores + self._attention_bias_proximal(t_s).to(
+                    device=scores.device, dtype=scores.dtype
                 )
-                block_mask = (
-                    torch.ones_like(scores)
-                    .triu(-self.block_length)
-                    .tril(self.block_length)
+            if mask is not None:
+                scores = scores.masked_fill(mask == 0, -1e4)
+                if self.block_length is not None:
+                    assert t_s == t_t, (
+                        "Local attention is only available for self-attention."
+                    )
+                    block_mask = (
+                        torch.ones_like(scores)
+                        .triu(-self.block_length)
+                        .tril(self.block_length)
+                    )
+                    scores = scores.masked_fill(block_mask == 0, -1e4)
+            p_attn = F.softmax(scores, dim=-1)  # [b, n_h, t_t, t_s]
+            p_attn = self.drop(p_attn)
+            output = torch.matmul(p_attn, value)
+            if self.window_size is not None:
+                relative_weights = self._absolute_position_to_relative_position(p_attn)
+                value_relative_embeddings = self._get_relative_embeddings(
+                    self.emb_rel_v, t_s
                 )
-                scores = scores.masked_fill(block_mask == 0, -1e4)
-        p_attn = F.softmax(scores, dim=-1)  # [b, n_h, t_t, t_s]
-        p_attn = self.drop(p_attn)
-        output = torch.matmul(p_attn, value)
-        if self.window_size is not None:
-            relative_weights = self._absolute_position_to_relative_position(p_attn)
-            value_relative_embeddings = self._get_relative_embeddings(
-                self.emb_rel_v, t_s
-            )
-            output = output + self._matmul_with_relative_values(
-                relative_weights, value_relative_embeddings
-            )
-        output = (
-            output.transpose(2, 3).contiguous().view(b, d, t_t)
-        )  # [b, n_h, t_t, d_k] -> [b, d, t_t]
+                output = output + self._matmul_with_relative_values(
+                    relative_weights, value_relative_embeddings
+                )
+            output = (
+                output.transpose(2, 3).contiguous().view(b, d, t_t)
+            )  # [b, n_h, t_t, d_k] -> [b, d, t_t]
+
         return output, p_attn
 
     def _matmul_with_relative_values(
