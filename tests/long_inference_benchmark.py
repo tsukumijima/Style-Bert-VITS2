@@ -214,7 +214,7 @@ def run_benchmark(
                 )
 
             except Exception as ex:
-                logger.error(f"測定中にエラーが発生しました: {ex}", exc_info=ex)
+                logger.exception(f"測定中にエラーが発生しました: {ex}")
                 continue
 
         if not infer_times:
@@ -328,7 +328,7 @@ def main() -> None:
     except KeyboardInterrupt:
         print("\nベンチマークが中断されました。")
     except Exception as ex:
-        logger.error(f"ベンチマーク実行中にエラーが発生しました: {ex}", exc_info=ex)
+        logger.exception(f"ベンチマーク実行中にエラーが発生しました: {ex}")
 
 
 if __name__ == "__main__":
