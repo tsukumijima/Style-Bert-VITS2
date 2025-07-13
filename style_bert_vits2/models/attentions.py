@@ -421,44 +421,19 @@ class MultiHeadAttention(nn.Module):
         ret: [b, h, l, l]
         """
         batch, heads, length, _ = x.size()
-        # # Concat columns of pad to shift from relative to absolute indexing.
-        # x = F.pad(x, commons.convert_pad_shape([[0, 0], [0, 0], [0, 0], [0, 1]]))
+        # Concat columns of pad to shift from relative to absolute indexing.
+        x = F.pad(x, commons.convert_pad_shape([[0, 0], [0, 0], [0, 0], [0, 1]]))
 
-        # # Concat extra elements so to add up to shape (len+1, 2*len-1).
-        # x_flat = x.view([batch, heads, length * 2 * length])
-        # x_flat = F.pad(
-        #     x_flat, commons.convert_pad_shape([[0, 0], [0, 0], [0, length - 1]])
-        # )
-
-        # # Reshape and slice out the padded elements.
-        # x_final = x_flat.view([batch, heads, length + 1, 2 * length - 1])[
-        #     :, :, :length, length - 1 :
-        # ]
-
-        # --- new implementation (for memory efficiency) ---
-
-        # Generate row and column indices using broadcasting
-        row_indices = (
-            torch.arange(length, device=x.device).unsqueeze(1).expand(length, length)
-        )  # [length, length]
-        col_indices = row_indices + (
-            length - 1
-        )  # Shift to match relative positioning: [length, length]
-
-        # Flatten the indices for gathering
-        flat_indices = col_indices.view(-1)  # [length * length]
-
-        # Flatten x for gathering: [batch, heads, length * (2 * length - 1)]
-        x_flat = x.view(batch, heads, -1)
-
-        # Gather the required elements directly without padding or large intermediates
-        x_gathered = torch.gather(
-            x_flat, dim=2, index=flat_indices.expand(batch, heads, -1)
+        # Concat extra elements so to add up to shape (len+1, 2*len-1).
+        x_flat = x.view([batch, heads, length * 2 * length])
+        x_flat = F.pad(
+            x_flat, commons.convert_pad_shape([[0, 0], [0, 0], [0, length - 1]])
         )
 
-        # Reshape back to [batch, heads, length, length]
-        x_final = x_gathered.view(batch, heads, length, length)
-
+        # Reshape and slice out the padded elements.
+        x_final = x_flat.view([batch, heads, length + 1, 2 * length - 1])[
+            :, :, :length, length - 1 :
+        ]
         return x_final
 
     def _absolute_position_to_relative_position(self, x: torch.Tensor) -> torch.Tensor:
