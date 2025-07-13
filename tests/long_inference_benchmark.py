@@ -114,13 +114,14 @@ def measure_infer_performance(
     model: TTSModel,
     text: str,
     device: str,
+    bert_memory_usage: float,
     **infer_kwargs: Any,
-) -> tuple[float, float, float, NDArray[np.float32]]:
+) -> tuple[float, float, float, float, NDArray[np.float32]]:
     """
     infer() 関数のパフォーマンスを測定する。
 
     Returns:
-        tuple: (総処理時間, ピークメモリ使用量(MB), 生成音声長(秒), 音声データ)
+        tuple: (総処理時間, ピークメモリ使用量(MB), BERT除外メモリ使用量(MB), 生成音声長(秒), 音声データ)
     """
     # メモリ統計をリセット
     if device == "cuda":
@@ -158,13 +159,22 @@ def measure_infer_performance(
         # ピークメモリ使用量を取得
         if device == "cuda":
             peak_memory = torch.cuda.max_memory_allocated() / (1024 * 1024)  # MB
+            # BERT の重み分を除いたメモリ使用量
+            peak_memory_without_bert = max(0.0, peak_memory - bert_memory_usage)
         else:
             peak_memory = 0.0  # CPUでは測定しない
+            peak_memory_without_bert = 0.0
 
         # 生成音声の長さを計算
         audio_duration = len(audio_data) / model.hyper_parameters.data.sampling_rate
 
-        return total_time, peak_memory, audio_duration, audio_data
+        return (
+            total_time,
+            peak_memory,
+            peak_memory_without_bert,
+            audio_duration,
+            audio_data,
+        )
 
 
 def run_benchmark(
@@ -184,6 +194,26 @@ def run_benchmark(
     print(f"測定回数: {num_runs}")
     print(f"FP16: {use_fp16}")
     print("=" * 80)
+
+    # BERT メモリ使用量を測定
+    bert_memory_usage = 0.0
+    if device == "cuda":
+        torch.cuda.reset_peak_memory_stats()
+        torch.cuda.empty_cache()
+
+        # BERT ロード前のメモリ使用量
+        memory_before_bert = torch.cuda.memory_allocated() / (1024 * 1024)
+
+        # BERT モデルをロード
+        logger.info("Loading BERT model for memory measurement...")
+        bert_models.load_model(Languages.JP, device_map=device, use_fp16=use_fp16)
+
+        # BERT ロード後のメモリ使用量
+        memory_after_bert = torch.cuda.memory_allocated() / (1024 * 1024)
+        bert_memory_usage = memory_after_bert - memory_before_bert
+
+        print(f"BERT メモリ使用量: {bert_memory_usage:.2f}MB")
+        print("=" * 80)
 
     # モデルホルダーを初期化
     model_holder = TTSModelHolder(
@@ -247,6 +277,7 @@ def run_benchmark(
         # 複数回実行して平均を取る
         infer_times = []
         peak_memories = []
+        peak_memories_without_bert = []
         infer_durations = []
         last_audio = None
         last_sample_rate = None
@@ -254,23 +285,29 @@ def run_benchmark(
         for run in range(num_runs):
             try:
                 # 推論を測定
-                infer_time, peak_memory, infer_duration, audio_data = (
-                    measure_infer_performance(
-                        model,
-                        text,
-                        device,
-                        use_fp16=use_fp16,
-                    )
+                (
+                    infer_time,
+                    peak_memory,
+                    peak_memory_without_bert,
+                    infer_duration,
+                    audio_data,
+                ) = measure_infer_performance(
+                    model,
+                    text,
+                    device,
+                    bert_memory_usage,
+                    use_fp16=use_fp16,
                 )
                 infer_times.append(infer_time)
                 peak_memories.append(peak_memory)
+                peak_memories_without_bert.append(peak_memory_without_bert)
                 infer_durations.append(infer_duration)
                 if run == num_runs - 1:
                     last_audio = audio_data
                     last_sample_rate = model.hyper_parameters.data.sampling_rate
 
                 print(
-                    f"  実行{run + 1}: 時間 {infer_time:.3f}秒, ピークメモリ {peak_memory:.2f}MB"
+                    f"  実行{run + 1}: 時間 {infer_time:.3f}秒, ピークメモリ {peak_memory:.2f}MB, BERT除外 {peak_memory_without_bert:.2f}MB"
                 )
 
             except Exception as ex:
@@ -292,6 +329,7 @@ def run_benchmark(
         # 平均値を計算
         avg_infer_time = np.mean(infer_times)
         avg_peak_memory = np.mean(peak_memories)
+        avg_peak_memory_without_bert = np.mean(peak_memories_without_bert)
         avg_infer_duration = np.mean(infer_durations)
 
         # 結果を保存
@@ -302,6 +340,7 @@ def run_benchmark(
             "actual_duration": avg_infer_duration,
             "infer_time": avg_infer_time,
             "peak_memory": avg_peak_memory,
+            "peak_memory_without_bert": avg_peak_memory_without_bert,
         }
         results.append(result)
 
@@ -310,6 +349,7 @@ def run_benchmark(
         print(f"  平均音声長: {avg_infer_duration:.2f}秒")
         print(f"  平均推論時間: {avg_infer_time:.3f}秒")
         print(f"  平均ピークメモリ: {avg_peak_memory:.2f}MB")
+        print(f"  平均ピークメモリ(BERT除外): {avg_peak_memory_without_bert:.2f}MB")
         print("=" * 80)
 
     # モデルをアンロード
@@ -317,28 +357,31 @@ def run_benchmark(
 
     # 総合結果を表示
     print("総合結果")
-    print("=" * 80)
+    print("=" * 90)
     print(
-        f"{'説明':<28} {'文字数':>6} {'音声長(秒)':>10} {'推論時間(秒)':>12} {'ピークメモリ(MB)':>16}"
+        f"{'説明':<21} {'文字数':>4} {'音声長(秒)':>8} {'推論時間(秒)':>8} {'ピークメモリ(MB)':>8} {'BERT除外(MB)':>8}"
     )
-    print("-" * 80)
+    print("-" * 90)
 
     for result in results:
         print(
-            f"{result['description']:<30} "
+            f"{result['description']:<25} "
             f"{result['text_length']:>6} "
             f"{result['actual_duration']:>12.2f} "
-            f"{result['infer_time']:>14.3f} "
-            f"{result['peak_memory']:>18.2f}"
+            f"{result['infer_time']:>12.3f} "
+            f"{result['peak_memory']:>12.2f} "
+            f"{result['peak_memory_without_bert']:>12.2f}"
         )
 
-    print("=" * 80)
+    print("=" * 90)
     print("分析:")
     avg_time = np.mean([r["infer_time"] for r in results])
     avg_memory = np.mean([r["peak_memory"] for r in results])
+    avg_memory_without_bert = np.mean([r["peak_memory_without_bert"] for r in results])
     print(f"- 全体平均推論時間: {avg_time:.3f}秒")
     print(f"- 全体平均ピークメモリ: {avg_memory:.2f}MB")
-    print("=" * 80)
+    print(f"- 全体平均ピークメモリ(BERT除外): {avg_memory_without_bert:.2f}MB")
+    print("=" * 90)
 
 
 def main() -> None:
@@ -379,13 +422,6 @@ def main() -> None:
     args = parser.parse_args()
 
     try:
-        # Preload BERT model
-        logger.info("Preloading BERT model...")
-        bert_models.load_model(
-            Languages.JP, device_map=args.device, use_fp16=args.use_fp16
-        )
-        logger.info("BERT model preloaded successfully")
-
         run_benchmark(
             device=args.device,
             model_name=args.model,
