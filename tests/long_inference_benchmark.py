@@ -17,11 +17,13 @@ Style-Bert-VITS2 長文一括推論のパフォーマンス測定スクリプト
 
 import argparse
 import time
+from pathlib import Path
 from typing import Any
 
 import numpy as np
 import torch
 from numpy.typing import NDArray
+from scipy.io import wavfile
 
 from style_bert_vits2.constants import (
     BASE_DIR,
@@ -42,21 +44,70 @@ BENCHMARK_TEXTS = [
     {
         # 初回ロード用（ダミー）
         "text": "あああ",
-        "description": "短文（ダミー）",
+        "description": "Short (Dummy)",
     },
     {
-        "text": "あのイーハトーヴォのすきとおった風、夏でも底に冷たさをもつ青いそら、うつくしい森で飾られたモリーオ市、郊外のぎらぎらひかる草の波。またそのなかでいっしょになったたくさんのひとたち、ファゼーロとロザーロ、羊飼のミーロや、顔の赤いこどもたち、地主のテーモ、山猫博士のボーガント・デストゥパーゴなど、いまこの暗い巨きな家にはたったひとりがいません。",
-        "description": "中文",
+        "text": "イーハトーヴォのすきとおった風、夏でも底に冷たさをもつ青いそら、うつくしい森で飾られたモリーオ市、郊外のぎらぎらひかる草の波。またそのなかでいっしょになったたくさんのひとたち、ファゼーロとロザーロ、羊飼のミーロや、顔の赤いこどもたち、地主のテーモ、山猫博士のボーガント・デストゥパーゴなど、いまこの暗い巨きな家にはたったひとりがいません。",
+        "description": "Medium (ROUDOKU)",
     },
     {
-        "text": "あのイーハトーヴォのすきとおった風、夏でも底に冷たさをもつ青いそら、うつくしい森で飾られたモリーオ市、郊外のぎらぎらひかる草の波。またそのなかでいっしょになったたくさんのひとたち、ファゼーロとロザーロ、羊飼のミーロや、顔の赤いこどもたち、地主のテーモ、山猫博士のボーガント・デストゥパーゴなど、いまこの暗い巨きな家にはたったひとりがいません。夏の夕暮れどきに白い月がのぼり、草の波から出る霧がそのへんをいつそう白くしたころ、たくさんのおじいさんやおばあさんが、木の机の前にすわって、青い蝋燭をたてて、なにやら熱心に読書をしています。そこにはまた、青い服を着たこどもたちが、たくさん集まって、なにやら楽しげに遊んでいます。",
-        "description": "長文1",
+        "text": "小笠原近海で台風５号が発生しました。今後、北上し、関東から東北の太平洋側に沿って北上した後、北海道付近に到達する可能性が大きくなっています。もし関東へ上陸すれば６年ぶり、東北に上陸すれば２年連続、北海道へ上陸すれば９年ぶりとなります。この台風の進路の特徴とともに、詳しくみていきましょう。",
+        "description": "Medium (NEWS)",
     },
     {
-        "text": "あのイーハトーヴォのすきとおった風、夏でも底に冷たさをもつ青いそら、うつくしい森で飾られたモリーオ市、郊外のぎらぎらひかる草の波。またそのなかでいっしょになったたくさんのひとたち、ファゼーロとロザーロ、羊飼のミーロや、顔の赤いこどもたち、地主のテーモ、山猫博士のボーガント・デストゥパーゴなど、いまこの暗い巨きな家にはたったひとりがいません。夏の夕暮れどきに白い月がのぼり、草の波から出る霧がそのへんをいつそう白くしたころ、たくさんのおじいさんやおばあさんが、木の机の前にすわって、青い蝋燭をたてて、なにやら熱心に読書をしています。そこにはまた、青い服を着たこどもたちが、たくさん集まって、なにやら楽しげに遊んでいます。そこにはまた、青い服を着たこどもたちが、たくさん集まって、なにやら楽しげに遊んでいます。そこにはまた、青い服を着たこどもたちが、たくさん集まって、なにやら楽しげに遊んでいます。そこにはまた、青い服を着たこどもたちが、たくさん集まって、なにやら楽しげに遊んでいます。そこにはまた、青い服を着たこどもたちが、たくさん集まって、なにやら楽しげに遊んでいます。",
-        "description": "長文2",
+        "text": "濁流は、メロスの叫びをせせら笑う如く、ますます激しく躍り狂う。浪は浪を呑み、捲き、煽り立て、そうして時は、刻一刻と消えて行く。今はメロスも覚悟した。泳ぎ切るより他に無い。ああ、神々も照覧あれ！　濁流にも負けぬ愛と誠の偉大な力を、いまこそ発揮して見せる。メロスは、ざんぶと流れに飛び込み、百匹の大蛇のようにのた打ち荒れ狂う浪を相手に、必死の闘争を開始した。満身の力を腕にこめて、押し寄せ渦巻き引きずる流れを、なんのこれしきと掻きわけ掻きわけ、めくらめっぽう獅子奮迅の人の子の姿には、神も哀れと思ったか、ついに憐愍を垂れてくれた。",
+        "description": "Medium Long (ROUDOKU)",
+    },
+    {
+        "text": "万博協会が13日に発表した、12日（土）の大阪・関西万博の一般来場者数は速報値ベースで約16万4000人、パビリオンなどの関係者を含めた総来場者数は約18万2000人で、1日あたりの来場者数が“過去3番目”となりました。12日は、航空自衛隊の「ブルーインパルス」による展示飛行が行われ、多くの人が会場に詰めかけ、歓声をを上げました。13日も午後2時40分ごろに関西空港を離陸後、大阪市の通天閣や吹田市の万博記念公園などの上空を通過した上で、午後3時ごろから15分程度、会場上空などで展示飛行が予定されています。また、「レジオネラ菌」の検出により中止されていた昼の噴水ショーと夜の水上ショーは11日から再開されたほか、部品落下トラブルにより中止されていた「空飛ぶクルマ」のデモ飛行も12日から再開されています。",
+        "description": "Medium Long (NEWS)",
+    },
+    {
+        "text": "メロスは激怒した。必ず、かの邪智暴虐の王を除かなければならぬと決意した。メロスには政治がわからぬ。メロスは、村の牧人である。笛を吹き、羊と遊んで暮して来た。けれども邪悪に対しては、人一倍に敏感であった。きょう未明メロスは村を出発し、野を越え山越え、十里はなれた此のシラクスの市にやって来た。メロスには父も、母も無い。女房も無い。十六の、内気な妹と二人暮しだ。この妹は、村の或る律気な一牧人を、近々、花婿として迎える事になっていた。結婚式も間近かなのである。メロスは、それゆえ、花嫁の衣裳やら祝宴の御馳走やらを買いに、はるばる市にやって来たのだ。先ず、その品々を買い集め、それから都の大路をぶらぶら歩いた。メロスには竹馬の友があった。セリヌンティウスである。今は此のシラクスの市で、石工をしている。その友を、これから訪ねてみるつもりなのだ。久しく逢わなかったのだから、訪ねて行くのが楽しみである。歩いているうちにメロスは、まちの様子を怪しく思った。ひっそりしている。もう既に日も落ちて、まちの暗いのは当りまえだが、けれども、なんだか、夜のせいばかりでは無く、市全体が、やけに寂しい。",
+        "description": "Long (ROUDOKU)",
+    },
+    {
+        "text": "台風５号は、今後、発達しながら北上し、あす１４日は自動車並みの速度で関東から東北の太平洋側を北上し、あさって１５日には北海道付近に達する予想です。一般に台風に伴う風や雨は、進行方向に向かって、中心の右側ほど強く、左側ほど強くない傾向があります。これは台風の右側は、台風を流す風の向きと中心に吹き込む風の向きが一緒になり、風や雨の勢いが増すためで、左側は台風を流す風の向きと中心に吹き込む風の向きが逆になり、互いに打ち消し合って、右側ほど強くはならないためです。（右側は危険半円、左側は可航半円とも呼ばれます。）今回の台風５号は、関東以北の太平洋側を北上するため、おおむね陸地の上は、台風の進行方向の左側に入ることが予想されます。このため、右側に入るよりは、大荒れの度合いは小さいことになりそうですが、とはいえ、もちろん大雨や強風（暴風）、高波などには十分な警戒が必要です。今回の台風５号がもし関東へ上陸したら、６年前に千葉県に上陸し、甚大な暴風の被害をもたらした台風１５号以来となり、もし北海道へ上陸したら、９年前の台風１１号以来となります。一方、東北へは昨年も上陸していますので、２年連続となります。",
+        "description": "Long (NEWS)",
     },
 ]
+
+
+def save_audio_file(
+    audio_data: NDArray[np.float32], sample_rate: int, text: str, output_type: str
+) -> None:
+    """音声データをWAVファイルとして保存する。"""
+    try:
+        output_dir = Path("tests/wavs/long_inference_benchmark")
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        # ファイル名に使えない文字を置換
+        safe_filename = (
+            text.replace("/", "_")
+            .replace("\\", "_")
+            .replace(":", "")
+            .replace("*", "")
+            .replace("?", "")
+            .replace("<", "")
+            .replace(">", "")
+            .replace("|", "")
+            .replace('"', "")
+            .replace("!", "")
+        )
+
+        # ファイル名が長すぎる場合は切り詰める（拡張子と output_type を考慮して安全な長さに）
+        max_filename_length = 70  # 安全なファイル名長制限
+        if len(safe_filename) > max_filename_length:
+            safe_filename = safe_filename[:max_filename_length] + "..."
+
+        output_path = output_dir / f"{safe_filename}_{output_type}.wav"
+
+        wavfile.write(str(output_path), sample_rate, audio_data)
+
+    except ImportError:
+        logger.warning("scipy is required to save audio files, skipping audio save")
+    except Exception as ex:
+        logger.error(f"Failed to save audio file: {ex}")
 
 
 def measure_infer_performance(
@@ -188,27 +239,35 @@ def run_benchmark(
     for i, test_case in enumerate(BENCHMARK_TEXTS):
         text = test_case["text"]
         description = test_case["description"]
+        text_length = len(text)
 
         print(f"測定中: {description}")
-        print(f"テキスト: {text[:50]}... (全{len(text)}文字)")
+        print(f"テキスト: {text[:50]}... (全{text_length}文字)")
 
         # 複数回実行して平均を取る
         infer_times = []
         peak_memories = []
         infer_durations = []
+        last_audio = None
+        last_sample_rate = None
 
         for run in range(num_runs):
             try:
                 # 推論を測定
-                infer_time, peak_memory, infer_duration, _ = measure_infer_performance(
-                    model,
-                    text,
-                    device,
-                    use_fp16=use_fp16,
+                infer_time, peak_memory, infer_duration, audio_data = (
+                    measure_infer_performance(
+                        model,
+                        text,
+                        device,
+                        use_fp16=use_fp16,
+                    )
                 )
                 infer_times.append(infer_time)
                 peak_memories.append(peak_memory)
                 infer_durations.append(infer_duration)
+                if run == num_runs - 1:
+                    last_audio = audio_data
+                    last_sample_rate = model.hyper_parameters.data.sampling_rate
 
                 print(
                     f"  実行{run + 1}: 時間 {infer_time:.3f}秒, ピークメモリ {peak_memory:.2f}MB"
@@ -226,6 +285,10 @@ def run_benchmark(
         if i == 0:
             continue
 
+        # 音声ファイルを保存（初回のダミーは除く）
+        if last_audio is not None and last_sample_rate is not None:
+            save_audio_file(last_audio, last_sample_rate, text, "normal")
+
         # 平均値を計算
         avg_infer_time = np.mean(infer_times)
         avg_peak_memory = np.mean(peak_memories)
@@ -235,6 +298,7 @@ def run_benchmark(
         result = {
             "text": text,
             "description": description,
+            "text_length": text_length,
             "actual_duration": avg_infer_duration,
             "infer_time": avg_infer_time,
             "peak_memory": avg_peak_memory,
@@ -242,6 +306,7 @@ def run_benchmark(
         results.append(result)
 
         # 個別結果を表示
+        print(f"  文字数: {text_length}文字")
         print(f"  平均音声長: {avg_infer_duration:.2f}秒")
         print(f"  平均推論時間: {avg_infer_time:.3f}秒")
         print(f"  平均ピークメモリ: {avg_peak_memory:.2f}MB")
@@ -254,16 +319,17 @@ def run_benchmark(
     print("総合結果")
     print("=" * 80)
     print(
-        f"{'説明':<20} {'音声長(秒)':<12} {'推論時間(秒)':<12} {'ピークメモリ(MB)':<15}"
+        f"{'説明':<28} {'文字数':>6} {'音声長(秒)':>10} {'推論時間(秒)':>12} {'ピークメモリ(MB)':>16}"
     )
-    print("-" * 60)
+    print("-" * 80)
 
     for result in results:
         print(
-            f"{result['description']:<20} "
-            f"{result['actual_duration']:<12.2f} "
-            f"{result['infer_time']:<12.3f} "
-            f"{result['peak_memory']:<15.2f}"
+            f"{result['description']:<30} "
+            f"{result['text_length']:>6} "
+            f"{result['actual_duration']:>12.2f} "
+            f"{result['infer_time']:>14.3f} "
+            f"{result['peak_memory']:>18.2f}"
         )
 
     print("=" * 80)

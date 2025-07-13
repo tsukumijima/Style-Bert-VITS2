@@ -17,11 +17,13 @@ https://qiita.com/__dAi00/items/970f0fe66286510537dd の結果と同様の測定
 
 import argparse
 import time
+from pathlib import Path
 from typing import Any, cast
 
 import numpy as np
 import torch
 from numpy.typing import NDArray
+from scipy.io import wavfile
 
 from style_bert_vits2.constants import (
     BASE_DIR,
@@ -205,11 +207,7 @@ def save_audio_file(
 ) -> None:
     """音声データをWAVファイルとして保存する。"""
     try:
-        from pathlib import Path
-
-        from scipy.io import wavfile
-
-        output_dir = Path("tests/wavs/benchmark")
+        output_dir = Path("tests/wavs/streaming_benchmark")
         output_dir.mkdir(parents=True, exist_ok=True)
 
         # ファイル名に使えない文字を置換
