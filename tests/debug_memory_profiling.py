@@ -126,7 +126,7 @@ def profile_memory_usage(
                 ja_bert,
                 style_vec_tensor,
                 g=g,
-                use_fp16=False,
+                use_fp16=True,
             )
             text_encoder_memory = get_memory_usage()
             results["03_text_encoder"] = text_encoder_memory - start_memory
@@ -221,7 +221,7 @@ def profile_bert_separately(device: str, texts: list[str]) -> dict[str, float]:
     print(f"BERT読込前: {before_bert:.2f} MB")
 
     # BERTモデルロード
-    bert_models.load_model(Languages.JP, device_map=device, use_fp16=False)
+    bert_models.load_model(Languages.JP, device_map=device, use_fp16=True)
     after_bert_load = get_memory_usage()
     bert_load_memory = after_bert_load - before_bert
     results["bert_model_load"] = bert_load_memory
@@ -290,10 +290,9 @@ def main():
     model_holder = TTSModelHolder(
         BASE_DIR / "model_assets",
         device,
-        onnx_providers=[
-            ("CPUExecutionProvider", {"arena_extend_strategy": "kSameAsRequested"})
-        ],
-        use_fp16=False,
+        onnx_providers=[],
+        ignore_onnx=True,
+        use_fp16=True,
     )
 
     if len(model_holder.models_info) == 0:

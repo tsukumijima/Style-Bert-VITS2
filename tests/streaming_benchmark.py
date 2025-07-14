@@ -255,9 +255,8 @@ def run_benchmark(
     model_holder = TTSModelHolder(
         BASE_DIR / "model_assets",
         device,
-        onnx_providers=[
-            ("CPUExecutionProvider", {"arena_extend_strategy": "kSameAsRequested"})
-        ],
+        onnx_providers=[],
+        ignore_onnx=True,
         use_fp16=use_fp16,
     )
     if len(model_holder.models_info) == 0:
