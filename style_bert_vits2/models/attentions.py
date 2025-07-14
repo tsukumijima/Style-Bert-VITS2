@@ -17,9 +17,16 @@ class LayerNorm(nn.Module):
         self.gamma = nn.Parameter(torch.ones(channels))
         self.beta = nn.Parameter(torch.zeros(channels))
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, use_fp16: bool = True) -> torch.Tensor:
         x = x.transpose(1, -1)
-        x = F.layer_norm(x, (self.channels,), self.gamma, self.beta, self.eps)
+        if use_fp16:
+            device_type = x.device.type
+            with torch.autocast(
+                device_type=device_type, dtype=torch.float16, enabled=True
+            ):
+                x = F.layer_norm(x, (self.channels,), self.gamma, self.beta, self.eps)
+        else:
+            x = F.layer_norm(x, (self.channels,), self.gamma, self.beta, self.eps)
         return x.transpose(1, -1)
 
 
@@ -106,7 +113,7 @@ class Encoder(nn.Module):
         x: torch.Tensor,
         x_mask: torch.Tensor,
         g: torch.Tensor | None = None,
-        use_fp16: bool = False,
+        use_fp16: bool = True,
     ) -> torch.Tensor:
         attn_mask = x_mask.unsqueeze(2) * x_mask.unsqueeze(-1)
         x = x * x_mask
@@ -119,11 +126,11 @@ class Encoder(nn.Module):
                 x = x * x_mask
             y = self.attn_layers[i](x, x, attn_mask, use_fp16=use_fp16)
             y = self.drop(y)
-            x = self.norm_layers_1[i](x + y)
+            x = self.norm_layers_1[i](x + y, use_fp16=use_fp16)
 
-            y = self.ffn_layers[i](x, x_mask)
+            y = self.ffn_layers[i](x, x_mask, use_fp16=use_fp16)
             y = self.drop(y)
-            x = self.norm_layers_2[i](x + y)
+            x = self.norm_layers_2[i](x + y, use_fp16=use_fp16)
         x = x * x_mask
         return x
 
@@ -194,6 +201,7 @@ class Decoder(nn.Module):
         x_mask: torch.Tensor,
         h: torch.Tensor,
         h_mask: torch.Tensor,
+        use_fp16: bool = True,
     ) -> torch.Tensor:
         """
         x: decoder input
@@ -207,15 +215,15 @@ class Decoder(nn.Module):
         for i in range(self.n_layers):
             y = self.self_attn_layers[i](x, x, self_attn_mask)
             y = self.drop(y)
-            x = self.norm_layers_0[i](x + y)
+            x = self.norm_layers_0[i](x + y, use_fp16=use_fp16)
 
             y = self.encdec_attn_layers[i](x, h, encdec_attn_mask)
             y = self.drop(y)
-            x = self.norm_layers_1[i](x + y)
+            x = self.norm_layers_1[i](x + y, use_fp16=use_fp16)
 
-            y = self.ffn_layers[i](x, x_mask)
+            y = self.ffn_layers[i](x, x_mask, use_fp16=use_fp16)
             y = self.drop(y)
-            x = self.norm_layers_2[i](x + y)
+            x = self.norm_layers_2[i](x + y, use_fp16=use_fp16)
         x = x * x_mask
         return x
 
@@ -281,7 +289,7 @@ class MultiHeadAttention(nn.Module):
         x: torch.Tensor,
         c: torch.Tensor,
         attn_mask: torch.Tensor | None = None,
-        use_fp16: bool = False,
+        use_fp16: bool = True,
     ) -> torch.Tensor:
         q = self.conv_q(x)
         k = self.conv_k(c)
@@ -298,7 +306,7 @@ class MultiHeadAttention(nn.Module):
         key: torch.Tensor,
         value: torch.Tensor,
         mask: torch.Tensor | None = None,
-        use_fp16: bool = False,
+        use_fp16: bool = True,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         # reshape [b, d, t] -> [b, n_h, t, d_k]
         b, d, t_s, t_t = (*key.size(), query.size(2))
@@ -493,14 +501,29 @@ class FFN(nn.Module):
         self.conv_2 = nn.Conv1d(filter_channels, out_channels, kernel_size)
         self.drop = nn.Dropout(p_dropout)
 
-    def forward(self, x: torch.Tensor, x_mask: torch.Tensor) -> torch.Tensor:
-        x = self.conv_1(self.padding(x * x_mask))
-        if self.activation == "gelu":
-            x = x * torch.sigmoid(1.702 * x)
+    def forward(
+        self, x: torch.Tensor, x_mask: torch.Tensor, use_fp16: bool = True
+    ) -> torch.Tensor:
+        if use_fp16:
+            device_type = x.device.type
+            with torch.autocast(
+                device_type=device_type, dtype=torch.float16, enabled=True
+            ):
+                x = self.conv_1(self.padding(x * x_mask))
+                if self.activation == "gelu":
+                    x = x * torch.sigmoid(1.702 * x)
+                else:
+                    x = torch.relu(x)
+                x = self.drop(x)
+                x = self.conv_2(self.padding(x * x_mask))
         else:
-            x = torch.relu(x)
-        x = self.drop(x)
-        x = self.conv_2(self.padding(x * x_mask))
+            x = self.conv_1(self.padding(x * x_mask))
+            if self.activation == "gelu":
+                x = x * torch.sigmoid(1.702 * x)
+            else:
+                x = torch.relu(x)
+            x = self.drop(x)
+            x = self.conv_2(self.padding(x * x_mask))
         return x * x_mask
 
     def _causal_padding(self, x: torch.Tensor) -> torch.Tensor:

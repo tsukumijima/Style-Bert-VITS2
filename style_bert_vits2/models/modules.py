@@ -24,9 +24,16 @@ class LayerNorm(nn.Module):
         self.gamma = nn.Parameter(torch.ones(channels))
         self.beta = nn.Parameter(torch.zeros(channels))
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, use_fp16: bool = True) -> torch.Tensor:
         x = x.transpose(1, -1)
-        x = F.layer_norm(x, (self.channels,), self.gamma, self.beta, self.eps)
+        if use_fp16:
+            device_type = x.device.type
+            with torch.autocast(
+                device_type=device_type, dtype=torch.float16, enabled=True
+            ):
+                x = F.layer_norm(x, (self.channels,), self.gamma, self.beta, self.eps)
+        else:
+            x = F.layer_norm(x, (self.channels,), self.gamma, self.beta, self.eps)
         return x.transpose(1, -1)
 
 
