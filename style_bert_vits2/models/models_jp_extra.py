@@ -65,7 +65,6 @@ class DurationDiscriminator(nn.Module):  # vits2
         dur_r: torch.Tensor,
         dur_hat: torch.Tensor,
         g: torch.Tensor | None = None,
-        use_fp16: bool = True,
     ) -> list[torch.Tensor]:
         x = torch.detach(x)
         if g is not None:
@@ -73,11 +72,11 @@ class DurationDiscriminator(nn.Module):  # vits2
             x = x + self.cond(g)
         x = self.conv_1(x * x_mask)
         x = torch.relu(x)
-        x = self.norm_1(x, use_fp16=use_fp16)
+        x = self.norm_1(x)
         x = self.drop(x)
         x = self.conv_2(x * x_mask)
         x = torch.relu(x)
-        x = self.norm_2(x, use_fp16=use_fp16)
+        x = self.norm_2(x)
         x = self.drop(x)
 
         output_probs = []
@@ -385,11 +384,7 @@ class DurationPredictor(nn.Module):
             self.cond = nn.Conv1d(gin_channels, in_channels, 1)
 
     def forward(
-        self,
-        x: torch.Tensor,
-        x_mask: torch.Tensor,
-        g: torch.Tensor | None = None,
-        use_fp16: bool = True,
+        self, x: torch.Tensor, x_mask: torch.Tensor, g: torch.Tensor | None = None
     ) -> torch.Tensor:
         x = torch.detach(x)
         if g is not None:
@@ -397,11 +392,11 @@ class DurationPredictor(nn.Module):
             x = x + self.cond(g)
         x = self.conv_1(x * x_mask)
         x = torch.relu(x)
-        x = self.norm_1(x, use_fp16=use_fp16)
+        x = self.norm_1(x)
         x = self.drop(x)
         x = self.conv_2(x * x_mask)
         x = torch.relu(x)
-        x = self.norm_2(x, use_fp16=use_fp16)
+        x = self.norm_2(x)
         x = self.drop(x)
         x = self.proj(x * x_mask)
         return x * x_mask
@@ -492,32 +487,17 @@ class TextEncoder(nn.Module):
         bert: torch.Tensor,
         style_vec: torch.Tensor,
         g: torch.Tensor | None = None,
-        use_fp16: bool = True,
+        use_fp16: bool = False,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-        if use_fp16:
-            device_type = bert.device.type
-            with torch.autocast(
-                device_type=device_type, dtype=torch.float16, enabled=True
-            ):
-                bert_emb = self.bert_proj(bert).transpose(1, 2)
-                style_emb = self.style_proj(style_vec.unsqueeze(1))
-                x = (
-                    self.emb(x)
-                    + self.tone_emb(tone)
-                    + self.language_emb(language)
-                    + bert_emb
-                    + style_emb
-                ) * math.sqrt(self.hidden_channels)  # [b, t, h]
-        else:
-            bert_emb = self.bert_proj(bert).transpose(1, 2)
-            style_emb = self.style_proj(style_vec.unsqueeze(1))
-            x = (
-                self.emb(x)
-                + self.tone_emb(tone)
-                + self.language_emb(language)
-                + bert_emb
-                + style_emb
-            ) * math.sqrt(self.hidden_channels)  # [b, t, h]
+        bert_emb = self.bert_proj(bert).transpose(1, 2)
+        style_emb = self.style_proj(style_vec.unsqueeze(1))
+        x = (
+            self.emb(x)
+            + self.tone_emb(tone)
+            + self.language_emb(language)
+            + bert_emb
+            + style_emb
+        ) * math.sqrt(self.hidden_channels)  # [b, t, h]
         x = torch.transpose(x, 1, -1)  # [b, h, t]
         x_mask = torch.unsqueeze(commons.sequence_mask(x_lengths, x.size(2)), 1).to(
             x.dtype
@@ -616,20 +596,11 @@ class PosteriorEncoder(nn.Module):
         x: torch.Tensor,
         x_lengths: torch.Tensor,
         g: torch.Tensor | None = None,
-        use_fp16: bool = True,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         x_mask = torch.unsqueeze(commons.sequence_mask(x_lengths, x.size(2)), 1).to(
             x.dtype
         )
-        if use_fp16:
-            device_type = x.device.type
-            with torch.autocast(
-                device_type=device_type, dtype=torch.float16, enabled=True
-            ):
-                x = self.pre(x) * x_mask
-        else:
-            x = self.pre(x) * x_mask
-        # WN (WaveNet) is precision-critical, keep FP32
+        x = self.pre(x) * x_mask
         x = self.enc(x, x_mask, g=g)
         stats = self.proj(x) * x_mask
         m, logs = torch.split(stats, self.out_channels, dim=1)
@@ -1219,7 +1190,7 @@ class SynthesizerTrn(nn.Module):
         noise_scale_w: float = 0.8,
         sdp_ratio: float = 0.0,
         y: torch.Tensor | None = None,
-        use_fp16: bool = True,
+        use_fp16: bool = False,
     ) -> tuple[
         torch.Tensor,
         torch.Tensor,
@@ -1265,7 +1236,7 @@ class SynthesizerTrn(nn.Module):
         # SDP (Stochastic Duration Predictor) / DP (Duration Predictor)
         logw = self.sdp(x, x_mask, g=g, reverse=True, noise_scale=noise_scale_w) * (
             sdp_ratio
-        ) + self.dp(x, x_mask, g=g, use_fp16=use_fp16) * (1 - sdp_ratio)
+        ) + self.dp(x, x_mask, g=g) * (1 - sdp_ratio)
 
         w = torch.exp(logw) * x_mask * length_scale
         w_ceil = torch.ceil(w)
@@ -1305,7 +1276,7 @@ class SynthesizerTrn(nn.Module):
         max_len: int | None = None,
         sdp_ratio: float = 0.0,
         y: torch.Tensor | None = None,
-        use_fp16: bool = True,
+        use_fp16: bool = False,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, tuple[torch.Tensor, ...]]:
         # Generator 実行前の共通処理
         z, y_mask, g, attn, z_p, m_p, logs_p = self.infer_input_feature(
