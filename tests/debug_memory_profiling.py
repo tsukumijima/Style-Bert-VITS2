@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """
-各モジュールでのメモリ使用量を測定して、
+各モジュールでのメモリ使用量と処理時間を測定して、
 実際のボトルネックがどこにあるかを特定する。
 """
 
 import gc
+import time
 
 import torch
 
@@ -29,6 +30,9 @@ from style_bert_vits2.nlp import (
 from style_bert_vits2.tts_model import TTSModel, TTSModelHolder
 
 
+USE_FP16 = True
+
+
 def get_memory_usage() -> float:
     """現在のGPUメモリ使用量をMBで返す"""
     if torch.cuda.is_available():
@@ -50,12 +54,13 @@ def profile_memory_usage(
     device: str,
 ) -> dict[str, float]:
     """
-    推論処理の各段階でのメモリ使用量を測定する。
+    推論処理の各段階でのメモリ使用量と処理時間を測定する。
 
     Returns:
-        dict: 各段階でのメモリ使用量（MB）
+        dict: 各段階でのメモリ使用量（MB）と処理時間（秒）
     """
     results = {}
+    time_results = {}
 
     reset_memory()
     baseline_memory = get_memory_usage()
@@ -68,6 +73,7 @@ def profile_memory_usage(
         # === 1. BERT特徴量抽出とデータ前処理 ===
         reset_memory()
         start_memory = get_memory_usage()
+        start_time = time.perf_counter()
 
         (
             x_tst,
@@ -88,10 +94,12 @@ def profile_memory_usage(
             device=device,
         )
 
+        bert_time = time.perf_counter() - start_time
         bert_memory = get_memory_usage()
         results["01_bert_preprocessing"] = bert_memory - start_memory
+        time_results["01_bert_preprocessing"] = bert_time
         print(
-            f"BERT前処理後: +{bert_memory - start_memory:.2f} MB (累計: {bert_memory:.2f} MB)"
+            f"BERT前処理後: +{bert_memory - start_memory:.2f} MB, {bert_time:.3f}秒 (累計: {bert_memory:.2f} MB)"
         )
 
         # === 2. TextEncoder（BERT処理含む） ===
@@ -108,32 +116,44 @@ def profile_memory_usage(
 
             # Speaker embedding
             start_memory = get_memory_usage()
-            if net_g_jp.n_speakers > 0:
-                g = net_g_jp.emb_g(sid_tensor).unsqueeze(-1)
-            else:
-                g = None
+            start_time = time.perf_counter()
+            g = net_g_jp.emb_g(sid_tensor).unsqueeze(-1)
+            spk_emb_time = time.perf_counter() - start_time
             spk_emb_memory = get_memory_usage()
             results["02_speaker_embedding"] = spk_emb_memory - start_memory
-            print(f"Speaker embedding後: +{spk_emb_memory - start_memory:.2f} MB")
+            time_results["02_speaker_embedding"] = spk_emb_time
+            print(
+                f"Speaker embedding後: +{spk_emb_memory - start_memory:.2f} MB, {spk_emb_time:.3f}秒"
+            )
 
             # TextEncoder
             start_memory = get_memory_usage()
+            start_time = time.perf_counter()
+
+            # BERT特徴量を明示的にFP32に変換（FP16使用時のエラー対策）
+            ja_bert_float = ja_bert.float()
+
             x, m_p, logs_p, x_mask = net_g_jp.enc_p(
                 x_tst,
                 x_tst_lengths,
                 tones,
                 lang_ids,
-                ja_bert,
+                ja_bert_float,
                 style_vec_tensor,
                 g=g,
-                use_fp16=True,
+                use_fp16=USE_FP16,
             )
+            text_encoder_time = time.perf_counter() - start_time
             text_encoder_memory = get_memory_usage()
             results["03_text_encoder"] = text_encoder_memory - start_memory
-            print(f"TextEncoder後: +{text_encoder_memory - start_memory:.2f} MB")
+            time_results["03_text_encoder"] = text_encoder_time
+            print(
+                f"TextEncoder後: +{text_encoder_memory - start_memory:.2f} MB, {text_encoder_time:.3f}秒"
+            )
 
             # === 3. Duration Predictor (SDP/DP) ===
             start_memory = get_memory_usage()
+            start_time = time.perf_counter()
 
             # SDP + DP
             logw = net_g_jp.sdp(
@@ -162,28 +182,44 @@ def profile_memory_usage(
 
             z_p = m_p + torch.randn_like(m_p) * torch.exp(logs_p) * DEFAULT_NOISE
 
+            duration_time = time.perf_counter() - start_time
             duration_memory = get_memory_usage()
             results["04_duration_predictor"] = duration_memory - start_memory
-            print(f"Duration Predictor後: +{duration_memory - start_memory:.2f} MB")
+            time_results["04_duration_predictor"] = duration_time
+            print(
+                f"Duration Predictor後: +{duration_memory - start_memory:.2f} MB, {duration_time:.3f}秒"
+            )
 
             # === 4. Flow（TransformerCouplingBlock） ===
             start_memory = get_memory_usage()
+            start_time = time.perf_counter()
 
             z = net_g_jp.flow(z_p, y_mask, g=g, reverse=True)
 
+            flow_time = time.perf_counter() - start_time
             flow_memory = get_memory_usage()
             results["05_flow"] = flow_memory - start_memory
-            print(f"Flow後: +{flow_memory - start_memory:.2f} MB")
+            time_results["05_flow"] = flow_time
+            print(f"Flow後: +{flow_memory - start_memory:.2f} MB, {flow_time:.3f}秒")
 
             # === 5. Generator (Decoder) ===
             start_memory = get_memory_usage()
+            start_time = time.perf_counter()
 
             z_input = z * y_mask
-            output = net_g_jp.dec(z_input, g=g)
+            # Generator (Decoder) はFP16なので、入力をFP16に変換
+            if USE_FP16:
+                output = net_g_jp.dec(z_input.half(), g=g.half())
+            else:
+                output = net_g_jp.dec(z_input, g=g)
 
+            generator_time = time.perf_counter() - start_time
             generator_memory = get_memory_usage()
             results["06_generator"] = generator_memory - start_memory
-            print(f"Generator後: +{generator_memory - start_memory:.2f} MB")
+            time_results["06_generator"] = generator_time
+            print(
+                f"Generator後: +{generator_memory - start_memory:.2f} MB, {generator_time:.3f}秒"
+            )
 
         else:
             # 通常モデルの場合（省略）
@@ -192,19 +228,31 @@ def profile_memory_usage(
             results["04_duration_predictor"] = 0
             results["05_flow"] = 0
             results["06_generator"] = 0
+            time_results["02_speaker_embedding"] = 0.0
+            time_results["03_text_encoder"] = 0.0
+            time_results["04_duration_predictor"] = 0.0
+            time_results["05_flow"] = 0.0
+            time_results["06_generator"] = 0.0
 
-        # === 総メモリ使用量 ===
+        # === 総メモリ使用量と総処理時間 ===
         final_memory = get_memory_usage()
+        total_time = sum(time_results.values())
         results["07_total"] = final_memory - baseline_memory
+        time_results["07_total"] = total_time
         print(
             f"最終メモリ使用量: {final_memory:.2f} MB (総増加: {final_memory - baseline_memory:.2f} MB)"
         )
+        print(f"総処理時間: {total_time:.3f}秒")
 
         # === ピークメモリ ===
         if torch.cuda.is_available():
             peak_memory = torch.cuda.max_memory_allocated() / (1024 * 1024)
             results["08_peak"] = peak_memory
             print(f"ピークメモリ: {peak_memory:.2f} MB")
+
+        # メモリと時間の結果を合体
+        for key, value in time_results.items():
+            results[f"{key}_time"] = value
 
         return results
 
@@ -221,7 +269,7 @@ def profile_bert_separately(device: str, texts: list[str]) -> dict[str, float]:
     print(f"BERT読込前: {before_bert:.2f} MB")
 
     # BERTモデルロード
-    bert_models.load_model(Languages.JP, device_map=device, use_fp16=True)
+    bert_models.load_model(Languages.JP, device_map=device, use_fp16=USE_FP16)
     after_bert_load = get_memory_usage()
     bert_load_memory = after_bert_load - before_bert
     results["bert_model_load"] = bert_load_memory
@@ -292,7 +340,7 @@ def main():
         device,
         onnx_providers=[],
         ignore_onnx=True,
-        use_fp16=True,
+        use_fp16=USE_FP16,
     )
 
     if len(model_holder.models_info) == 0:
@@ -362,8 +410,11 @@ def main():
     # 各テキストの結果
     for text_key, results in all_results.items():
         print(f"\n{text_key}:")
-        for stage, memory in results.items():
-            print(f"  {stage}: {memory:.2f} MB")
+        for stage, value in results.items():
+            if stage.endswith("_time"):
+                print(f"  {stage}: {value:.3f}秒")
+            else:
+                print(f"  {stage}: {value:.2f} MB")
 
     # ボトルネック分析
     print(f"\n{'=' * 80}")
@@ -399,6 +450,18 @@ def main():
                     else 0
                 )
                 print(f"  {name}: {memory:.2f} MB ({percentage:.1f}%)")
+
+        print("\n各段階の処理時間:")
+        time_stages = [f"{stage}_time" for stage in stages]
+        for stage, name in zip(time_stages, stage_names):
+            if stage in long_text_results:
+                time_val = long_text_results[stage]
+                percentage = (
+                    time_val / long_text_results["07_total_time"] * 100
+                    if long_text_results["07_total_time"] > 0
+                    else 0
+                )
+                print(f"  {name}: {time_val:.3f}秒 ({percentage:.1f}%)")
 
     # モデルアンロード
     model.unload()
