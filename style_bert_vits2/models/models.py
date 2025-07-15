@@ -166,6 +166,22 @@ class TransformerCouplingBlock(nn.Module):
         g: torch.Tensor | None = None,
         reverse: bool = False,
     ) -> torch.Tensor:
+        # メモリ効率化のため、長い系列ではチャンク処理を適用
+        seq_len = x.size(2)
+        CHUNK_SIZE = 1024
+        if seq_len > CHUNK_SIZE:
+            return self._chunked_forward(x, x_mask, g, reverse, CHUNK_SIZE)
+        else:
+            return self._standard_forward(x, x_mask, g, reverse)
+
+    def _standard_forward(
+        self,
+        x: torch.Tensor,
+        x_mask: torch.Tensor,
+        g: torch.Tensor | None,
+        reverse: bool,
+    ) -> torch.Tensor:
+        """従来の Flow 処理の実装"""
         if not reverse:
             for flow in self.flows:
                 x, _ = flow(x, x_mask, g=g, reverse=reverse)
@@ -173,6 +189,65 @@ class TransformerCouplingBlock(nn.Module):
             for flow in reversed(self.flows):
                 x = flow(x, x_mask, g=g, reverse=reverse)
         return x
+
+    def _chunked_forward(
+        self,
+        x: torch.Tensor,
+        x_mask: torch.Tensor,
+        g: torch.Tensor | None,
+        reverse: bool,
+        chunk_size: int,
+    ) -> torch.Tensor:
+        """チャンクごとに処理しメモリ消費の肥大化を抑えた Flow 処理の実装"""
+        batch_size, channels, seq_len = x.shape
+        overlap_size = 16
+
+        outputs = []
+
+        for start in range(0, seq_len, chunk_size - overlap_size):
+            end = min(start + chunk_size, seq_len)
+            actual_chunk_size = end - start
+
+            # チャンク抽出
+            chunk_x = x[:, :, start:end]
+            chunk_mask = x_mask[:, :, start:end]
+
+            # チャンクごとの Flow 処理
+            chunk_output = self._standard_forward(chunk_x, chunk_mask, g, reverse)
+
+            # オーバーラップ処理
+            if start == 0:
+                # 最初のチャンク
+                if end < seq_len:
+                    outputs.append(chunk_output[:, :, : -overlap_size // 2])
+                else:
+                    outputs.append(chunk_output)
+            elif end >= seq_len:
+                # 最後のチャンク
+                outputs.append(chunk_output[:, :, overlap_size // 2 :])
+            else:
+                # 中間チャンク
+                outputs.append(
+                    chunk_output[:, :, overlap_size // 2 : -overlap_size // 2]
+                )
+
+            # メモリ解放
+            del chunk_x, chunk_mask, chunk_output
+
+        # 結合
+        result = torch.cat(outputs, dim=2)
+
+        # 長さ調整
+        if result.size(2) != seq_len:
+            if result.size(2) < seq_len:
+                # パディング
+                pad_size = seq_len - result.size(2)
+                result = torch.nn.functional.pad(result, (0, pad_size))
+            else:
+                # トリミング
+                result = result[:, :, :seq_len]
+
+        return result
 
 
 class StochasticDurationPredictor(nn.Module):

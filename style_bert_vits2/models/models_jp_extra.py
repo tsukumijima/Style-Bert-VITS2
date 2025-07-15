@@ -181,7 +181,7 @@ class TransformerCouplingBlock(nn.Module):
         reverse: bool,
         chunk_size: int,
     ) -> torch.Tensor:
-        """チャンク処理によりメモリ効率の良い Flow 処理の実装"""
+        """チャンクごとに処理しメモリ消費の肥大化を抑えた Flow 処理の実装"""
         batch_size, channels, seq_len = x.shape
         overlap_size = 16
 
