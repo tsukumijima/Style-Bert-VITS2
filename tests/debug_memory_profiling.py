@@ -282,7 +282,8 @@ def profile_bert_separately(device: str, texts: list[str]) -> dict[str, float]:
 
         # BERT特徴量の抽出のみ
 
-        # テキスト前処理
+        # テキスト前処理の測定
+        nlp_start_time = time.perf_counter()
         norm_text, phone, tone, word2ph, sep_text, _, _ = (
             clean_text_with_given_phone_tone(
                 text,
@@ -291,8 +292,10 @@ def profile_bert_separately(device: str, texts: list[str]) -> dict[str, float]:
                 raise_yomi_error=False,
             )
         )
+        nlp_time = time.perf_counter() - nlp_start_time
 
-        # BERT特徴量抽出
+        # BERT特徴量抽出の測定
+        bert_extract_start_time = time.perf_counter()
         bert_features = extract_bert_feature(
             norm_text,
             word2ph,
@@ -302,11 +305,17 @@ def profile_bert_separately(device: str, texts: list[str]) -> dict[str, float]:
             0.7,  # assist_text_weight
             sep_text,
         )
+        bert_extract_time = time.perf_counter() - bert_extract_start_time
 
         bert_extraction_memory = get_memory_usage() - start_memory
         results[f"bert_extraction_text_{i}"] = bert_extraction_memory
+        results[f"nlp_time_text_{i}"] = nlp_time
+        results[f"bert_extract_time_text_{i}"] = bert_extract_time
         print(
             f"テキスト{i}（{len(text)}文字）BERT抽出: +{bert_extraction_memory:.2f} MB"
+        )
+        print(
+            f"  NLP処理時間: {nlp_time:.3f}秒, BERT抽出時間: {bert_extract_time:.3f}秒"
         )
 
         del bert_features, norm_text, phone, tone, word2ph, sep_text
