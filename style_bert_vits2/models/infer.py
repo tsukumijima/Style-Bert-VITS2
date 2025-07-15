@@ -131,6 +131,14 @@ def get_net_g(
         net_g.dec.half()
         logger.info("Generator module converted to FP16 for selective mixed precision")
 
+    # Generator (Decoder) の推論最適化: weight_norm を取り除く
+    # 学習完了後の推論時には weight_norm は不要なオーバーヘッドとなるため除去しておく
+    # 精度に影響はなく、単に計算効率が向上する
+    net_g.dec.remove_weight_norm()
+    logger.info(
+        "Generator module weight normalization removed for inference optimization"
+    )
+
     return net_g
 
 
