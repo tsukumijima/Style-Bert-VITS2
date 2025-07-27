@@ -59,12 +59,7 @@ def load_model(
     use_fp16: bool = False,
     use_int8: bool = False,
     llm_int8_threshold: float = 6.0,
-    llm_int8_skip_modules: list[str] | None = [
-        "embeddings",
-        "LayerNorm",
-        "embed_proj",
-        "dense",
-    ],
+    llm_int8_skip_modules: list[str] | None = None,
 ) -> PreTrainedModel | DebertaV2Model:
     """
     指定された言語の BERT モデルをロードし、ロード済みの BERT モデルを返す。
@@ -95,7 +90,7 @@ def load_model(
         use_fp16 (bool): FP16 (半精度) でモデルをロードするかどうか。True の場合、メモリ使用量を削減し推論を高速化する (デフォルト: False)
         use_int8 (bool): INT8 (8bit) 量子化でモデルをロードするかどうか。True の場合、bitsandbytes を使用してメモリ使用量を大幅に削減する。GPU 必須 (デフォルト: False)
         llm_int8_threshold (float): LLM.int8 の外れ値判定しきい値。値を下げると精度が向上するが速度が低下する (デフォルト: 6.0)
-        llm_int8_skip_modules (list[str] | None): 8bit 量子化をスキップするモジュール名のリスト。埋め込み層や LayerNorm など重要層を指定 (デフォルト: ["embeddings", "LayerNorm", "embed_proj", "dense"])
+        llm_int8_skip_modules (list[str] | None): 8bit 量子化をスキップするモジュール名のリスト。埋め込み層や LayerNorm など重要層を指定 (デフォルト: None)
 
     Returns:
         PreTrainedModel | DebertaV2Model: ロード済みの BERT モデル
@@ -133,7 +128,6 @@ def load_model(
             load_in_8bit=True,
             llm_int8_threshold=llm_int8_threshold,
             llm_int8_skip_modules=llm_int8_skip_modules,
-            llm_int8_enable_fp32_cpu_offload=False,
         )
     elif use_fp16 is True:
         # FP16 量子化時は torch_dtype が必ず float16 でなければならない
