@@ -12,11 +12,7 @@ from style_bert_vits2.constants import Languages
 from style_bert_vits2.logging import logger
 from style_bert_vits2.models import commons, utils
 from style_bert_vits2.models.hyper_parameters import HyperParameters
-from style_bert_vits2.models.memory_efficient import (
-    clear_memory_pools,
-    copy_to_bucketed_tensor,
-    get_memory_pool_stats,
-)
+from style_bert_vits2.models.memory_efficient import copy_to_bucketed_tensor
 from style_bert_vits2.models.models import SynthesizerTrn
 from style_bert_vits2.models.models_jp_extra import (
     SynthesizerTrn as SynthesizerTrnJPExtra,
@@ -251,7 +247,6 @@ def prepare_inference_data(
     given_tone: list[int] | None = None,
     jtalk: OpenJTalk | None = None,
     use_memory_efficient_buckets: bool = False,
-    model_name: str = "default",
 ) -> tuple[
     torch.Tensor,
     torch.Tensor,
@@ -311,14 +306,12 @@ def prepare_inference_data(
     x_tst_lengths = torch.LongTensor([phones.size(0)]).to(device)
     style_vec_tensor = torch.from_numpy(style_vec).to(device).unsqueeze(0)
 
-    # バケツ化処理（オプション）
+    # バケツ化処理
     if use_memory_efficient_buckets:
         actual_length = phones.size(0)  # 実際の長さを保存
 
         # x_tst とその関連テンソルをバケツ化
-        x_tst, _ = copy_to_bucketed_tensor(
-            x_tst, length_dim=1, model_name=model_name, use_pool=True
-        )
+        x_tst, _ = copy_to_bucketed_tensor(x_tst, length_dim=1, use_pool=True)
 
         # 同じバケツサイズに合わせて他のテンソルもバケツ化
         bucket_size = x_tst.shape[1]
@@ -331,16 +324,19 @@ def prepare_inference_data(
         tones = tones_bucketed
 
         lang_ids_bucketed = torch.zeros(
-            (lang_ids.shape[0], bucket_size), dtype=lang_ids.dtype, device=lang_ids.device
+            (lang_ids.shape[0], bucket_size),
+            dtype=lang_ids.dtype,
+            device=lang_ids.device,
         )
         lang_ids_bucketed[:, :actual_length] = lang_ids[:, :actual_length]
         lang_ids = lang_ids_bucketed
 
-        # BERT特徴量もバケツ化
+        # BERT 特徴量もバケツ化
         if zh_bert.numel() > 0:
             zh_bert_bucketed = torch.zeros(
                 (zh_bert.shape[0], zh_bert.shape[1], bucket_size),
-                dtype=zh_bert.dtype, device=zh_bert.device
+                dtype=zh_bert.dtype,
+                device=zh_bert.device,
             )
             zh_bert_bucketed[:, :, :actual_length] = zh_bert[:, :, :actual_length]
             zh_bert = zh_bert_bucketed
@@ -348,7 +344,8 @@ def prepare_inference_data(
         if ja_bert.numel() > 0:
             ja_bert_bucketed = torch.zeros(
                 (ja_bert.shape[0], ja_bert.shape[1], bucket_size),
-                dtype=ja_bert.dtype, device=ja_bert.device
+                dtype=ja_bert.dtype,
+                device=ja_bert.device,
             )
             ja_bert_bucketed[:, :, :actual_length] = ja_bert[:, :, :actual_length]
             ja_bert = ja_bert_bucketed
@@ -356,7 +353,8 @@ def prepare_inference_data(
         if en_bert.numel() > 0:
             en_bert_bucketed = torch.zeros(
                 (en_bert.shape[0], en_bert.shape[1], bucket_size),
-                dtype=en_bert.dtype, device=en_bert.device
+                dtype=en_bert.dtype,
+                device=en_bert.device,
             )
             en_bert_bucketed[:, :, :actual_length] = en_bert[:, :, :actual_length]
             en_bert = en_bert_bucketed
@@ -399,7 +397,6 @@ def infer(
     use_fp16: bool = False,
     clear_cuda_cache: bool = True,
     use_memory_efficient_buckets: bool = False,
-    model_name: str = "default",
 ) -> NDArray[np.float32]:
     """
     PyTorch 版音声合成モデルの推論を実行する関数。
@@ -433,7 +430,6 @@ def infer(
             given_tone=given_tone,
             jtalk=jtalk,
             use_memory_efficient_buckets=use_memory_efficient_buckets,
-            model_name=model_name,
         )
 
         if is_jp_extra:
@@ -559,7 +555,6 @@ def infer_stream(
             given_tone=given_tone,
             jtalk=jtalk,
             use_memory_efficient_buckets=use_memory_efficient_buckets,
-            model_name=model_name,
         )
 
         # Generator 実行前の共通処理を実行
@@ -681,6 +676,10 @@ def infer_stream(
             y_mask,
             g,
             z_input,
+            attn,
+            z_p,
+            m_p,
+            logs_p,
         )
 
         # CUDA メモリを解放する (デフォルトでは True)

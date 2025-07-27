@@ -4,7 +4,7 @@
 
 import threading
 import time
-from typing import Dict, Optional, Tuple
+from typing import Any
 
 import torch
 
@@ -15,27 +15,26 @@ from style_bert_vits2.logging import logger
 # 短い系列から長い系列まで効率的にカバー
 BUCKET_SIZES = [8, 16, 32, 64, 128, 256, 512, 1024, 1536, 2048]
 
-# BERT専用バケツサイズ（トークン長最適化）
-# DeBERTa-v2対応、断片化削減とFLOPs増加のバランス
-BERT_BUCKET_SIZES = [32, 64, 96, 128, 192, 256, 384, 512]
+# BERT 専用バケツサイズ
+BERT_BUCKET_SIZES = [32, 64, 96, 128, 192, 256, 384, 512, 768, 1024, 1536, 2048]
 
-# グローバルメモリプール（dtype別に管理）
+# グローバルメモリプール (dtype 別に管理)
 # key: (dtype, device) -> dict[bucket_size -> (tensor, last_used_time)]
 _memory_pools: dict[tuple[torch.dtype, str], dict[int, tuple[torch.Tensor, float]]] = {}
 
-# プール用途別管理（Mid-lived vs Long-lived分離）
+# プール用途別管理 (Mid-lived vs Long-lived 分離)
 # key: (pool_type, dtype, device) -> dict[bucket_size -> (tensor, last_used_time)]
 _typed_memory_pools: dict[
     tuple[str, torch.dtype, str], dict[int, tuple[torch.Tensor, float]]
 ] = {}
 
-# メモリプール操作のスレッドセーフティ確保
+# メモリプール操作のスレッドセーフ確保
 _pool_lock = threading.Lock()
 
 # メモリプールの設定
-POOL_MAX_AGE_SECONDS = 900  # 15分間未使用のテンソルは解放
+POOL_MAX_AGE_SECONDS = 900  # 15 分間未使用のテンソルは解放
 POOL_MAX_MEMORY_GB = 2.0  # プール全体の最大メモリ使用量
-POOL_CHECK_INTERVAL = 60  # プールチェック間隔（秒）
+POOL_CHECK_INTERVAL = 60  # プールチェック間隔 (秒)
 
 # 最後のプールチェック時刻
 _last_pool_check = time.time()
@@ -43,7 +42,7 @@ _last_pool_check = time.time()
 
 def get_bucket_size(actual_length: int, max_overhead_ratio: float = 1.5) -> int:
     """
-    実際の長さに対して最適なバケツサイズを返す
+    実際の長さに対して最適なバケツサイズを返す。
 
     Args:
         actual_length: 実際の系列長
@@ -64,30 +63,18 @@ def get_bucket_size(actual_length: int, max_overhead_ratio: float = 1.5) -> int:
     return actual_length
 
 
-def get_pool_key(dtype: torch.dtype, device: str) -> tuple[torch.dtype, str]:
-    """プールのキーを生成（dtype別管理）"""
-    return (dtype, device)
-
-
-def get_typed_pool_key(
-    pool_type: str, dtype: torch.dtype, device: str
-) -> tuple[str, torch.dtype, str]:
-    """用途別プールのキーを生成"""
-    return (pool_type, dtype, device)
-
-
 def get_bert_bucket_size(actual_length: int, max_overhead_ratio: float = 1.3) -> int:
     """
-    BERTトークン長に対して最適なバケツサイズを返す
+    BERT トークン長に対して最適なバケツサイズを返す。
 
     Args:
         actual_length: 実際のトークン長
-        max_overhead_ratio: 許容する最大オーバーヘッド比率（デフォルト1.3倍）
+        max_overhead_ratio: 許容する最大オーバーヘッド比率（デフォルト: 1.3倍）
 
     Returns:
         最適なバケツサイズ
     """
-    # BERT専用のバケツサイズから選択
+    # BERT 専用のバケツサイズから選択
     for bucket_size in BERT_BUCKET_SIZES:
         if bucket_size >= actual_length:
             if bucket_size <= actual_length * max_overhead_ratio:
@@ -99,8 +86,10 @@ def get_bert_bucket_size(actual_length: int, max_overhead_ratio: float = 1.3) ->
     return actual_length
 
 
-def _check_and_cleanup_pools():
-    """古いテンソルを解放し、メモリ上限をチェック"""
+def _check_and_cleanup_pools() -> None:
+    """
+    古いテンソルを解放し、メモリ上限をチェックする。
+    """
     global _last_pool_check
 
     current_time = time.time()
@@ -140,31 +129,27 @@ def _check_and_cleanup_pools():
             f"Memory pool exceeds limit: {total_memory_gb:.2f}GB > {POOL_MAX_MEMORY_GB}GB. "
             "Clearing oldest tensors..."
         )
-        _evict_oldest_tensors(total_memory_gb - POOL_MAX_MEMORY_GB)
+        # 最も古いテンソルから順に解放する
+        memory_to_free_gb = total_memory_gb - POOL_MAX_MEMORY_GB
+        # すべてのテンソルを最終使用時刻でソート
+        all_tensors = []
+        for pool_key, pool in _memory_pools.items():
+            for bucket_size, (tensor, last_used) in pool.items():
+                memory_gb = tensor.element_size() * tensor.numel() / (1024**3)
+                all_tensors.append((last_used, pool_key, bucket_size, memory_gb))
+        all_tensors.sort()  # 最も古いものから
 
+        freed_memory = 0
+        for last_used, pool_key, bucket_size, memory_gb in all_tensors:
+            if freed_memory >= memory_to_free_gb:
+                break
 
-def _evict_oldest_tensors(memory_to_free_gb: float):
-    """最も古いテンソルから順に解放"""
-    # すべてのテンソルを最終使用時刻でソート
-    all_tensors = []
-    for pool_key, pool in _memory_pools.items():
-        for bucket_size, (tensor, last_used) in pool.items():
-            memory_gb = tensor.element_size() * tensor.numel() / (1024**3)
-            all_tensors.append((last_used, pool_key, bucket_size, memory_gb))
-
-    all_tensors.sort()  # 最も古いものから
-
-    freed_memory = 0
-    for last_used, pool_key, bucket_size, memory_gb in all_tensors:
-        if freed_memory >= memory_to_free_gb:
-            break
-
-        if pool_key in _memory_pools and bucket_size in _memory_pools[pool_key]:
-            del _memory_pools[pool_key][bucket_size]
-            freed_memory += memory_gb
-            logger.debug(
-                f"Evicted tensor: {pool_key}, size={bucket_size}, freed={memory_gb:.3f}GB"
-            )
+            if pool_key in _memory_pools and bucket_size in _memory_pools[pool_key]:
+                del _memory_pools[pool_key][bucket_size]
+                freed_memory += memory_gb
+                logger.debug(
+                    f"Evicted tensor: {pool_key}, size={bucket_size}, freed={memory_gb:.3f}GB"
+                )
 
 
 def allocate_bucketed_tensor(
@@ -176,7 +161,7 @@ def allocate_bucketed_tensor(
     use_pool: bool = True,
 ) -> tuple[torch.Tensor, int]:
     """
-    バケツ化されたテンソルを割り当てる
+    バケツ化されたテンソルを割り当てる。
 
     Args:
         shape: テンソルの形状
@@ -199,7 +184,7 @@ def allocate_bucketed_tensor(
         # 定期的なクリーンアップ
         _check_and_cleanup_pools()
 
-        pool_key = get_pool_key(dtype, str(device))
+        pool_key = (dtype, str(device))
         if pool_key not in _memory_pools:
             _memory_pools[pool_key] = {}
 
@@ -226,16 +211,14 @@ def allocate_bucketed_tensor(
 def copy_to_bucketed_tensor(
     source: torch.Tensor,
     length_dim: int = -1,
-    model_name: str = "default",  # 互換性のため残すが使用しない
     use_pool: bool = True,
 ) -> tuple[torch.Tensor, int]:
     """
-    既存のテンソルをバケツ化されたテンソルにコピー
+    既存のテンソルをバケツ化されたテンソルにコピーする。
 
     Args:
         source: ソーステンソル
         length_dim: 長さ次元のインデックス
-        model_name: (非推奨) モデル名
         use_pool: メモリプールを使用するか
 
     Returns:
@@ -244,7 +227,7 @@ def copy_to_bucketed_tensor(
     actual_length = source.shape[length_dim]
 
     # バケツ化されたテンソルを割り当て
-    bucketed_tensor, bucket_size = allocate_bucketed_tensor(
+    bucketed_tensor, _ = allocate_bucketed_tensor(
         source.shape,
         actual_length,
         length_dim,
@@ -254,7 +237,7 @@ def copy_to_bucketed_tensor(
     )
 
     # パディング部分を含めて全体をゼロで初期化
-    # CUDAカーネルが未初期化メモリにアクセスしてエラーになることを防ぐ
+    # CUDA カーネルが未初期化メモリにアクセスしてエラーになることを防ぐ
     bucketed_tensor.zero_()
 
     # データをコピー（実際の長さ分のみ）
@@ -272,16 +255,12 @@ def copy_to_bucketed_tensor(
     return bucketed_tensor, actual_length
 
 
-def clear_memory_pools(model_name: str | None = None):
+def clear_memory_pools() -> None:
     """
-    メモリプールをクリア
-
-    Args:
-        model_name: (非推奨) 特定のモデルのプールのみクリアする場合は指定
+    メモリプールをクリアする。
     """
     global _memory_pools
 
-    # model_name引数は無視（後方互換性のため残す）
     _memory_pools.clear()
     logger.info("All memory pools cleared")
 
@@ -290,7 +269,7 @@ def clear_memory_pools(model_name: str | None = None):
         torch.cuda.empty_cache()
 
 
-def get_memory_pool_stats() -> dict[str, dict[str, any]]:
+def get_memory_pool_stats() -> dict[str, dict[str, Any]]:
     """
     メモリプールの統計情報を取得
 
@@ -414,7 +393,7 @@ def _allocate_typed_bucketed_tensor(
         (pool_type == "bert_mid_lived" and bucket_size in BERT_BUCKET_SIZES)
         or (pool_type != "bert_mid_lived" and bucket_size in BUCKET_SIZES)
     ):
-        pool_key = get_typed_pool_key(pool_type, dtype, str(device))
+        pool_key = (pool_type, dtype, str(device))
         if pool_key not in _typed_memory_pools:
             _typed_memory_pools[pool_key] = {}
 
@@ -443,12 +422,13 @@ def _allocate_typed_bucketed_tensor(
         return torch.empty(bucketed_shape, dtype=dtype, device=device), bucket_size
 
 
-def clear_typed_memory_pools(pool_type: str | None = None):
+def clear_typed_memory_pools(pool_type: str | None = None) -> None:
     """
-    用途別メモリプールをクリア（Mid-lived専用クリア対応）
+    用途別メモリプールをクリアする。
+    Mid-lived 専用クリア対応。
 
     Args:
-        pool_type: クリアするプール種別。Noneの場合は全プールをクリア
+        pool_type: クリアするプール種別。None の場合は全プールをクリアする。
     """
     global _typed_memory_pools
 
@@ -472,7 +452,7 @@ def clear_typed_memory_pools(pool_type: str | None = None):
         torch.cuda.empty_cache()
 
 
-def get_typed_memory_pool_stats() -> dict[str, dict[str, any]]:
+def get_typed_memory_pool_stats() -> dict[str, dict[str, Any]]:
     """
     用途別メモリプールの統計情報を取得
 

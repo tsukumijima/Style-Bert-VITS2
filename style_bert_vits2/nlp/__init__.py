@@ -31,6 +31,7 @@ def extract_bert_feature(
     assist_text: str | None = None,
     assist_text_weight: float = 0.7,
     sep_text: list[str] | None = None,
+    use_memory_efficient_buckets: bool = False,
 ) -> torch.Tensor:
     """
     テキストから BERT の特徴量を抽出する (PyTorch 推論)
@@ -58,6 +59,7 @@ def extract_bert_feature(
             assist_text,
             assist_text_weight,
             sep_text,  # 日本語のみ sep_text を指定する
+            use_memory_efficient_buckets=use_memory_efficient_buckets,
         )
     elif language == Languages.EN:
         from style_bert_vits2.nlp.english.bert_feature import extract_bert_feature
