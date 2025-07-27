@@ -17,13 +17,11 @@ https://qiita.com/__dAi00/items/970f0fe66286510537dd の結果と同様の測定
 
 import argparse
 import time
-from pathlib import Path
 from typing import Any, cast
 
 import numpy as np
 import torch
 from numpy.typing import NDArray
-from scipy.io import wavfile
 
 from style_bert_vits2.constants import (
     BASE_DIR,
@@ -36,6 +34,8 @@ from style_bert_vits2.constants import (
 from style_bert_vits2.logging import logger
 from style_bert_vits2.models.infer import infer, infer_stream
 from style_bert_vits2.tts_model import TTSModel, TTSModelHolder
+
+from .utils import save_benchmark_audio, set_random_seeds
 
 
 # 測定用サンプルテキスト
@@ -202,46 +202,20 @@ def measure_infer_stream_performance(
         return first_chunk_time or 0.0, total_time, audio_duration, audio_chunks
 
 
-def save_audio_file(
-    audio_data: NDArray[np.float32], sample_rate: int, text: str, output_type: str
-) -> None:
-    """音声データをWAVファイルとして保存する。"""
-    try:
-        output_dir = Path("tests/wavs/streaming_benchmark")
-        output_dir.mkdir(parents=True, exist_ok=True)
-
-        # ファイル名に使えない文字を置換
-        safe_filename = (
-            text.replace("/", "_")
-            .replace("\\", "_")
-            .replace(":", "")
-            .replace("*", "")
-            .replace("?", "")
-            .replace("<", "")
-            .replace(">", "")
-            .replace("|", "")
-            .replace('"', "")
-            .replace("!", "")
-        )
-        output_path = output_dir / f"{safe_filename}_{output_type}.wav"
-
-        wavfile.write(str(output_path), sample_rate, audio_data)
-
-    except ImportError:
-        logger.warning("scipy is required to save audio files, skipping audio save")
-    except Exception as ex:
-        logger.error(f"Failed to save audio file: {ex}")
-
-
 def run_benchmark(
     device: str = "cpu",
     model_name: str = "koharune-ami",
     num_runs: int = 3,
     use_fp16: bool = True,
+    fix_seed: bool = False,
 ) -> None:
     """
     ベンチマークを実行する。
     """
+    # ランダムシード固定
+    if fix_seed:
+        set_random_seeds()
+
     print("=" * 80)
     print("Style-Bert-VITS2 ストリーミング推論パフォーマンス測定")
     print("=" * 80)
@@ -249,6 +223,7 @@ def run_benchmark(
     print(f"モデル: {model_name}")
     print(f"測定回数: {num_runs}")
     print(f"FP16: {use_fp16}")
+    print(f"ランダムシード固定: {'有効' if fix_seed else '無効'}")
     print("=" * 80)
 
     # モデルホルダーを初期化
@@ -379,8 +354,20 @@ def run_benchmark(
             and last_stream_audio is not None
             and last_sample_rate is not None
         ):
-            save_audio_file(last_normal_audio, last_sample_rate, text, "normal")
-            save_audio_file(last_stream_audio, last_sample_rate, text, "streaming")
+            save_benchmark_audio(
+                last_normal_audio,
+                last_sample_rate,
+                text,
+                "streaming_benchmark",
+                "normal",
+            )
+            save_benchmark_audio(
+                last_stream_audio,
+                last_sample_rate,
+                text,
+                "streaming_benchmark",
+                "streaming",
+            )
 
         # 平均値を計算
         avg_infer_time = np.mean(infer_times)
@@ -483,6 +470,11 @@ def main() -> None:
         action="store_false",
         help="FP16 を無効化する",
     )
+    parser.add_argument(
+        "--fix-seed",
+        action="store_true",
+        help="ランダムシードを固定して再現性を確保する",
+    )
     parser.set_defaults(use_fp16=True)
 
     args = parser.parse_args()
@@ -493,6 +485,7 @@ def main() -> None:
             model_name=args.model,
             num_runs=args.runs,
             use_fp16=args.use_fp16,
+            fix_seed=args.fix_seed,
         )
     except KeyboardInterrupt:
         print("\nベンチマークが中断されました。")

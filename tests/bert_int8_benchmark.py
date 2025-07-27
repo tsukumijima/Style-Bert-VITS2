@@ -10,7 +10,6 @@ BERT 8bit 量子化の音声合成品質への影響評価テストスクリプ�
 """
 
 import argparse
-import random
 import time
 from pathlib import Path
 from typing import NotRequired, TypedDict
@@ -18,7 +17,6 @@ from typing import NotRequired, TypedDict
 import numpy as np
 import torch
 from numpy.typing import NDArray
-from scipy.io import wavfile
 
 from style_bert_vits2.constants import (
     BASE_DIR,
@@ -33,6 +31,8 @@ from style_bert_vits2.models.infer import infer
 from style_bert_vits2.nlp import bert_models
 from style_bert_vits2.tts_model import TTSModel, TTSModelHolder
 
+from .utils import save_benchmark_audio, set_random_seeds
+
 
 class TTSBertConfig(TypedDict):
     """TTS BERT設定の型定義。"""
@@ -42,23 +42,6 @@ class TTSBertConfig(TypedDict):
     use_int8: bool
     llm_int8_threshold: NotRequired[float]
     llm_int8_skip_modules: NotRequired[list[str] | None]
-
-
-# 再現性のためのランダムシード
-RANDOM_SEED = 42
-
-
-def set_random_seeds(seed: int = RANDOM_SEED) -> None:
-    """すべてのランダム要素に固定シードを設定して再現性を確保する。"""
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed(seed)
-        torch.cuda.manual_seed_all(seed)
-        # CUDNNの決定的な動作を有効にする（速度は若干低下するが再現性が向上）
-        torch.backends.cudnn.deterministic = True
-        torch.backends.cudnn.benchmark = False
 
 
 # 測定用サンプルテキスト
@@ -76,22 +59,6 @@ BENCHMARK_TEXTS = [
         "description": "Seasons_poetic",
     },
 ]
-
-
-def save_audio_file(
-    audio_data: NDArray[np.float32],
-    sample_rate: int,
-    output_dir: Path,
-    filename: str,
-) -> None:
-    """音声データをWAVファイルとして保存する。"""
-    try:
-        output_dir.mkdir(parents=True, exist_ok=True)
-        output_path = output_dir / f"{filename}.wav"
-        wavfile.write(str(output_path), sample_rate, audio_data)
-        logger.info(f"Saved audio to {output_path}")
-    except Exception as ex:
-        logger.error(f"Failed to save audio file: {ex}")
 
 
 def measure_tts_inference_time(
@@ -196,7 +163,7 @@ def test_bert_configuration(
 
     # ランダムシード固定が有効な場合のみ各設定開始時にリセット
     if fix_seed:
-        set_random_seeds(RANDOM_SEED)
+        set_random_seeds()
 
     # 既存の BERT モデルをアンロード
     if bert_models.is_model_loaded(Languages.JP):
@@ -235,12 +202,19 @@ def test_bert_configuration(
     # 音声ファイルを保存
     if output_dir:
         for case, audio_data in zip(BENCHMARK_TEXTS, audio_results):
-            filename = f"{case['description']}_{name.replace(' ', '_').replace('(', '').replace(')', '').replace('=', '_').replace(',', '_')}"
-            save_audio_file(
+            suffix = (
+                name.replace(" ", "_")
+                .replace("(", "")
+                .replace(")", "")
+                .replace("=", "_")
+                .replace(",", "_")
+            )
+            save_benchmark_audio(
                 audio_data,
                 model.hyper_parameters.data.sampling_rate,
-                output_dir,
-                filename,
+                case["description"],
+                "bert_int8_benchmark",
+                suffix,
             )
 
     # ピークメモリ使用量を取得
@@ -267,7 +241,7 @@ def run_benchmark(
     """
     # ランダムシード固定が指定された場合のみ初期化
     if fix_seed:
-        set_random_seeds(RANDOM_SEED)
+        set_random_seeds()
 
     print("=" * 80)
     print("BERT 8bit 量子化の音声合成品質への影響評価テスト (実用的測定)")

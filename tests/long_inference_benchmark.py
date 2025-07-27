@@ -16,13 +16,11 @@ Style-Bert-VITS2 長文一括推論のパフォーマンス測定スクリプト
 
 import argparse
 import time
-from pathlib import Path
 from typing import Any
 
 import numpy as np
 import torch
 from numpy.typing import NDArray
-from scipy.io import wavfile
 
 from style_bert_vits2.constants import (
     BASE_DIR,
@@ -36,6 +34,8 @@ from style_bert_vits2.logging import logger
 from style_bert_vits2.models.infer import infer
 from style_bert_vits2.nlp import bert_models
 from style_bert_vits2.tts_model import TTSModel, TTSModelHolder
+
+from .utils import save_benchmark_audio, set_random_seeds
 
 
 # 測定用サンプルテキスト (300文字以上)
@@ -70,43 +70,6 @@ BENCHMARK_TEXTS = [
         "description": "Long (NEWS)",
     },
 ]
-
-
-def save_audio_file(
-    audio_data: NDArray[np.float32], sample_rate: int, text: str, output_type: str
-) -> None:
-    """音声データをWAVファイルとして保存する。"""
-    try:
-        output_dir = Path("tests/wavs/long_inference_benchmark")
-        output_dir.mkdir(parents=True, exist_ok=True)
-
-        # ファイル名に使えない文字を置換
-        safe_filename = (
-            text.replace("/", "_")
-            .replace("\\", "_")
-            .replace(":", "")
-            .replace("*", "")
-            .replace("?", "")
-            .replace("<", "")
-            .replace(">", "")
-            .replace("|", "")
-            .replace('"', "")
-            .replace("!", "")
-        )
-
-        # ファイル名が長すぎる場合は切り詰める（拡張子と output_type を考慮して安全な長さに）
-        max_filename_length = 70  # 安全なファイル名長制限
-        if len(safe_filename) > max_filename_length:
-            safe_filename = safe_filename[:max_filename_length] + "..."
-
-        output_path = output_dir / f"{safe_filename}_{output_type}.wav"
-
-        wavfile.write(str(output_path), sample_rate, audio_data)
-
-    except ImportError:
-        logger.warning("scipy is required to save audio files, skipping audio save")
-    except Exception as ex:
-        logger.error(f"Failed to save audio file: {ex}")
 
 
 def measure_infer_performance(
@@ -181,10 +144,15 @@ def run_benchmark(
     model_name: str = "koharune-ami",
     num_runs: int = 5,
     use_fp16: bool = True,
+    fix_seed: bool = False,
 ) -> None:
     """
     ベンチマークを実行する。
     """
+    # ランダムシード固定
+    if fix_seed:
+        set_random_seeds()
+
     print("=" * 80)
     print("Style-Bert-VITS2 長文一括推論パフォーマンス測定")
     print("=" * 80)
@@ -192,6 +160,7 @@ def run_benchmark(
     print(f"モデル: {model_name}")
     print(f"測定回数: {num_runs}")
     print(f"FP16: {use_fp16}")
+    print(f"ランダムシード固定: {'有効' if fix_seed else '無効'}")
     print("=" * 80)
 
     # BERT メモリ使用量を測定
@@ -322,7 +291,13 @@ def run_benchmark(
 
         # 音声ファイルを保存（初回のダミーは除く）
         if last_audio is not None and last_sample_rate is not None:
-            save_audio_file(last_audio, last_sample_rate, text, "normal")
+            save_benchmark_audio(
+                last_audio,
+                last_sample_rate,
+                text,
+                "long_inference_benchmark",
+                "normal",
+            )
 
         # 平均値を計算
         avg_infer_time = np.mean(infer_times)
@@ -415,6 +390,11 @@ def main() -> None:
         action="store_false",
         help="FP16 を無効化する",
     )
+    parser.add_argument(
+        "--fix-seed",
+        action="store_true",
+        help="ランダムシードを固定して再現性を確保する",
+    )
     parser.set_defaults(use_fp16=True)
 
     args = parser.parse_args()
@@ -425,6 +405,7 @@ def main() -> None:
             model_name=args.model,
             num_runs=args.runs,
             use_fp16=args.use_fp16,
+            fix_seed=args.fix_seed,
         )
     except KeyboardInterrupt:
         print("\nベンチマークが中断されました。")

@@ -13,7 +13,6 @@ from pathlib import Path
 import numpy as np
 import torch
 from numpy.typing import NDArray
-from scipy.io import wavfile
 
 from style_bert_vits2.constants import (
     BASE_DIR,
@@ -32,47 +31,7 @@ from style_bert_vits2.models.memory_efficient import (
 from style_bert_vits2.nlp import bert_models
 from style_bert_vits2.tts_model import TTSModel, TTSModelHolder
 
-
-def save_audio_file(
-    audio_data: NDArray[np.float32], sample_rate: int, text: str, output_type: str
-) -> None:
-    """音声データをWAVファイルとして保存する。"""
-    try:
-        output_dir = Path("tests/wavs/memory_buckets_benchmark")
-        output_dir.mkdir(parents=True, exist_ok=True)
-
-        # ファイル名に使えない文字を置換
-        safe_filename = (
-            text.replace("/", "_")
-            .replace("\\", "_")
-            .replace(":", "")
-            .replace("*", "")
-            .replace("?", "")
-            .replace("<", "")
-            .replace(">", "")
-            .replace("|", "")
-            .replace('"', "")
-            .replace("!", "")
-        )
-
-        # ファイル名が長すぎる場合は切り詰める
-        max_filename_length = 50  # 安全なファイル名長制限
-        if len(safe_filename) > max_filename_length:
-            safe_filename = safe_filename[:max_filename_length] + "..."
-
-        output_path = output_dir / f"{safe_filename}_{output_type}.wav"
-
-        # 16bit整数に変換してWAVファイルとして保存
-        audio_int16 = (audio_data * 32767).astype(np.int16)
-        wavfile.write(str(output_path), sample_rate, audio_int16)
-
-        # ファイル保存成功をログ出力
-        logger.debug(f"Audio saved: {output_path}")
-
-    except ImportError:
-        logger.warning("scipy is required to save audio files, skipping audio save")
-    except Exception as ex:
-        logger.error(f"Failed to save audio file: {ex}")
+from .utils import save_benchmark_audio, set_random_seeds
 
 
 # テストテキスト（様々な長さ）
@@ -170,7 +129,6 @@ def measure_inference_performance(
             use_fp16=use_fp16,
             clear_cuda_cache=False,  # ベンチマーク中はキャッシュクリアを無効化
             use_memory_efficient_buckets=use_buckets,
-            model_name="benchmark",
         )
 
     end_time = time.perf_counter()
@@ -185,8 +143,12 @@ def measure_inference_performance(
     # 音声ファイル保存（オプション）
     if save_audio:
         output_type = "with_buckets" if use_buckets else "without_buckets"
-        save_audio_file(
-            audio_data, model.hyper_parameters.data.sampling_rate, text, output_type
+        save_benchmark_audio(
+            audio_data,
+            model.hyper_parameters.data.sampling_rate,
+            text,
+            "memory_buckets_benchmark",
+            output_type,
         )
 
     return inference_time, peak_memory, audio_data
@@ -197,8 +159,13 @@ def run_benchmark(
     model_name: str = "koharune-ami",
     num_iterations: int = 30,
     use_fp16: bool = True,
+    fix_seed: bool = False,
 ) -> None:
     """ベンチマークを実行する"""
+
+    # ランダムシード固定
+    if fix_seed:
+        set_random_seeds()
 
     print("=" * 80)
     print("Style-Bert-VITS2 メモリ効率化バケツ化ベンチマーク")
@@ -207,6 +174,7 @@ def run_benchmark(
     print(f"モデル: {model_name}")
     print(f"反復回数: {num_iterations}")
     print(f"FP16: {use_fp16}")
+    print(f"ランダムシード固定: {'有効' if fix_seed else '無効'}")
     print("=" * 80)
 
     # BERT メモリ使用量を測定
@@ -352,7 +320,7 @@ def run_benchmark(
     tracker_with.snapshot("Final (before cleanup)")
 
     # クリーンアップ
-    clear_memory_pools("benchmark")
+    clear_memory_pools()
     torch.cuda.empty_cache()
     gc.collect()
     tracker_with.snapshot("After cleanup")
@@ -466,6 +434,11 @@ def main():
         action="store_false",
         help="Disable FP16 inference",
     )
+    parser.add_argument(
+        "--fix-seed",
+        action="store_true",
+        help="Fix random seed for reproducibility",
+    )
     parser.set_defaults(use_fp16=True)
 
     args = parser.parse_args()
@@ -476,6 +449,7 @@ def main():
             model_name=args.model,
             num_iterations=args.iterations,
             use_fp16=args.use_fp16,
+            fix_seed=args.fix_seed,
         )
     except KeyboardInterrupt:
         print("\nベンチマークが中断されました。")
