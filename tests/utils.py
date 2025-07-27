@@ -51,7 +51,7 @@ def save_benchmark_audio(
         # ファイル名が長すぎる場合は切り詰める
         max_filename_length = 70  # 拡張子とサフィックスを考慮した安全な長さ
         if len(safe_filename) > max_filename_length:
-            safe_filename = safe_filename[:max_filename_length] + "..."
+            safe_filename = safe_filename[: max_filename_length - 3] + "..."
 
         # サフィックスがある場合は追加
         if suffix:

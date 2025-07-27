@@ -10,11 +10,10 @@ BERT バケツ化の数値精度検証テスト
 """
 
 import argparse
-from pathlib import Path
+from typing import Any
 
 import numpy as np
 import torch
-from torch import nn
 
 from style_bert_vits2.constants import Languages
 from style_bert_vits2.models.memory_efficient import bucket_bert_inputs
@@ -27,7 +26,7 @@ def test_bert_precision(
     test_texts: list[str] | None = None,
     tolerance_atol: float = 1e-6,
     tolerance_rtol: float = 1e-6,
-) -> dict[str, any]:
+) -> dict[str, Any]:
     """
     BERTバケツ化の数値精度検証を実行
 
