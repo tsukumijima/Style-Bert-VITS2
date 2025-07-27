@@ -220,9 +220,10 @@ def get_text(
         else:
             raise ValueError("language_str should be ZH, JP or EN")
 
-    assert zh_bert.shape[-1] == len(phone) or zh_bert.numel() == 0, (
-        f"Bert seq len {zh_bert.shape[-1]} != {len(phone)}"
-    )
+    for bert_name, bert_tensor in [("zh", zh_bert), ("ja", ja_bert), ("en", en_bert)]:
+        assert bert_tensor.shape[-1] == len(phone) or bert_tensor.numel() == 0, (
+            f"{bert_name}_bert seq len {bert_tensor.shape[-1]} != {len(phone)}"
+        )
 
     phone = torch.LongTensor(phone).to(device)
     tone = torch.LongTensor(tone).to(device)
@@ -414,7 +415,7 @@ def infer(
             zh_bert,
             ja_bert,
             en_bert,
-            style_vec,
+            style_vec_tensor,
         )
 
         # CUDA メモリを解放する (デフォルトでは True)
@@ -455,6 +456,12 @@ def infer_stream(
     """
     assert chunk_size > overlap_size, (
         f"chunk_size ({chunk_size}) must be larger than overlap_size ({overlap_size}) to avoid infinite loop."
+    )
+    assert chunk_size > 0 and overlap_size > 0, (
+        "chunk_size and overlap_size must be positive."
+    )
+    assert overlap_size % 2 == 0, (
+        "overlap_size must be even for proper margin calculation."
     )
     is_jp_extra = hps.version.endswith("JP-Extra")
 

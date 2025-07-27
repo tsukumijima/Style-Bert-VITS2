@@ -128,9 +128,6 @@ def load_model(
 
         # 8bit 量子化時は torch_dtype が必ず float16 でなければならない
         torch_dtype = torch.float16
-        # デフォルトのスキップモジュール設定
-        if llm_int8_skip_modules is None:
-            llm_int8_skip_modules = ["embeddings", "LayerNorm"]
         # 8bit 量子化の設定
         quantization_config = BitsAndBytesConfig(
             load_in_8bit=True,
