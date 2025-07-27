@@ -37,7 +37,7 @@ if TYPE_CHECKING:
 __loaded_models: dict[Languages, PreTrainedModel | DebertaV2Model] = {}
 
 # 各言語ごとのロード済みモデルの精度情報を格納する辞書
-__loaded_model_dtypes: dict[Languages, Literal["fp16", "fp32"]] = {}
+__loaded_model_dtypes: dict[Languages, Literal["fp32", "fp16", "int8"]] = {}
 
 # 各言語ごとのロード済みの BERT トークナイザーを格納する辞書
 __loaded_tokenizers: dict[
@@ -57,6 +57,9 @@ def load_model(
     cache_dir: str | None = None,
     revision: str = "main",
     use_fp16: bool = False,
+    use_int8: bool = False,
+    llm_int8_threshold: float = 6.0,
+    llm_int8_skip_modules: list[str] | None = None,
 ) -> PreTrainedModel | DebertaV2Model:
     """
     指定された言語の BERT モデルをロードし、ロード済みの BERT モデルを返す。
@@ -67,6 +70,8 @@ def load_model(
     cache_dir と revision は pretrain_model_name_or_path がリポジトリ名の場合のみ有効。
     use_fp16 を True にすると torch_dtype=torch.float16 でロードされ、メモリ使用量を大幅に削減し推論を高速化できる。
     最新の GPU では FP16 による精度低下はほとんどないため、実用的な選択肢である。
+    use_int8 を True にすると bitsandbytes による INT8 量子化でロードされ、さらなるメモリ削減が可能。
+    ただし、8bit 量子化は GPU 必須で、わずかな精度低下が発生する可能性がある。
 
     Style-Bert-VITS2 では、BERT モデルに下記の 3 つが利用されている。
     これ以外の BERT モデルを指定した場合は正常に動作しない可能性が高い。
@@ -83,6 +88,9 @@ def load_model(
         cache_dir (str | None): モデルのキャッシュディレクトリ。指定しない場合はデフォルトのキャッシュディレクトリが利用される (デフォルト: None)
         revision (str): モデルの Hugging Face 上の Git リビジョン。指定しない場合は最新の main ブランチの内容が利用される (デフォルト: None)
         use_fp16 (bool): FP16 (半精度) でモデルをロードするかどうか。True の場合、メモリ使用量を削減し推論を高速化する (デフォルト: False)
+        use_int8 (bool): INT8 (8bit) 量子化でモデルをロードするかどうか。True の場合、bitsandbytes を使用してメモリ使用量を大幅に削減する。GPU 必須 (デフォルト: False)
+        llm_int8_threshold (float): LLM.int8 の外れ値判定しきい値。値を下げると精度が向上するが速度が低下する (デフォルト: 6.0)
+        llm_int8_skip_modules (list[str] | None): 8bit 量子化をスキップするモジュール名のリスト。埋め込み層や LayerNorm など重要層を指定 (デフォルト: None)
 
     Returns:
         PreTrainedModel | DebertaV2Model: ロード済みの BERT モデル
@@ -94,29 +102,56 @@ def load_model(
     if language in __loaded_models:
         return __loaded_models[language]
 
+    # use_fp16 と use_int8 が同時に指定されている場合はエラー
+    if use_fp16 and use_int8:
+        raise ValueError("use_fp16 and use_int8 cannot be True at the same time")
+
+    # 8bit 量子化は CUDA が必須
+    if use_int8 and not torch.cuda.is_available():
+        raise RuntimeError("8bit quantization requires GPU (CUDA) support")
+
     # pretrained_model_name_or_path が指定されていない場合はデフォルトのパスを利用
     if pretrained_model_name_or_path is None:
         assert DEFAULT_BERT_MODEL_PATHS[language].exists(), \
             f"The default {language.name} BERT model does not exist on the file system. Please specify the path to the pre-trained model."  # fmt: skip
         pretrained_model_name_or_path = str(DEFAULT_BERT_MODEL_PATHS[language])
 
-    # torch_dtype と low_cpu_mem_usage の設定
-    torch_dtype = None
-    low_cpu_mem_usage = True  # 常に True にしてメモリ効率を向上
-    if use_fp16 is True:
+    # 量子化設定
+    if use_int8 is True:
+        # use_int8 が True の場合のみ BitsAndBytesConfig をインポートする
+        from transformers import BitsAndBytesConfig
+
+        # 8bit 量子化時は torch_dtype が必ず float16 でなければならない
         torch_dtype = torch.float16
+        # 8bit 量子化の設定
+        quantization_config = BitsAndBytesConfig(
+            load_in_8bit=True,
+            llm_int8_threshold=llm_int8_threshold,
+            llm_int8_skip_modules=llm_int8_skip_modules,
+        )
+    elif use_fp16 is True:
+        # FP16 量子化時は torch_dtype が必ず float16 でなければならない
+        torch_dtype = torch.float16
+        # BitsAndBytesConfig は不要
+        quantization_config = None
+    else:
+        # FP32 推論時は torch_dtype を指定しない
+        torch_dtype = None
+        # BitsAndBytesConfig は不要
+        quantization_config = None
 
     # BERT モデルをロードし、辞書に格納して返す
-    ## 英語のみ DebertaV2Model でロードする必要がある
+    ## 日本語または英語のみ DebertaV2Model でロードする必要がある
     start_time = time.time()
-    if language == Languages.EN:
+    if language == Languages.JP or language == Languages.EN:
         __loaded_models[language] = DebertaV2Model.from_pretrained(
             pretrained_model_name_or_path,
             device_map=device_map,
             cache_dir=cache_dir,
             revision=revision,
             torch_dtype=torch_dtype,
-            low_cpu_mem_usage=low_cpu_mem_usage,
+            quantization_config=quantization_config,
+            low_cpu_mem_usage=True,  # 常に True にしてメモリ効率を向上
         )
     else:
         __loaded_models[language] = AutoModelForMaskedLM.from_pretrained(
@@ -125,14 +160,26 @@ def load_model(
             cache_dir=cache_dir,
             revision=revision,
             torch_dtype=torch_dtype,
-            low_cpu_mem_usage=low_cpu_mem_usage,
+            quantization_config=quantization_config,
+            low_cpu_mem_usage=True,  # 常に True にしてメモリ効率を向上
         )
 
     # ロード済みモデルの精度情報を記録
-    current_dtype_key = "fp16" if use_fp16 else "fp32"
+    if use_int8:
+        current_dtype_key = "int8"
+    elif use_fp16:
+        current_dtype_key = "fp16"
+    else:
+        current_dtype_key = "fp32"
     __loaded_model_dtypes[language] = current_dtype_key
 
-    precision_info = " (FP16)" if use_fp16 else " (default precision)"
+    if use_int8:
+        precision_info = " (INT8)"
+    elif use_fp16:
+        precision_info = " (FP16)"
+    else:
+        precision_info = " (default precision)"
+
     logger.info(
         f"Loaded the {language.name} BERT model from {pretrained_model_name_or_path}{precision_info} ({time.time() - start_time:.2f}s)"
     )
@@ -249,7 +296,7 @@ def is_tokenizer_loaded(language: Languages) -> bool:
     return language in __loaded_tokenizers
 
 
-def get_model_dtype(language: Languages) -> Literal["fp16", "fp32"] | None:
+def get_model_dtype(language: Languages) -> Literal["fp32", "fp16", "int8"] | None:
     """
     指定された言語の BERT モデルの精度情報を返す。
     モデルがロードされていない場合は None を返す。
@@ -258,7 +305,7 @@ def get_model_dtype(language: Languages) -> Literal["fp16", "fp32"] | None:
         language (Languages): 精度情報を取得する言語
 
     Returns:
-        Literal["fp16", "fp32"] | None: 'fp16' または 'fp32'、モデルがロードされていない場合は None
+        Literal["fp32", "fp16", "int8"] | None: 'fp32', 'fp16', 'int8' (モデルがロードされていない場合は None)
     """
 
     return __loaded_model_dtypes.get(language)

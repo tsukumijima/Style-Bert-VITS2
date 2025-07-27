@@ -358,7 +358,7 @@ __PUNCTUATION_CLEANUP_PATTERN = re.compile(
     # pyopenjtalk は「漢字の直後に2つ以上の連続する半角ハイフンがある場合」にその漢字の読みが取得できなくなる謎のバグがあるため、
     # 正規化処理でダッシュが変換されるなどして2つ以上の連続する半角ハイフンが生まれた場合、Long EM Dash に変換してから g2p 処理に渡す
     + "".join(re.escape(p) for p in (PUNCTUATIONS + ["/", "—"]))
-    + r"]+"  # fmt: skip
+    + r"]+"
 )
 
 # 数字・通貨記号の正規化パターン
