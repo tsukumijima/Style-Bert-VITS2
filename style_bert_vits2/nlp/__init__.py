@@ -68,6 +68,7 @@ def extract_bert_feature(
             device,
             assist_text,
             assist_text_weight,
+            use_memory_efficient_buckets=use_memory_efficient_buckets,
         )
     elif language == Languages.ZH:
         from style_bert_vits2.nlp.chinese.bert_feature import extract_bert_feature
@@ -78,6 +79,7 @@ def extract_bert_feature(
             device,
             assist_text,
             assist_text_weight,
+            use_memory_efficient_buckets=use_memory_efficient_buckets,
         )
     else:
         raise ValueError(f"Language {language} not supported")

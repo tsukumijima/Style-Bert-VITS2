@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """
+Usage: .venv/bin/python -m tests.long_inference_benchmark [--device cuda] [--model koharune-ami] [--runs 5]
+
 Style-Bert-VITS2 長文一括推論のパフォーマンス測定スクリプト
 
 このスクリプトは infer.py に実装されている infer() 関数のパフォーマンスを測定し、
@@ -10,9 +12,6 @@ Style-Bert-VITS2 長文一括推論のパフォーマンス測定スクリプト
 - 総処理時間
 - ピークメモリ使用量 (VRAM)
 - 生成音声の長さごとの効果
-
-使用方法:
-    .venv/bin/python -m tests.long_inference_benchmark [--device cuda] [--model koharune-ami] [--runs 5]
 """
 
 import argparse

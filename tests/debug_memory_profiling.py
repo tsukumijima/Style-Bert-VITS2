@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """
+Usage: .venv/bin/python -m tests.debug_memory_profiling
+
 各モジュールでのメモリ使用量と処理時間を測定して、
 実際のボトルネックがどこにあるかを特定する。
 """
