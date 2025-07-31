@@ -7,7 +7,7 @@ name = "style-bert-vits2"
 dynamic = ["version"]
 description = "Style-Bert-VITS2: Bert-VITS2 with more controllable voice styles."
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 license = "AGPL-3.0"
 keywords = []
 authors = [
@@ -16,9 +16,9 @@ authors = [
 classifiers = [
     "Development Status :: 4 - Beta",
     "Programming Language :: Python",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: Implementation :: CPython",
 ]
 dependencies = [
@@ -137,16 +137,21 @@ dependencies = ["pytest"]
 test = "pytest -s tests/test_normalizer.py"
 
 [tool.hatch.envs.style]
-detached = true
-dependencies = ["ruff"]
+dependencies = [
+    "ruff",
+    "pyright",
+    "pytest",
+    "scipy",
+]
+features = ["torch", "onnxruntime"]
 [tool.hatch.envs.style.scripts]
 # Usage: `hatch run style:check`
 check = [
-    "ruff check .",
+    "ruff check . ; pyright",
 ]
 # Usage: `hatch run style:fmt`
 fmt = [
-    "ruff check --fix . && ruff format .",
+    "ruff check --fix . && ruff format . ; pyright",
 ]
 
 [tool.coverage.run]
@@ -205,3 +210,40 @@ lines-after-imports = 2
 quote-style = "double"
 # インデントにはスペースを使う
 indent-style = "space"
+
+[tool.pyright]
+# 型チェック対象の Python バージョンを指定
+pythonVersion = "3.11"
+# TypeCheckingMode を strict に設定（VSCode の設定と同等）
+typeCheckingMode = "strict"
+# プロジェクトルートを指定
+pythonPlatform = "All"
+# インクルードするパッケージパス
+include = [
+    "style_bert_vits2/",
+    "tests/",
+]
+# 除外するパス
+exclude = [
+    "**/__pycache__",
+    "**/.venv",
+    "**/node_modules",
+]
+# VSCode の settings.json の diagnosticSeverityOverrides に対応する設定
+reportConstantRedefinition = "none"
+reportDeprecated = "none"  # 修正コストの観点で抑制
+reportGeneralTypeIssues = "warning"
+reportMissingParameterType = "warning"
+reportMissingImports = "none"  # 全部の依存関係をインストールすると重いので抑制
+reportMissingTypeStubs = "none"
+reportPrivateImportUsage = "none"
+reportPrivateUsage = "warning"
+reportShadowedImports = "none"
+reportUnnecessaryComparison = "none"
+reportUnknownArgumentType = "none"
+reportUnknownLambdaType = "none"
+reportUnknownMemberType = "none"
+reportUnknownParameterType = "warning"
+reportUnknownVariableType = "none"
+reportUnusedFunction = "none"
+reportUnusedVariable = "information"

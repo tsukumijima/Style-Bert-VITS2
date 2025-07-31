@@ -10,7 +10,6 @@ BERT 8bit 量子化精度評価テストスクリプト
 """
 
 import argparse
-import random
 import time
 from typing import NotRequired, TypedDict
 
@@ -24,6 +23,8 @@ from style_bert_vits2.logging import logger
 from style_bert_vits2.nlp import bert_models, clean_text_with_given_phone_tone
 from style_bert_vits2.nlp.japanese.bert_feature import extract_bert_feature
 
+from .utils import set_random_seeds
+
 
 class BertConfig(TypedDict):
     """BERT設定の型定義。"""
@@ -33,23 +34,6 @@ class BertConfig(TypedDict):
     use_int8: bool
     llm_int8_threshold: NotRequired[float]
     llm_int8_skip_modules: NotRequired[list[str] | None]
-
-
-# 再現性のためのランダムシード
-RANDOM_SEED = 42
-
-
-def set_random_seeds(seed: int = RANDOM_SEED) -> None:
-    """すべてのランダム要素に固定シードを設定して再現性を確保する。"""
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed(seed)
-        torch.cuda.manual_seed_all(seed)
-        # CUDNNの決定的な動作を有効にする（速度は若干低下するが再現性が向上）
-        torch.backends.cudnn.deterministic = True
-        torch.backends.cudnn.benchmark = False
 
 
 # 測定用サンプルテキスト
@@ -432,7 +416,7 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    set_random_seeds(RANDOM_SEED)
+    set_random_seeds()
 
     # CPU では 8bit 量子化は使えないので警告
     if args.device == "cpu":

@@ -415,8 +415,8 @@ _len_cmp = lambda x: -len(x)  # type: ignore
 ROMPAT = re.compile("|".join(sorted(ROMKAN.keys(), key=_len_cmp)))
 
 _kanpat_cmp = lambda x, y: (len(y) > len(x)) - (len(y) < len(x)) or (  # type: ignore
-    len(KANROM[x]) > len(KANROM[x])
-) - (len(KANROM[x]) < len(KANROM[x]))
+    len(KANROM[x]) > len(KANROM[y])
+) - (len(KANROM[x]) < len(KANROM[y]))
 KANPAT = re.compile("|".join(sorted(KANROM.keys(), key=cmp_to_key(_kanpat_cmp))))
 
 KUNREI = [y for (x, y) in pairs(re.split(r"\s+", KUNREITAB))]
@@ -467,8 +467,8 @@ _len_cmp = lambda x: -len(x)  # type: ignore
 ROMPAT_H = re.compile("|".join(sorted(ROMKAN_H.keys(), key=_len_cmp)))
 
 _kanpat_cmp = lambda x, y: (len(y) > len(x)) - (len(y) < len(x)) or (  # type: ignore
-    len(KANROM_H[x]) > len(KANROM_H[x])
-) - (len(KANROM_H[x]) < len(KANROM_H[x]))
+    len(KANROM_H[x]) > len(KANROM_H[y])
+) - (len(KANROM_H[x]) < len(KANROM_H[y]))
 KANPAT_H = re.compile("|".join(sorted(KANROM_H.keys(), key=cmp_to_key(_kanpat_cmp))))
 
 KUNREI_H = [y for (x, y) in pairs(re.split(r"\s+", KUNREITAB_H))]

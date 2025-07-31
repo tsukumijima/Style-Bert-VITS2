@@ -8,6 +8,7 @@ import onnxruntime
 from numpy.typing import NDArray
 
 from style_bert_vits2.constants import Languages
+from style_bert_vits2.models.memory_efficient import pad_bert_inputs
 from style_bert_vits2.nlp import bert_models, onnx_bert_models
 from style_bert_vits2.utils import get_onnx_device_options
 
@@ -22,6 +23,7 @@ def extract_bert_feature(
     device: str,
     assist_text: str | None = None,
     assist_text_weight: float = 0.7,
+    enable_tensor_padding: bool = False,
 ) -> torch.Tensor:
     """
     英語のテキストから BERT の特徴量を抽出する (PyTorch 推論)
@@ -32,6 +34,7 @@ def extract_bert_feature(
         device (str): 推論に利用するデバイス
         assist_text (str | None, optional): 補助テキスト (デフォルト: None)
         assist_text_weight (float, optional): 補助テキストの重み (デフォルト: 0.7)
+        enable_tensor_padding (bool, optional): メモリ効率化バケツ化を使用するか (デフォルト: False)
 
     Returns:
         torch.Tensor: BERT の特徴量
@@ -50,14 +53,40 @@ def extract_bert_feature(
         inputs = tokenizer(text, return_tensors="pt")
         for i in inputs:
             inputs[i] = inputs[i].to(device)  # type: ignore
+
+        # メモリ効率化バケツ化の適用
+        actual_length = None
+        if enable_tensor_padding:
+            inputs, actual_length = pad_bert_inputs(
+                inputs, pool_type="bert_mid_lived", use_pool=True
+            )
+
         res = model(**inputs, output_hidden_states=True)
         res = torch.cat(res["hidden_states"][-3:-2], -1)[0]
+
+        # バケツ化した場合は実長部分のみ取得
+        if enable_tensor_padding and actual_length is not None:
+            res = res[:actual_length]
+
         if assist_text:
             style_inputs = tokenizer(assist_text, return_tensors="pt")
             for i in style_inputs:
                 style_inputs[i] = style_inputs[i].to(device)  # type: ignore
+
+            # 補助テキストもバケツ化
+            assist_actual_length = None
+            if enable_tensor_padding:
+                style_inputs, assist_actual_length = pad_bert_inputs(
+                    style_inputs, pool_type="bert_mid_lived", use_pool=True
+                )
+
             style_res = model(**style_inputs, output_hidden_states=True)
             style_res = torch.cat(style_res["hidden_states"][-3:-2], -1)[0]
+
+            # バケツ化した場合は実長部分のみ取得
+            if enable_tensor_padding and assist_actual_length is not None:
+                style_res = style_res[:assist_actual_length]
+
             style_res_mean = style_res.mean(0)
 
     assert len(word2ph) == res.shape[0], (text, res.shape[0], len(word2ph))
