@@ -189,23 +189,25 @@ def get_text(
     assert bert_ori.shape[-1] == len(phone), phone
 
     if use_jp_extra is True:
-        # JP-Extra モデルでは ja_bert のみが推論時に参照され、他の特徴量は一切参照されない
-        # 他の特徴量を空テンソルにすることで、VRAM 使用量を削減できる
+        # 日本語のみに対応した JP-Extra モデルでは ja_bert のみが推論時に参照され、他言語の特徴量は推論時には一切利用されない
+        # 空テンソルは CPU 上で作成し、GPU 転送を避けることで VRAM 使用量とメモリ断片化を削減
+        empty_tensor = torch.empty(0, 0)  # CPU 上で作成
         if language_str == Languages.JP:
-            zh_bert = torch.empty(0, 0, device=device)
+            zh_bert = empty_tensor
             ja_bert = bert_ori
-            en_bert = torch.empty(0, 0, device=device)
+            en_bert = empty_tensor
         elif language_str == Languages.ZH:
             zh_bert = bert_ori
-            ja_bert = torch.empty(0, 0, device=device)
-            en_bert = torch.empty(0, 0, device=device)
+            ja_bert = empty_tensor
+            en_bert = empty_tensor
         elif language_str == Languages.EN:
-            zh_bert = torch.empty(0, 0, device=device)
-            ja_bert = torch.empty(0, 0, device=device)
+            zh_bert = empty_tensor
+            ja_bert = empty_tensor
             en_bert = bert_ori
         else:
             raise ValueError("language_str should be ZH, JP or EN")
     else:
+        # 通常モデルでは全言語の BERT 特徴量が必要なため、GPU 上でゼロテンソルを作成
         if language_str == Languages.ZH:
             zh_bert = bert_ori
             ja_bert = torch.zeros(1024, len(phone), device=device)
