@@ -189,8 +189,6 @@ class TransformerCouplingBlock(nn.Module):
 
         for start in range(0, seq_len, chunk_size - overlap_size):
             end = min(start + chunk_size, seq_len)
-            actual_chunk_size = end - start
-
             # チャンク抽出
             chunk_x = x[:, :, start:end]
             chunk_mask = x_mask[:, :, start:end]
