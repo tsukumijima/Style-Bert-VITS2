@@ -1,9 +1,29 @@
 #!/usr/bin/env python3
 """
-Usage: .venv/bin/python -m tests.memory_buckets_benchmark [--device cuda] [--model koharune-ami] [--iterations 30]
+Usage: PYTORCH_CUDA_ALLOC_CONF="backend:cudaMallocAsync,expandable_segments:True" .venv/bin/python -m tests.memory_buckets_benchmark [--device cuda] [--model koharune-ami] [--iterations 30]
 
-メモリ効率化バケツ化のベンチマークスクリプト
+メモリ効率化テンソルパディングのベンチマークスクリプト
+
+本番環境同様にPYTORCH_CUDA_ALLOC_CONFを設定して実行してください。
 """
+
+import os
+
+
+# PYTORCH_CUDA_ALLOC_CONFの確認と警告
+cuda_alloc_conf = os.getenv("PYTORCH_CUDA_ALLOC_CONF", "")
+if "cudaMallocAsync" not in cuda_alloc_conf:
+    print("WARNING: PYTORCH_CUDA_ALLOC_CONF is not set for optimal memory management!")
+    print(
+        'Please run with: PYTORCH_CUDA_ALLOC_CONF="backend:cudaMallocAsync,expandable_segments:True"'
+    )
+    print(
+        "This benchmark may not accurately reflect production memory behavior without proper configuration."
+    )
+    print()
+else:
+    print(f"Using PYTORCH_CUDA_ALLOC_CONF: {cuda_alloc_conf}")
+    print()
 
 import argparse
 import gc
@@ -24,7 +44,7 @@ from style_bert_vits2.constants import (
 )
 from style_bert_vits2.logging import logger
 from style_bert_vits2.models.infer import infer
-from style_bert_vits2.models.memory_efficient import (
+from style_bert_vits2.models.tensor_padding import (
     clear_memory_pools,
     get_memory_pool_stats,
 )
@@ -88,7 +108,7 @@ def measure_inference_performance(
     model: TTSModel,
     text: str,
     device: str,
-    use_buckets: bool,
+    use_padding: bool,
     use_fp16: bool,
     save_audio: bool = False,
 ) -> tuple[float, float, NDArray[np.float32]]:
@@ -101,6 +121,15 @@ def measure_inference_performance(
     Returns:
         tuple: (推論時間, ピークメモリ使用量MB, 音声データ)
     """
+    # メモリプール統計をクリア（新しい測定のため）
+    if use_padding:
+        clear_memory_pools()
+
+    # テキスト情報をログ出力
+    logger.info(
+        f"Processing text (length: {len(text)}): '{text[:50]}{'...' if len(text) > 50 else ''}'"
+    )
+
     # メモリ統計をリセット
     if device == "cuda":
         torch.cuda.reset_peak_memory_stats()
@@ -128,11 +157,16 @@ def measure_inference_performance(
             device=device,
             use_fp16=use_fp16,
             clear_cuda_cache=False,  # ベンチマーク中はキャッシュクリアを無効化
-            use_memory_efficient_buckets=use_buckets,
+            enable_tensor_padding=use_padding,
         )
 
     end_time = time.perf_counter()
     inference_time = end_time - start_time
+
+    # パディング統計情報を出力
+    if use_padding:
+        pool_stats = get_memory_pool_stats()
+        logger.info(f"  Padding enabled - Pool stats: {pool_stats}")
 
     # ピークメモリ使用量を取得
     if device == "cuda":
@@ -142,12 +176,12 @@ def measure_inference_performance(
 
     # 音声ファイル保存（オプション）
     if save_audio:
-        output_type = "with_buckets" if use_buckets else "without_buckets"
+        output_type = "with_padding" if use_padding else "without_padding"
         save_benchmark_audio(
             audio_data,
             model.hyper_parameters.data.sampling_rate,
             text,
-            "memory_buckets_benchmark",
+            "tensor_padding_benchmark",
             output_type,
         )
 
@@ -168,7 +202,7 @@ def run_benchmark(
         set_random_seeds()
 
     print("=" * 80)
-    print("Style-Bert-VITS2 メモリ効率化バケツ化ベンチマーク")
+    print("Style-Bert-VITS2 メモリ効率化テンソルパディングベンチマーク")
     print("=" * 80)
     print(f"デバイス: {device}")
     print(f"モデル: {model_name}")
@@ -239,9 +273,9 @@ def run_benchmark(
     model = model_holder.get_model(model_name, model_file)
     model.load()
 
-    # バケツ化なしでベンチマーク
+    # パディングなしでベンチマーク
     print("\n" + "=" * 60)
-    print("バケツ化なしでベンチマーク実行中...")
+    print("パディングなしでベンチマーク実行中...")
     print("=" * 60)
 
     tracker_without = MemoryTracker(device)
@@ -250,7 +284,7 @@ def run_benchmark(
     # ウォームアップ
     for i in range(2):
         _, _, _ = measure_inference_performance(
-            model, TEST_TEXTS[0], device, use_buckets=False, use_fp16=use_fp16
+            model, TEST_TEXTS[0], device, use_padding=False, use_fp16=use_fp16
         )
 
     torch.cuda.empty_cache()
@@ -267,7 +301,7 @@ def run_benchmark(
             model,
             text,
             device,
-            use_buckets=False,
+            use_padding=False,
             use_fp16=use_fp16,
             save_audio=save_audio,
         )
@@ -279,9 +313,9 @@ def run_benchmark(
 
     tracker_without.snapshot("Final (before cleanup)")
 
-    # バケツ化ありでベンチマーク
+    # パディングありでベンチマーク
     print("\n" + "=" * 60)
-    print("バケツ化ありでベンチマーク実行中...")
+    print("パディングありでベンチマーク実行中...")
     print("=" * 60)
 
     tracker_with = MemoryTracker(device)
@@ -290,7 +324,7 @@ def run_benchmark(
     # ウォームアップ
     for i in range(2):
         _, _, _ = measure_inference_performance(
-            model, TEST_TEXTS[0], device, use_buckets=True, use_fp16=use_fp16
+            model, TEST_TEXTS[0], device, use_padding=True, use_fp16=use_fp16
         )
 
     torch.cuda.empty_cache()
@@ -307,7 +341,7 @@ def run_benchmark(
             model,
             text,
             device,
-            use_buckets=True,
+            use_padding=True,
             use_fp16=use_fp16,
             save_audio=save_audio,
         )
@@ -340,10 +374,10 @@ def run_benchmark(
 
     print("\n推論時間:")
     print(
-        f"  バケツ化なし: {avg_without:.3f} s (標準偏差: {np.std(inference_times_without):.3f})"
+        f"  パディングなし: {avg_without:.3f} s (標準偏差: {np.std(inference_times_without):.3f})"
     )
     print(
-        f"  バケツ化あり: {avg_with:.3f} s (標準偏差: {np.std(inference_times_with):.3f})"
+        f"  パディングあり: {avg_with:.3f} s (標準偏差: {np.std(inference_times_with):.3f})"
     )
     print(f"  オーバーヘッド: {overhead:+.1f}%")
 
@@ -356,8 +390,8 @@ def run_benchmark(
     )
 
     print("\nメモリ断片化:")
-    print(f"  バケツ化なし: {final_without['fragmentation_gb']:.3f} GB")
-    print(f"  バケツ化あり: {final_with['fragmentation_gb']:.3f} GB")
+    print(f"  パディングなし: {final_without['fragmentation_gb']:.3f} GB")
+    print(f"  パディングあり: {final_with['fragmentation_gb']:.3f} GB")
     print(
         f"  削減量: {final_without['fragmentation_gb'] - final_with['fragmentation_gb']:.3f} GB"
     )
@@ -370,10 +404,10 @@ def run_benchmark(
             print(f"  {pool_name}: {stats}")
 
     # 詳細メモリレポート
-    print("\n=== バケツ化なし - メモリ使用状況 ===")
+    print("\n=== パディングなし - メモリ使用状況 ===")
     tracker_without.print_report()
 
-    print("\n=== バケツ化あり - メモリ使用状況 ===")
+    print("\n=== パディングあり - メモリ使用状況 ===")
     tracker_with.print_report()
 
     # 判定
@@ -396,16 +430,18 @@ def run_benchmark(
         print("⚠ メモリ断片化の改善は限定的です")
 
     # 音声ファイル保存の通知
-    audio_dir = Path("tests/wavs/memory_buckets_benchmark")
+    audio_dir = Path("tests/wavs/tensor_padding_benchmark")
     if audio_dir.exists() and any(audio_dir.iterdir()):
         print(f"\n🎧 音声ファイルが保存されました: {audio_dir}")
-        print("   - *_without_buckets.wav: バケツ化なしの音声")
-        print("   - *_with_buckets.wav: バケツ化ありの音声")
+        print("   - *_without_padding.wav: パディングなしの音声")
+        print("   - *_with_padding.wav: パディングありの音声")
         print("   主観評価で音質の比較をしてください。")
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Memory-efficient buckets benchmark")
+    parser = argparse.ArgumentParser(
+        description="Memory-efficient tensor padding benchmark"
+    )
     parser.add_argument(
         "--device",
         type=str,
@@ -454,7 +490,9 @@ def main():
     except KeyboardInterrupt:
         print("\nベンチマークが中断されました。")
     except Exception as ex:
-        logger.exception(f"ベンチマーク実行中にエラーが発生しました: {ex}")
+        logger.exception(
+            f"テンソルパディングベンチマーク実行中にエラーが発生しました: {ex}"
+        )
 
 
 if __name__ == "__main__":

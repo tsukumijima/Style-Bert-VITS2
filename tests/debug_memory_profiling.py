@@ -266,7 +266,7 @@ def profile_full_tts(
                     device=device,
                     use_fp16=use_fp16,
                     clear_cuda_cache=False,
-                    use_memory_efficient_buckets=False,
+                    enable_tensor_padding=False,
                 )
 
         profiler.snapshot(f"TTS_model_{model_idx}_after_warmup")
@@ -302,7 +302,7 @@ def profile_full_tts(
                         device=device,
                         use_fp16=use_fp16,
                         clear_cuda_cache=False,
-                        use_memory_efficient_buckets=False,
+                        enable_tensor_padding=False,
                     )
 
                     inference_time = time.perf_counter() - start_time

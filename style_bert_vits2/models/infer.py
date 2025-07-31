@@ -12,11 +12,11 @@ from style_bert_vits2.constants import Languages
 from style_bert_vits2.logging import logger
 from style_bert_vits2.models import commons, utils
 from style_bert_vits2.models.hyper_parameters import HyperParameters
-from style_bert_vits2.models.memory_efficient import copy_to_bucketed_tensor
 from style_bert_vits2.models.models import SynthesizerTrn
 from style_bert_vits2.models.models_jp_extra import (
     SynthesizerTrn as SynthesizerTrnJPExtra,
 )
+from style_bert_vits2.models.tensor_padding import pad_sequence_tensor
 from style_bert_vits2.nlp import (
     clean_text_with_given_phone_tone,
     cleaned_text_to_sequence,
@@ -153,6 +153,7 @@ def get_text(
     given_phone: list[str] | None = None,
     given_tone: list[int] | None = None,
     jtalk: OpenJTalk | None = None,
+    enable_tensor_padding: bool = False,
 ) -> tuple[
     torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor
 ]:
@@ -184,6 +185,7 @@ def get_text(
         assist_text,
         assist_text_weight,
         sep_text,  # clean_text_with_given_phone_tone() の中間生成物を再利用して効率向上を図る
+        enable_tensor_padding,
     )
     del word2ph
     assert bert_ori.shape[-1] == len(phone), phone
@@ -246,7 +248,7 @@ def prepare_inference_data(
     given_phone: list[str] | None = None,
     given_tone: list[int] | None = None,
     jtalk: OpenJTalk | None = None,
-    use_memory_efficient_buckets: bool = False,
+    enable_tensor_padding: bool = False,
 ) -> tuple[
     torch.Tensor,
     torch.Tensor,
@@ -263,8 +265,7 @@ def prepare_inference_data(
     infer() と infer_stream() で共通に使用される。
 
     Args:
-        use_memory_efficient_buckets: メモリ効率化のためのバケツ化を使用するか（デフォルト: False）
-        model_name: モデル識別名（メモリプール管理用）
+        enable_tensor_padding: メモリ効率化のためのテンソルパディングを使用するか（デフォルト: False）
 
     Returns:
         tuple: (x_tst, x_tst_lengths, sid_tensor, tones, lang_ids, zh_bert, ja_bert, en_bert, style_vec_tensor)
@@ -281,6 +282,7 @@ def prepare_inference_data(
         given_phone=given_phone,
         given_tone=given_tone,
         jtalk=jtalk,
+        enable_tensor_padding=enable_tensor_padding,
     )
     if skip_start:
         phones = phones[3:]
@@ -306,58 +308,39 @@ def prepare_inference_data(
     x_tst_lengths = torch.LongTensor([phones.size(0)]).to(device)
     style_vec_tensor = torch.from_numpy(style_vec).to(device).unsqueeze(0)
 
-    # バケツ化処理
-    if use_memory_efficient_buckets:
+    # テンソルパディング処理
+    if enable_tensor_padding:
         actual_length = phones.size(0)  # 実際の長さを保存
 
-        # x_tst とその関連テンソルをバケツ化
-        x_tst, _ = copy_to_bucketed_tensor(x_tst, length_dim=1, use_pool=True)
-
-        # 同じバケツサイズに合わせて他のテンソルもバケツ化
-        bucket_size = x_tst.shape[1]
-
-        # tones, lang_ids も同じサイズにバケツ化
-        tones_bucketed = torch.zeros(
-            (tones.shape[0], bucket_size), dtype=tones.dtype, device=tones.device
+        # x_tst とその関連テンソルをパディング
+        x_tst, _ = pad_sequence_tensor(
+            x_tst, length_dim=1, pool_type="vits2_sequence", use_pool=True
         )
-        tones_bucketed[:, :actual_length] = tones[:, :actual_length]
-        tones = tones_bucketed
+        padded_length = x_tst.shape[1]
 
-        lang_ids_bucketed = torch.zeros(
-            (lang_ids.shape[0], bucket_size),
-            dtype=lang_ids.dtype,
-            device=lang_ids.device,
+        # 同じパディングサイズに合わせて他のテンソルもパディング
+        tones, _ = pad_sequence_tensor(
+            tones, length_dim=1, pool_type="vits2_tones", use_pool=True
         )
-        lang_ids_bucketed[:, :actual_length] = lang_ids[:, :actual_length]
-        lang_ids = lang_ids_bucketed
+        lang_ids, _ = pad_sequence_tensor(
+            lang_ids, length_dim=1, pool_type="vits2_lang_ids", use_pool=True
+        )
 
-        # BERT 特徴量もバケツ化
+        # BERT 特徴量もパディング（空でない場合のみ）
         if zh_bert.numel() > 0:
-            zh_bert_bucketed = torch.zeros(
-                (zh_bert.shape[0], zh_bert.shape[1], bucket_size),
-                dtype=zh_bert.dtype,
-                device=zh_bert.device,
+            zh_bert, _ = pad_sequence_tensor(
+                zh_bert, length_dim=2, pool_type="vits2_zh_bert", use_pool=True
             )
-            zh_bert_bucketed[:, :, :actual_length] = zh_bert[:, :, :actual_length]
-            zh_bert = zh_bert_bucketed
 
         if ja_bert.numel() > 0:
-            ja_bert_bucketed = torch.zeros(
-                (ja_bert.shape[0], ja_bert.shape[1], bucket_size),
-                dtype=ja_bert.dtype,
-                device=ja_bert.device,
+            ja_bert, _ = pad_sequence_tensor(
+                ja_bert, length_dim=2, pool_type="vits2_ja_bert", use_pool=True
             )
-            ja_bert_bucketed[:, :, :actual_length] = ja_bert[:, :, :actual_length]
-            ja_bert = ja_bert_bucketed
 
         if en_bert.numel() > 0:
-            en_bert_bucketed = torch.zeros(
-                (en_bert.shape[0], en_bert.shape[1], bucket_size),
-                dtype=en_bert.dtype,
-                device=en_bert.device,
+            en_bert, _ = pad_sequence_tensor(
+                en_bert, length_dim=2, pool_type="vits2_en_bert", use_pool=True
             )
-            en_bert_bucketed[:, :, :actual_length] = en_bert[:, :, :actual_length]
-            en_bert = en_bert_bucketed
 
     del phones
     sid_tensor = torch.LongTensor([sid]).to(device)
@@ -396,7 +379,7 @@ def infer(
     jtalk: OpenJTalk | None = None,
     use_fp16: bool = False,
     clear_cuda_cache: bool = True,
-    use_memory_efficient_buckets: bool = False,
+    enable_tensor_padding: bool = False,
 ) -> NDArray[np.float32]:
     """
     PyTorch 版音声合成モデルの推論を実行する関数。
@@ -429,7 +412,7 @@ def infer(
             given_phone=given_phone,
             given_tone=given_tone,
             jtalk=jtalk,
-            use_memory_efficient_buckets=use_memory_efficient_buckets,
+            enable_tensor_padding=enable_tensor_padding,
         )
 
         if is_jp_extra:
@@ -509,7 +492,7 @@ def infer_stream(
     clear_cuda_cache: bool = True,
     chunk_size: int = 65,  # 下記記事を参考に最適な値を調整
     overlap_size: int = 22,  # 下記記事を参照 (L=11, 11+11=22)
-    use_memory_efficient_buckets: bool = False,
+    enable_tensor_padding: bool = False,
     model_name: str = "default",
 ) -> Iterator[NDArray[np.float32]]:
     """
@@ -554,7 +537,7 @@ def infer_stream(
             given_phone=given_phone,
             given_tone=given_tone,
             jtalk=jtalk,
-            use_memory_efficient_buckets=use_memory_efficient_buckets,
+            enable_tensor_padding=enable_tensor_padding,
         )
 
         # Generator 実行前の共通処理を実行

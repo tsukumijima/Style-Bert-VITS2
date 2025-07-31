@@ -7,9 +7,28 @@
 - ランダムなテキスト選択（多様な長さ）
 - 累積的な断片化追跡
 - 長時間運用をシミュレート
+- テンソルパディング機能の検証
 
-Usage: .venv/bin/python -m tests.realistic_memory_profiling [--device cuda] [--iterations 50] [--interval 2]
+Usage: PYTORCH_CUDA_ALLOC_CONF="backend:cudaMallocAsync,expandable_segments:True" .venv/bin/python -m tests.realistic_memory_profiling [--device cuda] [--iterations 50] [--interval 2] [--enable-padding]
 """
+
+import os
+
+
+# PYTORCH_CUDA_ALLOC_CONFの確認と警告
+cuda_alloc_conf = os.getenv("PYTORCH_CUDA_ALLOC_CONF", "")
+if "cudaMallocAsync" not in cuda_alloc_conf:
+    print("WARNING: PYTORCH_CUDA_ALLOC_CONF is not set for optimal memory management!")
+    print(
+        'Please run with: PYTORCH_CUDA_ALLOC_CONF="backend:cudaMallocAsync,expandable_segments:True"'
+    )
+    print(
+        "This profiling may not accurately reflect production memory behavior without proper configuration."
+    )
+    print()
+else:
+    print(f"Using PYTORCH_CUDA_ALLOC_CONF: {cuda_alloc_conf}")
+    print()
 
 import argparse
 import gc
@@ -190,6 +209,7 @@ def simulate_production_usage(
     interval_seconds: float,
     use_fp16: bool,
     batch_simulation: int,
+    use_padding: bool = False,
 ) -> dict[str, Any]:
     """本番環境の使用パターンをシミュレート"""
 
@@ -198,6 +218,7 @@ def simulate_production_usage(
     logger.info(f"イテレーション数: {num_iterations}")
     logger.info(f"インターバル: {interval_seconds}秒")
     logger.info(f"バッチシミュレーション: {batch_simulation}回/イテレーション")
+    logger.info(f"テンソルパディング: {'有効' if use_padding else '無効'}")
     logger.info("=" * 80)
 
     profiler = RealisticMemoryProfiler(device)
@@ -298,6 +319,7 @@ def simulate_production_usage(
                     device=device,
                     use_fp16=use_fp16,
                     clear_cuda_cache=False,  # 実環境を再現
+                    enable_tensor_padding=use_padding,
                 )
 
                 inference_time = time.perf_counter() - start_time
@@ -500,7 +522,13 @@ def main():
         action="store_false",
         help="FP16推論を無効化",
     )
-    parser.set_defaults(use_fp16=True)
+    parser.add_argument(
+        "--enable-padding",
+        dest="use_padding",
+        action="store_true",
+        help="テンソルパディング機能を有効化",
+    )
+    parser.set_defaults(use_fp16=True, use_padding=False)
 
     args = parser.parse_args()
 
@@ -516,6 +544,7 @@ def main():
             interval_seconds=args.interval,
             use_fp16=args.use_fp16,
             batch_simulation=args.batch,
+            use_padding=args.use_padding,
         )
 
         if analysis:

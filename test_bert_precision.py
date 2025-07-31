@@ -16,7 +16,7 @@ import numpy as np
 import torch
 
 from style_bert_vits2.constants import Languages
-from style_bert_vits2.models.memory_efficient import bucket_bert_inputs
+from style_bert_vits2.models.memory_efficient import pad_bert_inputs
 from style_bert_vits2.nlp import bert_models
 from style_bert_vits2.nlp.japanese.g2p import text_to_sep_kata
 
@@ -92,7 +92,7 @@ def test_bert_precision(
                 )[0]
 
                 # バケツ化あり（テスト用に詳細情報出力）
-                inputs_bucketed, actual_length = bucket_bert_inputs(
+                inputs_bucketed, actual_length = pad_bert_inputs(
                     {
                         k: v.clone() for k, v in inputs_original.items()
                     },  # deep copyで確実な分離
