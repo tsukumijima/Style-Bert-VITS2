@@ -153,7 +153,6 @@ def get_text(
     given_phone: list[str] | None = None,
     given_tone: list[int] | None = None,
     jtalk: OpenJTalk | None = None,
-    enable_tensor_padding: bool = False,
 ) -> tuple[
     torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor
 ]:
@@ -185,7 +184,6 @@ def get_text(
         assist_text,
         assist_text_weight,
         sep_text,  # clean_text_with_given_phone_tone() の中間生成物を再利用して効率向上を図る
-        enable_tensor_padding,
     )
     del word2ph
     assert bert_ori.shape[-1] == len(phone), phone
@@ -264,9 +262,6 @@ def prepare_inference_data(
     推論に必要なデータの前処理を行う共通関数。
     infer() と infer_stream() で共通に使用される。
 
-    Args:
-        enable_tensor_padding: メモリ効率化のためのテンソルパディングを使用するか（デフォルト: False）
-
     Returns:
         tuple: (x_tst, x_tst_lengths, sid_tensor, tones, lang_ids, zh_bert, ja_bert, en_bert, style_vec_tensor)
     """
@@ -282,7 +277,6 @@ def prepare_inference_data(
         given_phone=given_phone,
         given_tone=given_tone,
         jtalk=jtalk,
-        enable_tensor_padding=enable_tensor_padding,
     )
     if skip_start:
         phones = phones[3:]
@@ -309,37 +303,47 @@ def prepare_inference_data(
     style_vec_tensor = torch.from_numpy(style_vec).to(device).unsqueeze(0)
 
     # テンソルパディング処理
-    if enable_tensor_padding:
-        actual_length = phones.size(0)  # 実際の長さを保存
-
+    if enable_tensor_padding is True:
         # x_tst とその関連テンソルをパディング
         x_tst, _ = pad_sequence_tensor(
-            x_tst, length_dim=1, pool_type="vits2_sequence", use_pool=True
+            x_tst,
+            length_dim=1,
+            pool_type="vits2_sequence",
+            use_pool=True,
         )
-        padded_length = x_tst.shape[1]
-
-        # 同じパディングサイズに合わせて他のテンソルもパディング
         tones, _ = pad_sequence_tensor(
-            tones, length_dim=1, pool_type="vits2_tones", use_pool=True
+            tones,
+            length_dim=1,
+            pool_type="vits2_tones",
+            use_pool=True,
         )
         lang_ids, _ = pad_sequence_tensor(
-            lang_ids, length_dim=1, pool_type="vits2_lang_ids", use_pool=True
+            lang_ids,
+            length_dim=1,
+            pool_type="vits2_lang_ids",
+            use_pool=True,
         )
-
         # BERT 特徴量もパディング（空でない場合のみ）
         if zh_bert.numel() > 0:
             zh_bert, _ = pad_sequence_tensor(
-                zh_bert, length_dim=2, pool_type="vits2_zh_bert", use_pool=True
+                zh_bert,
+                length_dim=2,
+                pool_type="vits2_zh_bert",
+                use_pool=True,
             )
-
         if ja_bert.numel() > 0:
             ja_bert, _ = pad_sequence_tensor(
-                ja_bert, length_dim=2, pool_type="vits2_ja_bert", use_pool=True
+                ja_bert,
+                length_dim=2,
+                pool_type="vits2_ja_bert",
+                use_pool=True,
             )
-
         if en_bert.numel() > 0:
             en_bert, _ = pad_sequence_tensor(
-                en_bert, length_dim=2, pool_type="vits2_en_bert", use_pool=True
+                en_bert,
+                length_dim=2,
+                pool_type="vits2_en_bert",
+                use_pool=True,
             )
 
     del phones
@@ -493,7 +497,6 @@ def infer_stream(
     chunk_size: int = 65,  # 下記記事を参考に最適な値を調整
     overlap_size: int = 22,  # 下記記事を参照 (L=11, 11+11=22)
     enable_tensor_padding: bool = False,
-    model_name: str = "default",
 ) -> Iterator[NDArray[np.float32]]:
     """
     PyTorch 版音声合成モデルのストリーミング推論を実行する関数。

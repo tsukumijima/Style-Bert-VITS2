@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Style-Bert-VITS2 ストリーミング推論のパフォーマンス測定スクリプト
+Usage: .venv/bin/python -m tests.streaming_benchmark [--device cuda] [--model koharune-ami] [--runs 3]
 
 このスクリプトは infer.py に実装されている infer() 関数と infer_stream() 関数のパフォーマンスを比較し、
 https://qiita.com/__dAi00/items/970f0fe66286510537dd の結果と同様の測定を行う。
@@ -10,9 +10,6 @@ https://qiita.com/__dAi00/items/970f0fe66286510537dd の結果と同様の測定
 - 初回チャンク生成までの時間（ストリーミング版のレイテンシ）
 - 全音声生成完了までの時間（総処理時間）
 - 生成音声の長さごとの効果の変化
-
-使用方法:
-    .venv/bin/python -m tests.streaming_benchmark [--device cuda] [--model koharune-ami] [--runs 3]
 """
 
 import argparse

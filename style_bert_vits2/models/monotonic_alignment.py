@@ -24,7 +24,7 @@ def maximum_path(neg_cent: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
 
     device = neg_cent.device
     dtype = neg_cent.dtype
-    neg_cent = neg_cent.data.cpu().numpy().astype(float32)
+    neg_cent = neg_cent.data.cpu().numpy().astype(float32)  # type: ignore
     path = zeros(neg_cent.shape, dtype=int32)
 
     t_t_max = mask.sum(1)[:, 0].data.cpu().numpy().astype(int32)
