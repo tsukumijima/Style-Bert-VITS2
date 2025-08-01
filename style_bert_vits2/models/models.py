@@ -63,11 +63,11 @@ class DurationDiscriminator(nn.Module):  # vits2
         dur = self.dur_proj(dur)
         x = torch.cat([x, dur], dim=1)
         x = self.pre_out_conv_1(x * x_mask)
-        x = torch.relu(x)
+        x.relu_()
         x = self.pre_out_norm_1(x)
         x = self.drop(x)
         x = self.pre_out_conv_2(x * x_mask)
-        x = torch.relu(x)
+        x.relu_()
         x = self.pre_out_norm_2(x)
         x = self.drop(x)
         x = x * x_mask
@@ -86,13 +86,13 @@ class DurationDiscriminator(nn.Module):  # vits2
         x = torch.detach(x)
         if g is not None:
             g = torch.detach(g)
-            x = x + self.cond(g)
+            x.add_(self.cond(g))
         x = self.conv_1(x * x_mask)
-        x = torch.relu(x)
+        x.relu_()
         x = self.norm_1(x)
         x = self.drop(x)
         x = self.conv_2(x * x_mask)
-        x = torch.relu(x)
+        x.relu_()
         x = self.norm_2(x)
         x = self.drop(x)
 
@@ -310,7 +310,7 @@ class StochasticDurationPredictor(nn.Module):
         x = self.pre(x)
         if g is not None:
             g = torch.detach(g)
-            x = x + self.cond(g)
+            x.add_(self.cond(g))
         x = self.convs(x, x_mask)
         x = self.proj(x) * x_mask
 
@@ -404,13 +404,13 @@ class DurationPredictor(nn.Module):
         x = torch.detach(x)
         if g is not None:
             g = torch.detach(g)
-            x = x + self.cond(g)
+            x.add_(self.cond(g))
         x = self.conv_1(x * x_mask)
-        x = torch.relu(x)
+        x.relu_()
         x = self.norm_1(x)
         x = self.drop(x)
         x = self.conv_2(x * x_mask)
-        x = torch.relu(x)
+        x.relu_()
         x = self.norm_2(x)
         x = self.drop(x)
         x = self.proj(x * x_mask)
@@ -654,10 +654,10 @@ class Generator(torch.nn.Module):
     def forward(self, x: torch.Tensor, g: torch.Tensor | None = None) -> torch.Tensor:
         x = self.conv_pre(x)
         if g is not None:
-            x = x + self.cond(g)
+            x.add_(self.cond(g))
 
         for i in range(self.num_upsamples):
-            x = F.leaky_relu(x, modules.LRELU_SLOPE)
+            F.leaky_relu(x, modules.LRELU_SLOPE, inplace=True)
             x = self.ups[i](x)
             xs = None
             for j in range(self.num_kernels):
@@ -667,9 +667,9 @@ class Generator(torch.nn.Module):
                     xs += self.resblocks[i * self.num_kernels + j](x)
             assert xs is not None
             x = xs / self.num_kernels
-        x = F.leaky_relu(x)
+        F.leaky_relu(x, inplace=True)
         x = self.conv_post(x)
-        x = torch.tanh(x)
+        x.tanh_()
 
         return x
 
@@ -757,7 +757,7 @@ class DiscriminatorP(torch.nn.Module):
 
         for layer in self.convs:
             x = layer(x)
-            x = F.leaky_relu(x, modules.LRELU_SLOPE)
+            F.leaky_relu(x, modules.LRELU_SLOPE, inplace=True)
             fmap.append(x)
         x = self.conv_post(x)
         fmap.append(x)
@@ -787,7 +787,7 @@ class DiscriminatorS(torch.nn.Module):
 
         for layer in self.convs:
             x = layer(x)
-            x = F.leaky_relu(x, modules.LRELU_SLOPE)
+            F.leaky_relu(x, modules.LRELU_SLOPE, inplace=True)
             fmap.append(x)
         x = self.conv_post(x)
         fmap.append(x)
@@ -872,7 +872,7 @@ class ReferenceEncoder(nn.Module):
         for conv in self.convs:
             out = conv(out)
             # out = wn(out)
-            out = F.relu(out)  # [N, 128, Ty//2^K, n_mels//2^K]
+            F.relu(out, inplace=True)  # [N, 128, Ty//2^K, n_mels//2^K]
 
         out = out.transpose(1, 2)  # [N, Ty//2^K, 128, n_mels//2^K]
         T = out.size(1)
