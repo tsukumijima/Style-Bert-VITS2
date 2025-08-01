@@ -20,6 +20,7 @@ SEQUENCE_PADDING_SIZES = [
     16,
     32,
     64,
+    96,
     128,
     192,
     256,
@@ -43,7 +44,7 @@ _pool_lock = threading.Lock()
 # プール設定
 POOL_MAX_AGE_SECONDS = 600  # 10分間未使用のテンソルは解放
 POOL_MAX_MEMORY_GB = 1.5  # プール全体の最大メモリ使用量
-POOL_CLEANUP_INTERVAL = 30  # プールクリーンアップ間隔（秒）
+POOL_CLEANUP_INTERVAL = 60  # プールクリーンアップ間隔（秒）
 
 # 最後のクリーンアップ時刻
 _last_cleanup_time = time.time()
@@ -94,19 +95,20 @@ def pad_sequence_tensor(
     )
 
     # データをコピー
+    # copy_() による in-place 更新で効率化
     if length_dim == 0:
-        padded_tensor[:actual_length] = source
+        padded_tensor[:actual_length].copy_(source)
     elif length_dim == 1:
-        padded_tensor[:, :actual_length] = source
+        padded_tensor[:, :actual_length].copy_(source)
     elif length_dim == 2:
-        padded_tensor[:, :, :actual_length] = source
+        padded_tensor[:, :, :actual_length].copy_(source)
     elif length_dim == 3:
-        padded_tensor[:, :, :, :actual_length] = source
+        padded_tensor[:, :, :, :actual_length].copy_(source)
     else:
         # 汎用的なスライシング（パフォーマンスは劣る）
         slices = [slice(None)] * len(source.shape)
         slices[length_dim] = slice(actual_length)
-        padded_tensor[tuple(slices)] = source
+        padded_tensor[tuple(slices)].copy_(source)
 
     return padded_tensor, actual_length
 
