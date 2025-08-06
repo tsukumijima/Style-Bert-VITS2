@@ -118,9 +118,13 @@ class TTSModel:
                 f"Number of styles ({num_styles}) does not match the number of style2id ({len(self.style2id)})"
             )
 
-        if self.style_vectors.shape[0] != num_styles:
+        # スタイルベクトルの形状チェック
+        # 欠番スタイルがある場合を考慮して、style2id の最大 ID + 1 と比較する
+        max_style_id = max(self.style2id.values()) if self.style2id else 0
+        expected_vector_count = max_style_id + 1
+        if self.style_vectors.shape[0] != expected_vector_count:
             raise ValueError(
-                f"The number of styles ({num_styles}) does not match the number of style vectors ({self.style_vectors.shape[0]})"
+                f"The number of style vectors ({self.style_vectors.shape[0]}) does not match the expected count based on style IDs (max ID: {max_style_id}, expected: {expected_vector_count})"
             )
         self.style_vector_inference: Any | None = None
 
