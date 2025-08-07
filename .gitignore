@@ -46,3 +46,6 @@ safetensors.ipynb
 .DS_Store
 playground.ipynb
 playgrounds/
+
+# Serena
+.serena/cache/
