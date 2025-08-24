@@ -201,7 +201,9 @@ if args.preload_onnx_bert:
     )
     onnx_bert_models.load_tokenizer(Languages.JP)
 
-model_holder = TTSModelHolder(model_dir, device, torch_device_to_onnx_providers(device))
+model_holder = TTSModelHolder(
+    model_dir, device, torch_device_to_onnx_providers(device), ignore_onnx=False
+)
 if len(model_holder.model_names) == 0:
     logger.error(f"Models not found in {model_dir}.")
     sys.exit(1)
