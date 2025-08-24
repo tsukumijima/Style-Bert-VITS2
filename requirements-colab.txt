@@ -15,7 +15,7 @@ numpy<2
 onnx
 onnxconverter-common
 onnxruntime-gpu
-onnxsim
+onnxsim-prebuilt
 pyannote.audio>=3.1.0
 pyloudnorm
 pyopenjtalk-plus

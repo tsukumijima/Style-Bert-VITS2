@@ -206,6 +206,7 @@ model_holder = TTSModelHolder(
     model_dir,
     device=device,
     onnx_providers=torch_device_to_onnx_providers(device),
+    ignore_onnx=False,
     use_fp16=args.fp16,
 )
 if len(model_holder.model_names) == 0:
