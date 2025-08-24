@@ -5,6 +5,7 @@ import gradio as gr
 import torch
 
 from config import get_path_config
+from gradio_tabs.convert_onnx import create_onnx_app
 from gradio_tabs.dataset import create_dataset_app
 from gradio_tabs.inference import create_inference_app
 from gradio_tabs.merge import create_merge_app
@@ -14,6 +15,7 @@ from style_bert_vits2.constants import GRADIO_THEME, VERSION
 from style_bert_vits2.nlp.japanese import pyopenjtalk_worker
 from style_bert_vits2.nlp.japanese.user_dict import update_dict
 from style_bert_vits2.tts_model import TTSModelHolder
+from style_bert_vits2.utils import torch_device_to_onnx_providers
 
 
 # このプロセスからはワーカーを起動して辞書を使いたいので、ここで初期化
@@ -40,7 +42,12 @@ if device == "cuda" and not torch.cuda.is_available():
 #     download_default_models()
 
 path_config = get_path_config()
-model_holder = TTSModelHolder(Path(path_config.assets_root), device)
+model_holder = TTSModelHolder(
+    Path(path_config.assets_root),
+    device,
+    torch_device_to_onnx_providers(device),
+    ignore_onnx=True,
+)
 
 with gr.Blocks(theme=GRADIO_THEME) as app:
     gr.Markdown(f"# Style-Bert-VITS2 WebUI (version {VERSION})")
@@ -55,6 +62,8 @@ with gr.Blocks(theme=GRADIO_THEME) as app:
             create_style_vectors_app()
         with gr.Tab("マージ"):
             create_merge_app(model_holder=model_holder)
+        with gr.Tab("ONNX変換"):
+            create_onnx_app(model_holder=model_holder)
 
 app.launch(
     server_name=args.host,

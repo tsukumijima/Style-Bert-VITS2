@@ -51,6 +51,11 @@ def do_transcribe(
 ):
     if model_name == "":
         return "Error: モデル名を入力してください。"
+    if hf_repo_id == "litagin/anime-whisper":
+        logger.info(
+            "Since litagin/anime-whisper does not support initial prompt, it will be ignored."
+        )
+        initial_prompt = ""
 
     cmd = [
         "transcribe.py",
@@ -159,27 +164,31 @@ def create_dataset_app() -> gr.Blocks:
                 result1 = gr.Textbox(label="結果")
         with gr.Row():
             with gr.Column():
+                use_hf_whisper = gr.Checkbox(
+                    label="HuggingFaceのWhisperを使う（速度が速いがVRAMを多く使う）",
+                    value=False,
+                )
                 whisper_model = gr.Dropdown(
                     [
-                        "tiny",
-                        "base",
-                        "small",
-                        "medium",
                         "large",
                         "large-v2",
                         "large-v3",
                     ],
                     label="Whisperモデル",
                     value="large-v3",
-                )
-                use_hf_whisper = gr.Checkbox(
-                    label="HuggingFaceのWhisperを使う（速度が速いがVRAMを多く使う）",
-                    value=True,
+                    visible=True,
                 )
                 hf_repo_id = gr.Dropdown(
-                    ["openai/whisper", "kotoba-tech/kotoba-whisper-v1.1"],
-                    label="HuggingFaceのWhisperモデル",
-                    value="openai/whisper",
+                    [
+                        "openai/whisper-large-v3-turbo",
+                        "openai/whisper-large-v3",
+                        "openai/whisper-large-v2",
+                        "kotoba-tech/kotoba-whisper-v2.1",
+                        "litagin/anime-whisper",
+                    ],
+                    label="HuggingFaceのWhisper repo_id",
+                    value="openai/whisper-large-v3-turbo",
+                    visible=False,
                 )
                 compute_type = gr.Dropdown(
                     [
@@ -194,7 +203,7 @@ def create_dataset_app() -> gr.Blocks:
                     ],
                     label="計算精度",
                     value="bfloat16",
-                    visible=False,
+                    visible=True,
                 )
                 batch_size = gr.Slider(
                     minimum=1,
@@ -203,6 +212,7 @@ def create_dataset_app() -> gr.Blocks:
                     step=1,
                     label="バッチサイズ",
                     info="大きくすると速度が速くなるがVRAMを多く使う",
+                    visible=False,
                 )
                 language = gr.Dropdown(["ja", "en", "zh"], value="ja", label="言語")
                 initial_prompt = gr.Textbox(
@@ -249,12 +259,13 @@ def create_dataset_app() -> gr.Blocks:
         )
         use_hf_whisper.change(
             lambda x: (
+                gr.update(visible=not x),
                 gr.update(visible=x),
                 gr.update(visible=x),
                 gr.update(visible=not x),
             ),
             inputs=[use_hf_whisper],
-            outputs=[hf_repo_id, batch_size, compute_type],
+            outputs=[whisper_model, hf_repo_id, batch_size, compute_type],
         )
 
     return app

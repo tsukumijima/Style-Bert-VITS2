@@ -2,7 +2,7 @@ import argparse
 import json
 from collections import defaultdict
 from pathlib import Path
-from random import sample, shuffle
+from random import sample
 from typing import Optional
 
 from tqdm import tqdm
@@ -98,7 +98,9 @@ def preprocess(
         transcription_path.open("r", encoding="utf-8") as trans_file,
         cleaned_path.open("w", encoding="utf-8") as out_file,
     ):
-        for line in tqdm(trans_file, file=SAFE_STDOUT, total=total_lines):
+        for line in tqdm(
+            trans_file, file=SAFE_STDOUT, total=total_lines, dynamic_ncols=True
+        ):
             try:
                 processed_line = process_line(
                     line,

@@ -12,6 +12,7 @@ from config import get_path_config
 from style_bert_vits2.constants import DEFAULT_STYLE, GRADIO_THEME
 from style_bert_vits2.logging import logger
 from style_bert_vits2.tts_model import TTSModel, TTSModelHolder
+from style_bert_vits2.utils import torch_device_to_onnx_providers
 
 
 voice_keys = ["dec"]
@@ -104,6 +105,8 @@ def merge_style_usual(
     new_config = config_a.copy()
     new_config["data"]["num_styles"] = len(new_style2id)
     new_config["data"]["style2id"] = new_style2id
+    if new_config["data"]["n_speakers"] == 1:
+        new_config["data"]["spk2id"] = {output_name: 0}
     new_config["model_name"] = output_name
     save_config(new_config, output_name)
 
@@ -159,6 +162,8 @@ def merge_style_add_diff(
     new_config = config_a.copy()
     new_config["data"]["num_styles"] = len(new_style2id)
     new_config["data"]["style2id"] = new_style2id
+    if new_config["data"]["n_speakers"] == 1:
+        new_config["data"]["spk2id"] = {output_name: 0}
     new_config["model_name"] = output_name
     save_config(new_config, output_name)
 
@@ -218,6 +223,8 @@ def merge_style_weighted_sum(
     new_config = config_a.copy()
     new_config["data"]["num_styles"] = len(new_style2id)
     new_config["data"]["style2id"] = new_style2id
+    if new_config["data"]["n_speakers"] == 1:
+        new_config["data"]["spk2id"] = {output_name: 0}
     new_config["model_name"] = output_name
     save_config(new_config, output_name)
 
@@ -267,6 +274,8 @@ def merge_style_add_null(
     new_config = config_a.copy()
     new_config["data"]["num_styles"] = len(new_style2id)
     new_config["data"]["style2id"] = new_style2id
+    if new_config["data"]["n_speakers"] == 1:
+        new_config["data"]["spk2id"] = {output_name: 0}
     new_config["model_name"] = output_name
     save_config(new_config, output_name)
 
@@ -361,6 +370,8 @@ def merge_models_usual(
     new_config["model_name"] = output_name
     new_config["data"]["num_styles"] = 1
     new_config["data"]["style2id"] = {DEFAULT_STYLE: 0}
+    if new_config["data"]["n_speakers"] == 1:
+        new_config["data"]["spk2id"] = {output_name: 0}
     save_config(new_config, output_name)
 
     neutral_vector_a = style_vectors_a[0]
@@ -443,6 +454,8 @@ def merge_models_add_diff(
     new_config["model_name"] = output_name
     new_config["data"]["num_styles"] = 1
     new_config["data"]["style2id"] = {DEFAULT_STYLE: 0}
+    if new_config["data"]["n_speakers"] == 1:
+        new_config["data"]["spk2id"] = {output_name: 0}
     with open(assets_root / output_name / "config.json", "w", encoding="utf-8") as f:
         json.dump(new_config, f, indent=2, ensure_ascii=False)
 
@@ -518,6 +531,8 @@ def merge_models_weighted_sum(
     new_config["model_name"] = output_name
     new_config["data"]["num_styles"] = 1
     new_config["data"]["style2id"] = {DEFAULT_STYLE: 0}
+    if new_config["data"]["n_speakers"] == 1:
+        new_config["data"]["spk2id"] = {output_name: 0}
     with open(assets_root / output_name / "config.json", "w", encoding="utf-8") as f:
         json.dump(new_config, f, indent=2, ensure_ascii=False)
 
@@ -594,6 +609,8 @@ def merge_models_add_null(
     new_config["model_name"] = output_name
     new_config["data"]["num_styles"] = 1
     new_config["data"]["style2id"] = {DEFAULT_STYLE: 0}
+    if new_config["data"]["n_speakers"] == 1:
+        new_config["data"]["spk2id"] = {output_name: 0}
     with open(assets_root / output_name / "config.json", "w", encoding="utf-8") as f:
         json.dump(new_config, f, indent=2, ensure_ascii=False)
 
@@ -880,7 +897,7 @@ initial_md = """
 - 話者数が違うモデル同士はおそらくマージできません。
 """
 
-style_merge_md = f"""
+style_merge_md = """
 ## 3. スタイルベクトルのマージ
 
 1. マージ後のモデルにいくつスタイルを追加したいかを「作りたいスタイル数」で指定
@@ -1002,6 +1019,14 @@ def method_change(x: str):
 
 
 def create_merge_app(model_holder: TTSModelHolder) -> gr.Blocks:
+    # ONNX モデルが混じらないよう、渡された TTSModelHolder のインスタンス変数を使って TTSModelHolder を作り直す
+    model_holder = TTSModelHolder(
+        model_holder.root_dir,
+        model_holder.device,
+        model_holder.onnx_providers,
+        ignore_onnx=True,
+    )
+
     model_names = model_holder.model_names
     if len(model_names) == 0:
         logger.error(
@@ -1524,8 +1549,9 @@ def create_merge_app(model_holder: TTSModelHolder) -> gr.Blocks:
 
 
 if __name__ == "__main__":
+    device = "cuda" if torch.cuda.is_available() else "cpu"
     model_holder = TTSModelHolder(
-        assets_root, device="cuda" if torch.cuda.is_available() else "cpu"
+        assets_root, device, torch_device_to_onnx_providers(device), ignore_onnx=True
     )
     app = create_merge_app(model_holder)
     app.launch(inbrowser=True)
