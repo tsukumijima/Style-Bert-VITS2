@@ -2,8 +2,9 @@
 
 ## v2.7.0 (2025-08-24)
 
-- [AivisProject](https://aivis-project.com/) 等との連携のため、ONNX変換のGUI追加 (Gradioタブの一つとして)
+- [AivisProject](https://aivis-project.com/) 等との連携のため、ONNX変換のGUIとColabセル追加([tuna2134さん](https://github.com/tuna2134)、[tsukumijimaさん](https://github.com/tsukumijima)ありがとうございます！)
 - また音声認識モデルとして `litagin/anime-whisper` の追加
+- ヌルモデルを音声合成時に指定できるように（[lirukさん](https://github.com/liruk)ありがとうございます！）
 - その他軽微な修正等
 
 ## v2.6.1 (2024-09-09)
