@@ -526,6 +526,32 @@ def test_normalize_text_url_email():
     )
 
 
+def test_normalize_text_divider_blocks():
+    """区切り用途の連続記号を句点に畳み込むテスト"""
+    assert normalize_text("###########") == "."
+    assert normalize_text("-------------") == "."
+    assert normalize_text("_____   _____") == "."
+    assert normalize_text(":::::") == "."
+    assert normalize_text("*****") == "."
+    assert normalize_text("#$#$#$#") == "."
+    assert normalize_text("そうなんだよな ##### でもなぁ") == "そうなんだよな.でもなぁ"
+    # 複数行
+    assert (
+        normalize_text("""--------------------------
+######### これはコメントです #########
+=================
+""")
+        == ".これはコメントです."
+    )
+    # このような感情表現としての連続する記号は変換されない
+    assert (
+        normalize_text(
+            "やった〜〜〜〜！！！！テストでようやく満点取れたよ・・・・・・………。。。。。。あなたはどう?????!!!"
+        )
+        == "やったーーーー!!!!テストでようやく満点取れたよ.....................あなたはどう?????!!!"
+    )
+
+
 def test_normalize_text_english():
     """英語関連の正規化のテスト"""
     # 基本的な英単語

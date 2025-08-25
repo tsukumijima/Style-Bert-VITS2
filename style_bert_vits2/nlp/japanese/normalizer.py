@@ -601,6 +601,63 @@ def __replace_symbols(text: str) -> str:
     # メールアドレスパターンの処理
     text = __EMAIL_PATTERN.sub(convert_email_symbols, text)
 
+    # プレーンテキストの区切りとして使われる連続記号の塊を検出し、句点一つに畳み込む
+    # - 強ターゲット: {'#', '-', '_', '=', ':', '*'} は、3個以上でヒット
+    # - 弱ターゲット: {'$', '%', '&', '+', '/', '\\', '|', ';', '<', '>', '^'} は、6個以上でヒット
+    # - 直前直後が文字（英数・かな・カナ・漢字）の場合は、閾値を引き上げ（5個以上）
+    # - 空白は塊の一部として許容する（"___   ___" など）
+    def collapse_divider_blocks(src: str) -> str:
+        # 許容する候補記号
+        divider_strong = set("#-_=:*")
+        divider_weak = set("$%&+/\\|;<>^")
+        divider_all = divider_strong | divider_weak
+
+        # 英数・かな・カナ・漢字のワード文字を判定するパターン
+        word_char_pattern = re.compile(r"[A-Za-z0-9\u3040-\u30FF\u4E00-\u9FFF]")
+
+        # 候補記号と空白のみで構成される3文字以上の塊を粗抽出
+        block_pattern = re.compile(r"(?:(?:[#$%&*+\-=_:/\\|;<>^])|\s){3,}")
+
+        def repl(m: re.Match[str]) -> str:
+            block = m.group(0)
+            # 非空白の候補記号だけを数える
+            nonspace_chars = [c for c in block if not c.isspace()]
+            if not nonspace_chars:
+                return block
+            if not all(c in divider_all for c in nonspace_chars):
+                return block
+
+            # 文脈による閾値の調整（両隣がワード文字であれば厳しめ）
+            start = m.start()
+            end = m.end()
+            left_char = src[start - 1] if start > 0 else ""
+            right_char = src[end] if end < len(src) else ""
+            left_is_word = bool(word_char_pattern.match(left_char))
+            right_is_word = bool(word_char_pattern.match(right_char))
+            # 両側がワード: 5、それ以外: 3
+            base_threshold = 5 if (left_is_word and right_is_word) else 3
+
+            strong_count = sum(1 for c in nonspace_chars if c in divider_strong)
+            total_count = len(nonspace_chars)
+
+            # 強ターゲットが閾値以上、または弱ターゲットのみだが十分な長さ
+            if strong_count >= base_threshold:
+                return "."
+            # 弱ターゲットのみの場合の閾値（より厳しく）
+            weak_only_threshold = max(base_threshold + 2, 6)
+            if strong_count == 0 and total_count >= weak_only_threshold:
+                return "."
+
+            return block
+
+        return block_pattern.sub(repl, src)
+
+    # 区切り用途の連続記号ブロックを句点に畳み込む
+    ## URL・メールアドレスパターンを置換した後に適用する
+    ## ここまでで URL・メールの記号は文字列化されるため、"://" のような並びは残っておらず、誤検出を回避しやすい
+    ## （この段階で畳み込むことで、後段の記号読み変換に到達する前に区切り線を排除できる）
+    text = collapse_divider_blocks(text)
+
     # 数字の範囲を処理
     def convert_range(match: re.Match[str]) -> str:
         start = match.group(1)
