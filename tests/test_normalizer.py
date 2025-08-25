@@ -838,7 +838,7 @@ def test_normalize_text_edge_cases():
     # 極端に長い英単語
     assert (
         normalize_text("supercalifragilisticexpialidocious")
-        == "スーパーカリフィッシュ"  # e2k ライブラリによる自動推定結果
+        == "スーパーカリフィア"  # e2k ライブラリによる自動推定結果
     )
     # 特殊な文字の組み合わせ
     assert normalize_text("㊊㊋㊌㊍㊎㊏㊐") == "月火水木金土日"  # 曜日の丸文字
@@ -949,5 +949,5 @@ def test_normalize_text_complex():
         normalize_text(
             "ROCK5 is a series of Rockchip RK3588(s) based SBC(Single Board Computer) by Radxa. It can run Linux, Android, BSD and other distributions. ROCK5 comes in two models, Model A and Model B. Both models offer 4GB, 8GB, 16GB and 32GB options. For detailed difference between Model A and Model B, please check Specifications. ROCK5 features a Octa core ARM processor(4x Cortex-A76 + 4x Cortex-A55), 64bit 3200Mb/s LPDDR4, up to 8K@60 HDMI, MIPI DSI, MIPI CSI, 3.5mm jack with mic, USB Port, 2.5 GbE LAN, PCIe 3.0, PCIe 2.0, 40-pin color expansion header, RTC. Also, ROCK5 supports USB PD and QC powering."
         )
-        == "ロックファイブイズアシリーズオブロックチップRK3588's'ベースドエスビーシー'シングルボードコンピューター'バイラドキャ.イットキャンランリナックス,アンドロイド,ビーエスディーアンドアザーディストリビューションズ.ロックファイブカムズインツーモデルズ,モデルAアンドモデルB.ボスモデルズオファー4ギガバイト,8ギガバイト,16ギガバイトアンド32ギガバイトオプションズ.フォーディテールズディファレンスビトゥイーンモデルAアンドモデルB,プリーズチェックスペシフィケーションズ.ロックファイブフィーチャーズアオクタコアアームプロセッサー'4xコーテックスA76プラス4xコーテックスA55',64ビット3200メガビット毎秒エルピーディーディーアールフォー,アップトゥーはちケー60エイチディーエムアイ,ミピーディーエスアイ,ミピーシーエスアイ,3.5ミリメートルジャックウィズマイク,ユーエスビーポート,2.5ジービーイーラン,ピーシーアイイー3.0,ピーシーアイイー2.0,40ピンカラーエクスパンションヘッダー,アールティーシー.オルソ,ロックファイブサポーツユーエスビーピーディーアンドキューシーパワーリング."
+        == "ロックファイブイズアシリーズオブロックチップRK3588's'ベースドエスビーシー'シングルボードコンピューター'バイラッジクサ.イットキャンランリナックス,アンドロイド,ビーエスディーアンドアザーディストリビューションズ.ロックファイブカムズインツーモデルズ,モデルAアンドモデルB.ボスモデルズオファー4ギガバイト,8ギガバイト,16ギガバイトアンド32ギガバイトオプションズ.フォーディテールズディファレンスビトゥイーンモデルAアンドモデルB,プリーズチェックスペシフィケーションズ.ロックファイブフィーチャーズアオクタコアアームプロセッサー'4xコーテックスA76プラス4xコーテックスA55',64ビット3200メガビット毎秒エルピーディーディーアールフォー,アップトゥーはちケー60エイチディーエムアイ,ミピーディーエスアイ,ミピーシーエスアイ,3.5ミリメートルジャックウィズマイク,ユーエスビーポート,2.5ジービーイーラン,ピーシーアイイー3.0,ピーシーアイイー2.0,40ピンカラーエクスパンションヘッダー,アールティーシー.オルソ,ロックファイブサポーツユーエスビーピーディーアンドキューシーパワーリング."
     )
