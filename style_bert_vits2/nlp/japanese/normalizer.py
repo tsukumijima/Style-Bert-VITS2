@@ -430,6 +430,10 @@ __URL_PATTERN = re.compile(
     r"https?://[-a-zA-Z0-9.]+(?:/[-a-zA-Z0-9._~:/?#\[\]@!$&\'()*+,;=]*)?"
 )
 __EMAIL_PATTERN = re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")
+# 英数・かな・カナ・漢字のワード文字を判定するパターン
+__WORD_CHAR_PATTERN = re.compile(r"[A-Za-z0-9\u3040-\u30FF\u4E00-\u9FFF]")
+# 候補記号と空白のみで構成される3文字以上の塊を粗抽出
+__BLOCK_PATTERN = re.compile(r"(?:(?:[#$%&*+\-=_:/\\|;<>^])|\s){3,}")
 __NUMBER_RANGE_PATTERN = re.compile(
     r"(\d+(?:\.\d+)?(?:\s*[a-zA-Z]+)?)\s*[〜~～ー]\s*(\d+(?:\.\d+)?(?:\s*[a-zA-Z]+)?)"
 )
@@ -612,12 +616,6 @@ def __replace_symbols(text: str) -> str:
         divider_weak = set("$%&+/\\|;<>^")
         divider_all = divider_strong | divider_weak
 
-        # 英数・かな・カナ・漢字のワード文字を判定するパターン
-        word_char_pattern = re.compile(r"[A-Za-z0-9\u3040-\u30FF\u4E00-\u9FFF]")
-
-        # 候補記号と空白のみで構成される3文字以上の塊を粗抽出
-        block_pattern = re.compile(r"(?:(?:[#$%&*+\-=_:/\\|;<>^])|\s){3,}")
-
         def repl(m: re.Match[str]) -> str:
             block = m.group(0)
             # 非空白の候補記号だけを数える
@@ -632,8 +630,8 @@ def __replace_symbols(text: str) -> str:
             end = m.end()
             left_char = src[start - 1] if start > 0 else ""
             right_char = src[end] if end < len(src) else ""
-            left_is_word = bool(word_char_pattern.match(left_char))
-            right_is_word = bool(word_char_pattern.match(right_char))
+            left_is_word = bool(__WORD_CHAR_PATTERN.match(left_char))
+            right_is_word = bool(__WORD_CHAR_PATTERN.match(right_char))
             # 両側がワード: 5、それ以外: 3
             base_threshold = 5 if (left_is_word and right_is_word) else 3
 
@@ -644,13 +642,14 @@ def __replace_symbols(text: str) -> str:
             if strong_count >= base_threshold:
                 return "."
             # 弱ターゲットのみの場合の閾値（より厳しく）
+            # 基本閾値に2を加算、ただし最低でも6文字必要
             weak_only_threshold = max(base_threshold + 2, 6)
             if strong_count == 0 and total_count >= weak_only_threshold:
                 return "."
 
             return block
 
-        return block_pattern.sub(repl, src)
+        return __BLOCK_PATTERN.sub(repl, src)
 
     # 区切り用途の連続記号ブロックを句点に畳み込む
     ## URL・メールアドレスパターンを置換した後に適用する
