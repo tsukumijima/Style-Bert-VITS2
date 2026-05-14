@@ -152,9 +152,26 @@ def save_safetensors(
     else:
         state_dict = model.state_dict()
     keys = []
+    # 推論時に不要かつ pc_variance_monitor_k に依存して形状が変わるバッファ群
+    ## これらは SpeakerAdapter の分布診断専用で、推論経路では参照されない
+    ## また学習側 pc_variance_monitor_k と推論側既定値 (8) が異なると形状不一致でロード失敗するため、
+    ## 推論用 safetensors からは確実に除外する
+    speaker_adapter_diagnostic_buffers = {
+        "emb_g_mean",
+        "emb_g_var",
+        "emb_g_pca_components",
+        "emb_g_pca_variances",
+        "emb_g_pca_k_actual",
+        "emb_g_statistics_initialized",
+    }
     for k in state_dict:
         if "enc_q" in k and for_infer:
             continue
+        # state_dict key に prefix (例: net_g.emb_g_mean) が付く場合も診断バッファとして除外する (完全一致だと漏れる)
+        if for_infer:
+            state_dict_key_tail = k.rsplit(".", 1)[-1]
+            if state_dict_key_tail in speaker_adapter_diagnostic_buffers:
+                continue
         keys.append(k)
 
     new_dict = (

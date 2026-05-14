@@ -485,6 +485,8 @@ def run():
         use_speaker_adapter=hps.model.use_speaker_adapter,
         speaker_adapter_input_dim=hps.model.speaker_adapter_input_dim,
         speaker_adapter_bottleneck_dim=hps.model.speaker_adapter_bottleneck_dim,
+        # 主成分別分散モニタの PC 数
+        pc_variance_monitor_k=hps.train.pc_variance_monitor_k,
     ).cuda(local_rank)
 
     if getattr(hps.train, "freeze_JP_bert", False):
@@ -695,6 +697,15 @@ def run():
             # ゲート付き delta 経路用に、ロード済み emb_g の平均から g_neutral を初期化する
             g_neutral = net_g.module.emb_g.weight.detach().mean(dim=0, keepdim=True)
             net_g.module.set_g_neutral(g_neutral)
+
+    # 事前学習 emb_g の分布統計 (平均・分散・PCA) を初期化する
+    ## 学習再開時も統計が checkpoint に残るが、emb_g 自体は学習中ほぼ更新されないので再計算で問題ない
+    if hasattr(net_g.module, "set_emb_g_statistics") and hasattr(net_g.module, "emb_g"):
+        net_g.module.set_emb_g_statistics()
+        if rank == 0:
+            logger.info(
+                "Initialized emb_g distribution statistics for Adapter monitoring."
+            )
 
     def lr_lambda(epoch: int) -> float:
         """
@@ -1135,6 +1146,8 @@ def train_and_evaluate(
         losses_dur_gen: list[torch.Tensor] | None = None
         loss_teacher = torch.tensor(0.0, device=y.device)
         loss_delta_l2 = torch.tensor(0.0, device=y.device)
+        # 分布診断メトリクス
+        adapter_dist_metrics: dict[str, torch.Tensor] | None = None
 
         # Discriminator
         if disable_discriminators:
@@ -1509,6 +1522,48 @@ def train_and_evaluate(
                             )
                             scalar_dict["g/adapter_gate"] = gate_val
 
+                # 分布診断メトリクス
+                ## 診断専用なので勾配を持たせず、TensorBoard と警告ログにだけ利用する
+                if speaker_embedding is not None and g.shape[0] >= 4:
+                    if adapter_dist_metrics is None:
+                        with torch.no_grad():
+                            adapter_dist_metrics = (
+                                net_g.module.compute_adapter_distribution_metrics(
+                                    g.detach().float(),
+                                )
+                            )
+                    assert adapter_dist_metrics is not None
+                    if adapter_dist_metrics["statistics_initialized"].item():
+                        scalar_dict["adapter_dist/var_ratio_mean"] = (
+                            adapter_dist_metrics["var_ratio_mean"]
+                        )
+                        scalar_dict["adapter_dist/var_ratio_min"] = (
+                            adapter_dist_metrics["var_ratio_min"]
+                        )
+                        scalar_dict["adapter_dist/mean_shift"] = adapter_dist_metrics[
+                            "mean_shift"
+                        ]
+                        scalar_dict["adapter_dist/pc_var_ratio_mean"] = (
+                            adapter_dist_metrics["pc_var_ratio_mean"]
+                        )
+                        scalar_dict["adapter_dist/pc_var_ratio_min"] = (
+                            adapter_dist_metrics["pc_var_ratio_min"]
+                        )
+                        # 警告閾値: 分散比が著しく低いときに警告ログを出す (Early stopping のシグナル)
+                        var_ratio_min_val = float(
+                            adapter_dist_metrics["var_ratio_min"].item()
+                        )
+                        warning_threshold = float(
+                            hps.train.adapter_min_variance_ratio_warning
+                        )
+                        if var_ratio_min_val < warning_threshold and logger is not None:
+                            logger.warning(
+                                f"Adapter output distribution shrinkage detected: "
+                                f"var_ratio_min: {var_ratio_min_val:.3f} "
+                                f"(threshold: {warning_threshold:.3f}, step: {global_step}). "
+                                f"Review SpeakerAdapter design or training data diversity."
+                            )
+
                 # 以降のログは計算が重い気がするし誰も見てない気がするのでコメントアウト
                 # image_dict = {
                 #     "slice/mel_org": utils.plot_spectrogram_to_numpy(
@@ -1648,9 +1703,19 @@ def evaluate(
     generator.eval()
     image_dict = {}
     audio_dict = {}
+    scalar_dict: dict[str, float | torch.Tensor] = {}
     print()
     logger.info("Evaluating ...")
     use_speaker_embedding = getattr(hps.data, "use_speaker_embedding", False)
+
+    # Adapter 経由 g の分布診断: eval_loader 全体で g を集約し、分布縮小を Aggregate 統計で検出する
+    ## ステップ単位ログ (バッチ内分散) はノイズが大きいため、より信頼性の高い検査を eval 時に行う
+    aggregated_g: list[torch.Tensor] = []
+    is_nanairo_adapter_active = use_speaker_embedding is True and (
+        hasattr(generator.module, "compute_adapter_distribution_metrics")
+        and getattr(generator.module, "use_speaker_adapter", False) is True
+    )
+
     with torch.no_grad():
         for batch_idx, batch in enumerate(eval_loader):
             # 初回の evaluate() 時に最初のバッチを固定サンプルとしてキャッシュ
@@ -1700,6 +1765,20 @@ def evaluate(
             style_vec = style_vec.cuda()
             if speaker_embedding is not None:
                 speaker_embedding = speaker_embedding.cuda()
+
+            # Adapter 出力 g をバッチごとに収集 (eval 全体で aggregate 分布診断するため)
+            if is_nanairo_adapter_active and speaker_embedding is not None:
+                if speaker_embedding.dim() == 1:
+                    speaker_embedding_for_g = speaker_embedding.unsqueeze(0)
+                else:
+                    speaker_embedding_for_g = speaker_embedding
+                ctrl = generator.module.speaker_control_encoder(speaker_embedding_for_g)
+                gated_delta = generator.module.speaker_adapter(ctrl)
+                g_adapter = (
+                    generator.module.get_buffer("g_neutral") + gated_delta
+                ).float()
+                aggregated_g.append(g_adapter.detach())
+
             for use_sdp in [True, False]:
                 y_hat, attn, mask, *_ = generator.module.infer(
                     x,
@@ -1821,11 +1900,55 @@ def evaluate(
                 audio_dict[f"fixed/audio_{use_sdp}"] = y_hat[0, :, : y_hat_lengths[0]]
             audio_dict["fixed/gt_audio"] = fixed_y[0, :, : fixed_y_lengths[0]]
 
+    # Aggregate 分布診断: eval セット全体を通じて収集した Adapter 出力 g に対し
+    # 信頼度の高い分布縮小検査を行い、TensorBoard に記録する
+    if is_nanairo_adapter_active and len(aggregated_g) > 0:
+        with torch.no_grad():
+            g_concat = torch.cat(aggregated_g, dim=0).float()  # [N, gin_channels]
+            if g_concat.shape[0] >= 4:
+                eval_metrics = generator.module.compute_adapter_distribution_metrics(
+                    g_concat,
+                )
+                if eval_metrics["statistics_initialized"].item():
+                    scalar_dict["eval/adapter_dist/var_ratio_mean"] = float(
+                        eval_metrics["var_ratio_mean"].item()
+                    )
+                    scalar_dict["eval/adapter_dist/var_ratio_min"] = float(
+                        eval_metrics["var_ratio_min"].item()
+                    )
+                    scalar_dict["eval/adapter_dist/mean_shift"] = float(
+                        eval_metrics["mean_shift"].item()
+                    )
+                    scalar_dict["eval/adapter_dist/pc_var_ratio_mean"] = float(
+                        eval_metrics["pc_var_ratio_mean"].item()
+                    )
+                    scalar_dict["eval/adapter_dist/pc_var_ratio_min"] = float(
+                        eval_metrics["pc_var_ratio_min"].item()
+                    )
+                    scalar_dict["eval/adapter_dist/sample_count"] = float(
+                        g_concat.shape[0]
+                    )
+                    # Aggregate でも分散縮小が見られたら警告 (Early stopping の主シグナル)
+                    eval_var_ratio_min = float(eval_metrics["var_ratio_min"].item())
+                    warning_threshold = float(
+                        hps.train.adapter_min_variance_ratio_warning
+                    )
+                    if eval_var_ratio_min < warning_threshold:
+                        logger.warning(
+                            f"[EVAL] Adapter output distribution shrinkage confirmed: "
+                            f"var_ratio_min: {eval_var_ratio_min:.3f} "
+                            f"(threshold: {warning_threshold:.3f}, eval N: {g_concat.shape[0]}). "
+                            f"Aggregate measurement is more reliable than step-wise warnings; "
+                            f"consider stopping training and revisiting Adapter setup "
+                            f"(bottleneck_dim / data diversity)."
+                        )
+
     summarize(
         writer=writer_eval,
         global_step=global_step,
         images=image_dict,
         audios=audio_dict,
+        scalars=scalar_dict,
         audio_sampling_rate=hps.data.sampling_rate,
     )
     generator.train()

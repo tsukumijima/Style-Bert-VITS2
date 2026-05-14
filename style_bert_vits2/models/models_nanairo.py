@@ -1160,6 +1160,22 @@ class SynthesizerTrn(nn.Module):
             # Adapter 無効時でも g_neutral を登録し、チェックポイントの state_dict 互換性を維持する
             self.register_buffer("g_neutral", torch.zeros(1, gin_channels))
 
+        # 事前学習済み emb_g の分布統計を保持する
+        ## Adapter 経路の出力分布が事前学習 emb_g 分布から逸脱していないかの監視と、分散保持 loss に使う
+        ## Adapter 無効時でも buffer を登録しチェックポイント互換性を維持する
+        ## 全次元の分散 (per channel)、平均ベクトル、上位 k 個の主成分とその分散を保持する
+        pc_k = max(1, int(kwargs.get("pc_variance_monitor_k", 8)))
+        self._pc_variance_monitor_k = pc_k
+        self.register_buffer("emb_g_mean", torch.zeros(1, gin_channels))
+        self.register_buffer("emb_g_var", torch.ones(1, gin_channels))
+        self.register_buffer("emb_g_pca_components", torch.zeros(pc_k, gin_channels))
+        self.register_buffer("emb_g_pca_variances", torch.ones(pc_k))
+        # 実際に SVD で計算できた PC 数 (= min(pc_k, n_speakers - 1, gin_channels))
+        # 少数話者モデルで存在しない PC がメトリクスに混ざらないよう、有効範囲を保持する
+        self.register_buffer("emb_g_pca_k_actual", torch.tensor(pc_k, dtype=torch.long))
+        # emb_g_statistics が初期化済みかどうかのフラグ (学習開始時に set_emb_g_statistics() を呼ぶ)
+        self.register_buffer("emb_g_statistics_initialized", torch.zeros(1))
+
     def set_g_neutral(self, neutral_g: torch.Tensor) -> None:
         """
         g_neutral を設定する。このメソッドは学習開始前に一度だけ呼び出す。
@@ -1172,6 +1188,144 @@ class SynthesizerTrn(nn.Module):
             neutral_g = neutral_g.unsqueeze(0)
         # register_buffer 由来のテンソル更新（属性経由だと型チェッカーに誤解釈される場合がある）
         self.get_buffer("g_neutral").copy_(neutral_g)
+
+    def set_emb_g_statistics(self) -> None:
+        """
+        事前学習済み emb_g の分布統計 (平均・分散・主成分) を計算して buffer に保存する。
+        学習開始時に一度だけ呼び出すことを想定している。
+
+        Notes:
+            - n_speakers <= 0 の場合 (ref_enc 利用時) は何もしない
+            - 主成分は PCA via SVD で計算する。計算量は O(N*D^2) で N=話者数、D=gin_channels
+              典型的な多話者事前学習モデル (N~数百〜数千、D=512) では一瞬で終わる
+            - PC 数は __init__ で確定した self._pc_variance_monitor_k に従う
+        """
+
+        if not hasattr(self, "emb_g") or self.n_speakers <= 0:
+            return
+
+        with torch.no_grad():
+            weights = self.emb_g.weight.detach().float()  # [n_speakers, gin_channels]
+            n_speakers, _ = weights.shape
+
+            # 平均と分散 (per channel)
+            mean = weights.mean(dim=0, keepdim=True)
+            var = weights.var(dim=0, unbiased=False, keepdim=True)
+            self.get_buffer("emb_g_mean").copy_(mean)
+            self.get_buffer("emb_g_var").copy_(var)
+
+            # 主成分分析 (SVD ベース)
+            pc_k_target = self._pc_variance_monitor_k
+            k_actual = min(pc_k_target, max(1, n_speakers - 1))
+            weights_centered = weights - mean
+            try:
+                # full_matrices=False で thin SVD、Vh は [min(N,D), D]
+                _, S, Vh = torch.linalg.svd(weights_centered, full_matrices=False)
+                components = Vh[:k_actual]  # [k_actual, gin_channels]
+                pc_variances = (S[:k_actual] ** 2) / max(1, n_speakers - 1)
+            except Exception:
+                # SVD 収束失敗時は zero 埋めで継続 (warning は呼び出し側で出す)
+                components = torch.zeros(
+                    k_actual, weights.shape[1], device=weights.device
+                )
+                pc_variances = torch.zeros(k_actual, device=weights.device)
+
+            # buffer 形状にパディング (k_actual < pc_k_target の場合)
+            pc_components_buf = self.get_buffer("emb_g_pca_components")
+            pc_variances_buf = self.get_buffer("emb_g_pca_variances")
+            pc_components_buf.zero_()
+            pc_variances_buf.zero_()
+            pc_components_buf[:k_actual].copy_(components)
+            pc_variances_buf[:k_actual].copy_(pc_variances)
+
+            # 有効 PC 数を buffer に保存 (compute_adapter_distribution_metrics で使う)
+            self.get_buffer("emb_g_pca_k_actual").fill_(k_actual)
+
+            # 初期化フラグを立てる
+            self.get_buffer("emb_g_statistics_initialized").fill_(1.0)
+
+    def compute_adapter_distribution_metrics(
+        self,
+        g_batch: torch.Tensor,
+        target_variance_ratio: float = 0.8,
+    ) -> dict[str, torch.Tensor]:
+        """
+        Adapter 経由で生成された g バッチに対し、事前学習 emb_g 分布からの逸脱を測定する。
+
+        Args:
+            g_batch (torch.Tensor): Adapter 出力の g バッチ。形状 [B, gin_channels] または
+                [B, gin_channels, 1] を許容する
+            target_variance_ratio (float): 分散保持 hinge loss の閾値。
+                channel 別の `batch_var / emb_g_var` がこの値を下回った量を罰則とする
+
+        Returns:
+            dict[str, torch.Tensor]: 以下のキーを含む辞書
+                - loss_variance_preserve: 分散保持 hinge loss (スカラー)。
+                  分散が十分なら 0。ミニバッチサイズが小さいと信頼度は下がる
+                - var_ratio_mean: 全 channel 平均の分散比 (1.0 が理想)
+                - var_ratio_min: 最小の channel 分散比
+                - mean_shift: バッチ平均と emb_g 平均の L2 距離
+                - pc_var_ratio_mean: 主成分 k 個の平均分散比
+                - pc_var_ratio_min: 主成分 k 個の最小分散比
+                - statistics_initialized: emb_g 統計が set_emb_g_statistics() で初期化済みかの真偽
+        """
+
+        if g_batch.dim() == 3:
+            g_batch = g_batch.squeeze(-1)
+
+        eps = 1e-8
+        device = g_batch.device
+        statistics_initialized = self.get_buffer("emb_g_statistics_initialized") > 0.5
+
+        # 統計未初期化の場合はゼロ loss を返す (set_emb_g_statistics() 未呼び出し時の安全装置)
+        if not statistics_initialized.item():
+            return {
+                "loss_variance_preserve": torch.tensor(0.0, device=device),
+                "var_ratio_mean": torch.tensor(1.0, device=device),
+                "var_ratio_min": torch.tensor(1.0, device=device),
+                "mean_shift": torch.tensor(0.0, device=device),
+                "pc_var_ratio_mean": torch.tensor(1.0, device=device),
+                "pc_var_ratio_min": torch.tensor(1.0, device=device),
+                "statistics_initialized": statistics_initialized,
+            }
+
+        # チャネル別の分散比
+        batch_var = g_batch.var(dim=0, unbiased=False)  # [gin_channels]
+        target_var = self.get_buffer("emb_g_var").squeeze(0)  # [gin_channels]
+        var_ratio_per_dim = batch_var / (target_var + eps)
+
+        # Hinge: 分散比が target を下回った量だけ罰則 (上回るのは自由)
+        loss_variance_preserve = torch.clamp(
+            target_variance_ratio - var_ratio_per_dim, min=0.0
+        ).mean()
+
+        # 平均シフト (中央集中していなくても平均がずれているかを別軸で監視)
+        batch_mean = g_batch.mean(dim=0)
+        emb_g_mean = self.get_buffer("emb_g_mean").squeeze(0)
+        mean_shift = (batch_mean - emb_g_mean).norm()
+
+        # 主成分方向の分散比 (主要方向で縮小していないかをチェック)
+        ## 有効 PC 数 (k_actual) でスライス、少数話者でゼロ埋めされた存在しない PC を除外する
+        k_actual = int(self.get_buffer("emb_g_pca_k_actual").item())
+        pc_components = self.get_buffer("emb_g_pca_components")[
+            :k_actual
+        ]  # [k_actual, gin_channels]
+        pc_target_var = self.get_buffer("emb_g_pca_variances")[:k_actual]  # [k_actual]
+        g_centered = g_batch - batch_mean.unsqueeze(0)
+        # [B, gin_channels] @ [gin_channels, k_actual] -> [B, k_actual]
+        g_projected = g_centered @ pc_components.t()
+        batch_pc_var = g_projected.var(dim=0, unbiased=False)  # [k_actual]
+        pc_var_ratio = batch_pc_var / (pc_target_var + eps)
+
+        return {
+            "loss_variance_preserve": loss_variance_preserve,
+            "var_ratio_mean": var_ratio_per_dim.mean(),
+            "var_ratio_min": var_ratio_per_dim.min(),
+            "mean_shift": mean_shift,
+            "pc_var_ratio_mean": pc_var_ratio.mean(),
+            "pc_var_ratio_min": pc_var_ratio.min(),
+            "statistics_initialized": statistics_initialized,
+        }
 
     def _resolve_g(
         self,

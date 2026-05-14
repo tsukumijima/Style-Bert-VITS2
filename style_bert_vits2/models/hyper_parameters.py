@@ -42,6 +42,10 @@ class HyperParametersTrain(BaseModel):
     freeze_decoder: bool = False
     train_speaker_adapter_only: bool = False
     disable_discriminators_for_adapter: bool = True
+    # 学習中に Adapter 出力分散比がこの値を下回ったら警告ログを出す閾値 (early stopping のシグナル)
+    adapter_min_variance_ratio_warning: float = 0.5
+    # 主成分別分散モニタで保持する PC 数 (PCA 上位 k 個の分散比を TensorBoard に記録)
+    pc_variance_monitor_k: int = 8
 
 
 class HyperParametersData(BaseModel):

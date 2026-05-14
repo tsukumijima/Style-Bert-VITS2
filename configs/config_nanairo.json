@@ -28,7 +28,9 @@
     "freeze_style": false,
     "freeze_decoder": false,
     "train_speaker_adapter_only": true,
-    "disable_discriminators_for_adapter": true
+    "disable_discriminators_for_adapter": true,
+    "adapter_min_variance_ratio_warning": 0.5,
+    "pc_variance_monitor_k": 8
   },
   "data": {
     "use_jp_extra": true,
