@@ -288,6 +288,7 @@ def main() -> None:
                 ja_bert,
                 en_bert,
                 style_vec_tensor,
+                _token_types,
             ) = prepare_inference_data(
                 args.text,
                 style_vec=style_vec,

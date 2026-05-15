@@ -8,7 +8,12 @@ from torch.nn import functional as F
 from torch.nn.utils import remove_weight_norm, spectral_norm, weight_norm
 
 from style_bert_vits2.models import attentions, commons, modules, monotonic_alignment
-from style_bert_vits2.nlp.symbols import NANAIRO_SYMBOLS, NUM_LANGUAGES, NUM_TONES
+from style_bert_vits2.nlp.symbols import (
+    DURATION_TOKEN_TYPE_COUNT,
+    NANAIRO_SYMBOLS,
+    NUM_LANGUAGES,
+    NUM_TONES,
+)
 
 
 class DurationDiscriminator(nn.Module):  # vits2
@@ -446,7 +451,6 @@ class TransformerDurationPredictor(nn.Module):
         x_mask: torch.Tensor,
         g: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        x = torch.detach(x)
         if g is not None:
             g = torch.detach(g)
         x = self.transformer_encoder(x, x_mask, g=g)
@@ -537,7 +541,6 @@ class TransformerStochasticDurationPredictor(nn.Module):
         reverse: bool = False,
         noise_scale: float = 1.0,
     ) -> torch.Tensor:
-        x = torch.detach(x)
         if g is not None:
             g = torch.detach(g)
         x = self.prior_input_proj(x)
@@ -1282,7 +1285,9 @@ class SynthesizerTrn(nn.Module):
         self.use_duration_token_type_embedding = kwargs.get(
             "use_duration_token_type_embedding", False
         )
-        self.duration_token_type_count = int(kwargs.get("duration_token_type_count", 4))
+        self.duration_token_type_count = int(
+            kwargs.get("duration_token_type_count", DURATION_TOKEN_TYPE_COUNT)
+        )
         self.enc_gin_channels = 0
         if self.use_spk_conditioned_encoder and gin_channels > 0:
             self.enc_gin_channels = gin_channels
@@ -1570,11 +1575,14 @@ class SynthesizerTrn(nn.Module):
             "statistics_initialized": statistics_initialized,
         }
 
-    def _apply_duration_token_types(
+    def apply_duration_token_types(
         self,
         x: torch.Tensor,
         token_types: torch.Tensor | None,
     ) -> torch.Tensor:
+        # duration loss が TextEncoder へ逆流しない性質を保ちつつ、
+        # duration 専用種別埋め込みだけは DP/SDP 側の学習対象にする
+        x = torch.detach(x)
         if self.duration_token_type_emb is None:
             return x
         if token_types is None:
@@ -1686,7 +1694,7 @@ class SynthesizerTrn(nn.Module):
             )
 
         w = attn.sum(2)
-        duration_x = self._apply_duration_token_types(x, token_types)
+        duration_x = self.apply_duration_token_types(x, token_types)
 
         l_length_sdp = self.sdp(duration_x, x_mask, w, g=g)
         l_length_sdp = l_length_sdp / torch.sum(x_mask)
@@ -1780,7 +1788,7 @@ class SynthesizerTrn(nn.Module):
         # 精度クリティカルな部分 (SDP/DP, Flow) は常に FP32 で実行する
 
         # SDP (Stochastic Duration Predictor) / DP (Duration Predictor)
-        duration_x = self._apply_duration_token_types(x, token_types)
+        duration_x = self.apply_duration_token_types(x, token_types)
         logw = self.sdp(
             duration_x,
             x_mask,

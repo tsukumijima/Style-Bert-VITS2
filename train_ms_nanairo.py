@@ -334,10 +334,12 @@ def run():
         hps.data,
         wavs_dir=paths.wavs_dir,
         spec_cache=runtime_config.spec_cache,
+        return_duration_token_types=hps.model.use_duration_token_type_embedding,
     )
     collate_fn = TextAudioSpeakerCollate(
         use_jp_extra=True,
         use_speaker_embedding=hps.data.use_speaker_embedding,
+        return_duration_token_types=hps.model.use_duration_token_type_embedding,
     )
     if not args.not_use_custom_batch_sampler:
         train_sampler = DistributedBucketSampler(
@@ -401,6 +403,7 @@ def run():
             hps.data,
             wavs_dir=paths.wavs_dir,
             spec_cache=runtime_config.spec_cache,
+            return_duration_token_types=hps.model.use_duration_token_type_embedding,
         )
         eval_loader = DataLoader(
             eval_dataset,
@@ -998,6 +1001,7 @@ def train_and_evaluate(
         net_wd.train()
 
     use_speaker_embedding = getattr(hps.data, "use_speaker_embedding", False)
+    use_duration_token_types = hps.model.use_duration_token_type_embedding
     disable_discriminators = (
         hps.train.train_speaker_adapter_only
         and hps.train.disable_discriminators_for_adapter
@@ -1026,7 +1030,23 @@ def train_and_evaluate(
     is_accumulating = gradient_accumulation_steps > 1
 
     for batch_idx, batch in enumerate(train_loader):
-        if use_speaker_embedding:
+        if use_speaker_embedding and use_duration_token_types:
+            (
+                x,
+                x_lengths,
+                spec,
+                spec_lengths,
+                y,
+                y_lengths,
+                speakers,
+                tone,
+                language,
+                bert,
+                style_vec,
+                token_types,
+                speaker_embedding,
+            ) = batch
+        elif use_speaker_embedding:
             (
                 x,
                 x_lengths,
@@ -1041,6 +1061,23 @@ def train_and_evaluate(
                 style_vec,
                 speaker_embedding,
             ) = batch
+            token_types = None
+        elif use_duration_token_types:
+            (
+                x,
+                x_lengths,
+                spec,
+                spec_lengths,
+                y,
+                y_lengths,
+                speakers,
+                tone,
+                language,
+                bert,
+                style_vec,
+                token_types,
+            ) = batch
+            speaker_embedding = None
         else:
             (
                 x,
@@ -1056,6 +1093,7 @@ def train_and_evaluate(
                 style_vec,
             ) = batch
             speaker_embedding = None
+            token_types = None
         if net_g.module.use_noise_scaled_mas:
             current_mas_noise_scale = (
                 net_g.module.mas_noise_scale_initial
@@ -1079,6 +1117,8 @@ def train_and_evaluate(
         language = language.cuda(local_rank, non_blocking=True)
         bert = bert.cuda(local_rank, non_blocking=True)
         style_vec = style_vec.cuda(local_rank, non_blocking=True)
+        if token_types is not None:
+            token_types = token_types.cuda(local_rank, non_blocking=True)
         if speaker_embedding is not None:
             speaker_embedding = speaker_embedding.cuda(local_rank, non_blocking=True)
 
@@ -1108,6 +1148,7 @@ def train_and_evaluate(
                 bert,
                 style_vec,
                 speaker_embedding,
+                token_types=token_types,
             )
             mel = spec_to_mel_torch(
                 spec,
@@ -1711,6 +1752,7 @@ def evaluate(
     print()
     logger.info("Evaluating ...")
     use_speaker_embedding = getattr(hps.data, "use_speaker_embedding", False)
+    use_duration_token_types = hps.model.use_duration_token_type_embedding
 
     # Adapter 経由 g の分布診断: eval_loader 全体で g を集約し、分布縮小を Aggregate 統計で検出する
     ## ステップ単位ログ (バッチ内分散) はノイズが大きいため、より信頼性の高い検査を eval 時に行う
@@ -1729,7 +1771,23 @@ def evaluate(
                     t.clone() if isinstance(t, torch.Tensor) else t for t in batch
                 )
 
-            if use_speaker_embedding:
+            if use_speaker_embedding and use_duration_token_types:
+                (
+                    x,
+                    x_lengths,
+                    spec,
+                    spec_lengths,
+                    y,
+                    y_lengths,
+                    speakers,
+                    tone,
+                    language,
+                    bert,
+                    style_vec,
+                    token_types,
+                    speaker_embedding,
+                ) = batch
+            elif use_speaker_embedding:
                 (
                     x,
                     x_lengths,
@@ -1744,6 +1802,23 @@ def evaluate(
                     style_vec,
                     speaker_embedding,
                 ) = batch
+                token_types = None
+            elif use_duration_token_types:
+                (
+                    x,
+                    x_lengths,
+                    spec,
+                    spec_lengths,
+                    y,
+                    y_lengths,
+                    speakers,
+                    tone,
+                    language,
+                    bert,
+                    style_vec,
+                    token_types,
+                ) = batch
+                speaker_embedding = None
             else:
                 (
                     x,
@@ -1759,6 +1834,7 @@ def evaluate(
                     style_vec,
                 ) = batch
                 speaker_embedding = None
+                token_types = None
             x, x_lengths = x.cuda(), x_lengths.cuda()
             spec, spec_lengths = spec.cuda(), spec_lengths.cuda()
             y, y_lengths = y.cuda(), y_lengths.cuda()
@@ -1767,6 +1843,8 @@ def evaluate(
             tone = tone.cuda()
             language = language.cuda()
             style_vec = style_vec.cuda()
+            if token_types is not None:
+                token_types = token_types.cuda()
             if speaker_embedding is not None:
                 speaker_embedding = speaker_embedding.cuda()
 
@@ -1796,6 +1874,7 @@ def evaluate(
                     max_len=1000,
                     sdp_ratio=0.0 if not use_sdp else 1.0,
                     speaker_embedding=speaker_embedding,
+                    token_types=token_types,
                 )
                 y_hat_lengths = mask.sum([1, 2]).long() * hps.data.hop_length
                 # 以降のログは計算が重い気がするし誰も見てない気がするのでコメントアウト
@@ -1843,7 +1922,23 @@ def evaluate(
         # 固定サンプルによる定期合成 (学習進行に伴う品質変化の追跡用)
         # 常に同一入力から合成することで、ステップ間の品質推移を TensorBoard で聴き比べ可能にする
         if _fixed_eval_batch is not None:
-            if use_speaker_embedding:
+            if use_speaker_embedding and use_duration_token_types:
+                (
+                    fixed_x,
+                    fixed_x_lengths,
+                    fixed_spec,
+                    fixed_spec_lengths,
+                    fixed_y,
+                    fixed_y_lengths,
+                    fixed_speakers,
+                    fixed_tone,
+                    fixed_language,
+                    fixed_bert,
+                    fixed_style_vec,
+                    fixed_token_types,
+                    fixed_speaker_embedding,
+                ) = _fixed_eval_batch
+            elif use_speaker_embedding:
                 (
                     fixed_x,
                     fixed_x_lengths,
@@ -1858,6 +1953,23 @@ def evaluate(
                     fixed_style_vec,
                     fixed_speaker_embedding,
                 ) = _fixed_eval_batch
+                fixed_token_types = None
+            elif use_duration_token_types:
+                (
+                    fixed_x,
+                    fixed_x_lengths,
+                    fixed_spec,
+                    fixed_spec_lengths,
+                    fixed_y,
+                    fixed_y_lengths,
+                    fixed_speakers,
+                    fixed_tone,
+                    fixed_language,
+                    fixed_bert,
+                    fixed_style_vec,
+                    fixed_token_types,
+                ) = _fixed_eval_batch
+                fixed_speaker_embedding = None
             else:
                 (
                     fixed_x,
@@ -1873,6 +1985,7 @@ def evaluate(
                     fixed_style_vec,
                 ) = _fixed_eval_batch
                 fixed_speaker_embedding = None
+                fixed_token_types = None
             fixed_x = fixed_x.cuda()
             fixed_x_lengths = fixed_x_lengths.cuda()
             fixed_spec = fixed_spec.cuda()
@@ -1884,6 +1997,8 @@ def evaluate(
             fixed_tone = fixed_tone.cuda()
             fixed_language = fixed_language.cuda()
             fixed_style_vec = fixed_style_vec.cuda()
+            if fixed_token_types is not None:
+                fixed_token_types = fixed_token_types.cuda()
             if fixed_speaker_embedding is not None:
                 fixed_speaker_embedding = fixed_speaker_embedding.cuda()
             for use_sdp in [True, False]:
@@ -1899,6 +2014,7 @@ def evaluate(
                     max_len=1000,
                     sdp_ratio=0.0 if not use_sdp else 1.0,
                     speaker_embedding=fixed_speaker_embedding,
+                    token_types=fixed_token_types,
                 )
                 y_hat_lengths = mask.sum([1, 2]).long() * hps.data.hop_length
                 audio_dict[f"fixed/audio_{use_sdp}"] = y_hat[0, :, : y_hat_lengths[0]]

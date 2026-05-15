@@ -23,6 +23,7 @@ from style_bert_vits2.models.hyper_parameters import HyperParametersData
 from style_bert_vits2.nlp import (
     cleaned_text_to_sequence,
     convert_unsupported_phones_for_current_model,
+    phone_symbols_to_duration_token_types,
 )
 from training.mel_processing import mel_spectrogram_torch, spectrogram_torch
 from training.utils import load_filepaths_and_text, load_wav_to_torch
@@ -44,6 +45,7 @@ class TextAudioSpeakerLoader(Dataset[tuple[Any, ...]]):
         hparams: HyperParametersData,
         wavs_dir: Path,
         spec_cache: bool = True,
+        return_duration_token_types: bool = False,
     ):
         """
         TextAudioSpeakerLoader を初期化する。
@@ -53,6 +55,7 @@ class TextAudioSpeakerLoader(Dataset[tuple[Any, ...]]):
             hparams (HyperParametersData): ハイパーパラメータ
             wavs_dir (Path): wavs ディレクトリのパス (train.list 内の相対パスの基準)
             spec_cache (bool): スペクトログラムをキャッシュするかどうか
+            return_duration_token_types (bool): Nanairo duration 用のトークン種別を返すかどうか
         """
 
         self.wavs_dir = wavs_dir
@@ -68,6 +71,7 @@ class TextAudioSpeakerLoader(Dataset[tuple[Any, ...]]):
         self.hparams = hparams
         self.use_jp_extra = getattr(hparams, "use_jp_extra", False)
         self.use_nanairo = getattr(hparams, "use_nanairo", False)
+        self.return_duration_token_types = return_duration_token_types
 
         self.use_mel_spec_posterior = getattr(
             hparams, "use_mel_posterior_encoder", False
@@ -246,9 +250,15 @@ class TextAudioSpeakerLoader(Dataset[tuple[Any, ...]]):
         audiopath, sid, language, text, phones, tone, word2ph = audiopath_sid_text
         speaker_name = sid
 
-        bert, ja_bert, en_bert, phones, tone, language = self.get_text(
-            text, word2ph, phones, tone, language, audiopath
-        )
+        (
+            bert,
+            ja_bert,
+            en_bert,
+            phones,
+            tone,
+            language,
+            duration_token_types,
+        ) = self.get_text(text, word2ph, phones, tone, language, audiopath)
 
         spec, wav = self.get_audio(audiopath)
         sid = torch.LongTensor([int(self.spk_map[sid])])
@@ -278,7 +288,7 @@ class TextAudioSpeakerLoader(Dataset[tuple[Any, ...]]):
         if self.use_jp_extra:
             if self.use_speaker_embedding:
                 assert speaker_embedding is not None
-                return (
+                sample = (
                     phones,
                     spec,
                     wav,
@@ -287,13 +297,20 @@ class TextAudioSpeakerLoader(Dataset[tuple[Any, ...]]):
                     language,
                     ja_bert,
                     style_vec,
-                    speaker_embedding,
                 )
-            return (phones, spec, wav, sid, tone, language, ja_bert, style_vec)
+                if self.return_duration_token_types is True:
+                    assert duration_token_types is not None
+                    return (*sample, duration_token_types, speaker_embedding)
+                return (*sample, speaker_embedding)
+            sample = (phones, spec, wav, sid, tone, language, ja_bert, style_vec)
+            if self.return_duration_token_types is True:
+                assert duration_token_types is not None
+                return (*sample, duration_token_types)
+            return sample
         else:
             if self.use_speaker_embedding:
                 assert speaker_embedding is not None
-                return (
+                sample = (
                     phones,
                     spec,
                     wav,
@@ -304,9 +321,12 @@ class TextAudioSpeakerLoader(Dataset[tuple[Any, ...]]):
                     ja_bert,
                     en_bert,
                     style_vec,
-                    speaker_embedding,
                 )
-            return (
+                if self.return_duration_token_types is True:
+                    assert duration_token_types is not None
+                    return (*sample, duration_token_types, speaker_embedding)
+                return (*sample, speaker_embedding)
+            sample = (
                 phones,
                 spec,
                 wav,
@@ -318,6 +338,10 @@ class TextAudioSpeakerLoader(Dataset[tuple[Any, ...]]):
                 en_bert,
                 style_vec,
             )
+            if self.return_duration_token_types is True:
+                assert duration_token_types is not None
+                return (*sample, duration_token_types)
+            return sample
 
     def get_audio(self, filename: str) -> tuple[torch.Tensor, torch.Tensor]:
         """
@@ -402,6 +426,7 @@ class TextAudioSpeakerLoader(Dataset[tuple[Any, ...]]):
         torch.Tensor,
         torch.Tensor,
         torch.Tensor,
+        torch.Tensor | None,
     ]:
         """
         テキストデータを処理し、BERT 特徴量と音素シーケンスを返す。
@@ -415,7 +440,7 @@ class TextAudioSpeakerLoader(Dataset[tuple[Any, ...]]):
             wav_path (str): 音声ファイルのパス
 
         Returns:
-            tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]: BERT 特徴量と音素シーケンスのタプル
+            tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor | None]: BERT 特徴量と音素シーケンスのタプル
         """
 
         # 変更を加える前にコピーを作成しておく
@@ -431,6 +456,13 @@ class TextAudioSpeakerLoader(Dataset[tuple[Any, ...]]):
             word2ph,
             language,
         )
+        duration_token_type_seq: list[int] | None = None
+        if self.return_duration_token_types is True:
+            # DP/SDP だけに渡す補助情報なので、音素 ID 化前の記号列から休止・境界・絵文字制御の粗い種別を作る
+            duration_token_type_seq = phone_symbols_to_duration_token_types(
+                phone,
+                add_blank=self.add_blank,
+            )
         phone_seq, tone_seq, language_seq = cleaned_text_to_sequence(
             phone,
             tone,
@@ -444,6 +476,17 @@ class TextAudioSpeakerLoader(Dataset[tuple[Any, ...]]):
             for i in range(len(word2ph)):
                 word2ph[i] = word2ph[i] * 2
             word2ph[0] += 1
+        if duration_token_type_seq is not None and len(duration_token_type_seq) != len(
+            phone_seq
+        ):
+            mismatch_msg = (
+                f"duration_token_type_seq length ({len(duration_token_type_seq)}) != "
+                f"phone sequence length ({len(phone_seq)}); verify "
+                f"phone_symbols_to_duration_token_types matches cleaned_text_to_sequence "
+                f"with add_blank / commons.intersperse"
+            )
+            logger.error(mismatch_msg)
+            raise ValueError(mismatch_msg)
         bert_path = str(Path(wav_path).with_suffix(".bert.pt"))
         try:
             # DataLoader 上で BERT 特徴量を CPU テンソルとして扱うことで、multiprocessing ワーカー上で CUDA の再初期化が試みられて
@@ -479,7 +522,20 @@ class TextAudioSpeakerLoader(Dataset[tuple[Any, ...]]):
         phone_tensor = torch.LongTensor(phone_seq)
         tone_tensor = torch.LongTensor(tone_seq)
         language_tensor = torch.LongTensor(language_seq)
-        return bert, ja_bert, en_bert, phone_tensor, tone_tensor, language_tensor
+        duration_token_type_tensor = (
+            torch.LongTensor(duration_token_type_seq)
+            if duration_token_type_seq is not None
+            else None
+        )
+        return (
+            bert,
+            ja_bert,
+            en_bert,
+            phone_tensor,
+            tone_tensor,
+            language_tensor,
+            duration_token_type_tensor,
+        )
 
     def get_sid(self, sid: str) -> torch.Tensor:
         """
@@ -529,6 +585,7 @@ class TextAudioSpeakerCollate:
         return_ids: bool = False,
         use_jp_extra: bool = False,
         use_speaker_embedding: bool = False,
+        return_duration_token_types: bool = False,
     ):
         """
         TextAudioSpeakerCollate を初期化する。
@@ -537,11 +594,13 @@ class TextAudioSpeakerCollate:
             return_ids (bool): ID を返すかどうか
             use_jp_extra (bool): JP-Extra モデルを使用するかどうか
             use_speaker_embedding (bool): 話者埋め込みを使用するかどうか
+            return_duration_token_types (bool): Nanairo duration 用のトークン種別を返すかどうか
         """
 
         self.return_ids = return_ids
         self.use_jp_extra = use_jp_extra
         self.use_speaker_embedding = use_speaker_embedding
+        self.return_duration_token_types = return_duration_token_types
 
     def __call__(self, batch: list[tuple[Any, ...]]) -> tuple[Any, ...]:
         """
@@ -571,6 +630,9 @@ class TextAudioSpeakerCollate:
         text_padded = torch.LongTensor(len(batch), max_text_len)
         tone_padded = torch.LongTensor(len(batch), max_text_len)
         language_padded = torch.LongTensor(len(batch), max_text_len)
+        duration_token_types_padded: torch.Tensor | None = None
+        if self.return_duration_token_types is True:
+            duration_token_types_padded = torch.LongTensor(len(batch), max_text_len)
         # This is ZH bert if not use_jp_extra, JA bert if use_jp_extra
         bert_padded = torch.FloatTensor(len(batch), 1024, max_text_len)
         ja_bert_padded: torch.Tensor | None = None
@@ -582,9 +644,13 @@ class TextAudioSpeakerCollate:
         speaker_embedding: torch.Tensor | None = None
         if self.use_speaker_embedding:
             if self.use_jp_extra:
-                speaker_embedding_index = 8
+                speaker_embedding_index = (
+                    9 if self.return_duration_token_types is True else 8
+                )
             else:
-                speaker_embedding_index = 10
+                speaker_embedding_index = (
+                    11 if self.return_duration_token_types is True else 10
+                )
             speaker_embedding = torch.FloatTensor(
                 len(batch), batch[0][speaker_embedding_index].numel()
             )
@@ -594,6 +660,8 @@ class TextAudioSpeakerCollate:
         text_padded.zero_()
         tone_padded.zero_()
         language_padded.zero_()
+        if duration_token_types_padded is not None:
+            duration_token_types_padded.zero_()
         spec_padded.zero_()
         wav_padded.zero_()
         bert_padded.zero_()
@@ -635,9 +703,18 @@ class TextAudioSpeakerCollate:
 
             if self.use_jp_extra:
                 style_vec[i, :] = row[7]
+                if self.return_duration_token_types is True:
+                    assert duration_token_types_padded is not None
+                    duration_token_types = row[8]
+                    duration_token_types_padded[i, : duration_token_types.size(0)] = (
+                        duration_token_types
+                    )
                 if self.use_speaker_embedding:
                     assert speaker_embedding is not None
-                    speaker_embedding[i, :] = row[8].reshape(-1)
+                    speaker_embedding_index = (
+                        9 if self.return_duration_token_types is True else 8
+                    )
+                    speaker_embedding[i, :] = row[speaker_embedding_index].reshape(-1)
             else:
                 ja_bert = row[7]
                 assert ja_bert_padded is not None
@@ -647,14 +724,23 @@ class TextAudioSpeakerCollate:
                 assert en_bert_padded is not None
                 en_bert_padded[i, :, : en_bert.size(1)] = en_bert
                 style_vec[i, :] = row[9]
+                if self.return_duration_token_types is True:
+                    assert duration_token_types_padded is not None
+                    duration_token_types = row[10]
+                    duration_token_types_padded[i, : duration_token_types.size(0)] = (
+                        duration_token_types
+                    )
                 if self.use_speaker_embedding:
                     assert speaker_embedding is not None
-                    speaker_embedding[i, :] = row[10].reshape(-1)
+                    speaker_embedding_index = (
+                        11 if self.return_duration_token_types is True else 10
+                    )
+                    speaker_embedding[i, :] = row[speaker_embedding_index].reshape(-1)
 
         if self.use_jp_extra:
             if self.use_speaker_embedding:
                 assert speaker_embedding is not None
-                return (
+                batch_items: tuple[Any, ...] = (
                     text_padded,
                     text_lengths,
                     spec_padded,
@@ -666,9 +752,16 @@ class TextAudioSpeakerCollate:
                     language_padded,
                     bert_padded,
                     style_vec,
-                    speaker_embedding,
                 )
-            return (
+                if self.return_duration_token_types is True:
+                    assert duration_token_types_padded is not None
+                    return (
+                        *batch_items,
+                        duration_token_types_padded,
+                        speaker_embedding,
+                    )
+                return (*batch_items, speaker_embedding)
+            batch_items = (
                 text_padded,
                 text_lengths,
                 spec_padded,
@@ -681,12 +774,16 @@ class TextAudioSpeakerCollate:
                 bert_padded,
                 style_vec,
             )
+            if self.return_duration_token_types is True:
+                assert duration_token_types_padded is not None
+                return (*batch_items, duration_token_types_padded)
+            return batch_items
         else:
             if self.use_speaker_embedding:
                 assert speaker_embedding is not None
                 assert ja_bert_padded is not None
                 assert en_bert_padded is not None
-                return (
+                batch_items = (
                     text_padded,
                     text_lengths,
                     spec_padded,
@@ -700,11 +797,18 @@ class TextAudioSpeakerCollate:
                     ja_bert_padded,
                     en_bert_padded,
                     style_vec,
-                    speaker_embedding,
                 )
+                if self.return_duration_token_types is True:
+                    assert duration_token_types_padded is not None
+                    return (
+                        *batch_items,
+                        duration_token_types_padded,
+                        speaker_embedding,
+                    )
+                return (*batch_items, speaker_embedding)
             assert ja_bert_padded is not None
             assert en_bert_padded is not None
-            return (
+            batch_items = (
                 text_padded,
                 text_lengths,
                 spec_padded,
@@ -719,6 +823,10 @@ class TextAudioSpeakerCollate:
                 en_bert_padded,
                 style_vec,
             )
+            if self.return_duration_token_types is True:
+                assert duration_token_types_padded is not None
+                return (*batch_items, duration_token_types_padded)
+            return batch_items
 
 
 class DistributedBucketSampler(DistributedSampler[int]):

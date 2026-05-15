@@ -231,6 +231,57 @@ NORMAL_SYMBOLS = sorted(set(ZH_SYMBOLS + JP_SYMBOLS + EN_SYMBOLS))
 SYMBOLS = [PAD] + NORMAL_SYMBOLS + PUNCTUATION_SYMBOLS
 NANAIRO_SYMBOLS = SYMBOLS + NANAIRO_EMOJI_SYMBOLS
 
+# Nanairo の DP/SDP へ渡す duration 専用トークン種別
+## 音素 ID は個々の記号を表し、こちらは休止・境界・絵文字制御の粗い性質だけを表す
+## 値を変更すると学習済み duration_token_type_emb の意味が変わるため、既存値の並び替えは禁止
+DURATION_TOKEN_TYPE_CONTENT = 0
+DURATION_TOKEN_TYPE_BLANK = 1
+DURATION_TOKEN_TYPE_COMMA = 2
+DURATION_TOKEN_TYPE_PERIOD = 3
+DURATION_TOKEN_TYPE_ELLIPSIS_DOT = 4
+DURATION_TOKEN_TYPE_QUESTION = 5
+DURATION_TOKEN_TYPE_EXCLAMATION = 6
+DURATION_TOKEN_TYPE_QUOTE_BOUNDARY = 7
+DURATION_TOKEN_TYPE_HYPHEN = 8
+DURATION_TOKEN_TYPE_EVENT_EMOJI = 9
+DURATION_TOKEN_TYPE_PROSODY_MARKER_EMOJI = 10
+DURATION_TOKEN_TYPE_NAMES = [
+    "content",
+    "blank",
+    "comma",
+    "period",
+    "ellipsis_dot",
+    "question",
+    "exclamation",
+    "quote_boundary",
+    "hyphen",
+    "event_emoji",
+    "prosody_marker_emoji",
+]
+DURATION_TOKEN_TYPE_COUNT = len(DURATION_TOKEN_TYPE_NAMES)
+
+# その位置に非言語音声や発声イベントを置く意図が強い絵文字
+## 個々の絵文字 ID は TextEncoder 側に入るため、duration 側では発声イベント性だけを粗く渡す
+DURATION_EVENT_EMOJI_SYMBOLS: frozenset[str] = frozenset(
+    {
+        "🌬",
+        "👅",
+        "💋",
+        "💨",
+        "🤧",
+        "🥤",
+        "🥱",
+    }
+)
+
+# 文全体や周辺音素の読み味を制御する絵文字
+## 未分類の Nanairo 絵文字は局所イベントとして扱わず、短めの制御マーカーとして学習させる
+DURATION_PROSODY_MARKER_EMOJI_SYMBOLS: frozenset[str] = frozenset(
+    symbol
+    for symbol in NANAIRO_EMOJI_SYMBOLS
+    if symbol not in DURATION_EVENT_EMOJI_SYMBOLS
+)
+
 # Combine all tones
 NUM_TONES = NUM_ZH_TONES + NUM_JP_TONES + NUM_EN_TONES
 
