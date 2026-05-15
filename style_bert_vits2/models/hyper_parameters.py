@@ -110,6 +110,10 @@ class HyperParametersModel(BaseModel):
     n_layers_q: int = 3
     use_spectral_norm: bool = False
     gin_channels: int = 512
+    use_transformer_duration_predictor: bool = False
+    duration_filter_channels: int = 192
+    use_duration_token_type_embedding: bool = False
+    duration_token_type_count: int = 4
     use_speaker_adapter: bool = False
     speaker_adapter_input_dim: int = 384
     speaker_adapter_bottleneck_dim: int = 96

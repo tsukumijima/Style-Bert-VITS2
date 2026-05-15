@@ -400,6 +400,201 @@ class DurationPredictor(nn.Module):
         return x * x_mask
 
 
+class TransformerDurationPredictor(nn.Module):
+    def __init__(
+        self,
+        in_channels: int,
+        filter_channels: int,
+        n_heads: int,
+        n_layers: int,
+        kernel_size: int,
+        p_dropout: float,
+        window_size: int = 4,
+        gin_channels: int = 0,
+        cond_layer_idx: int = 2,
+    ) -> None:
+        super().__init__()
+
+        self.in_channels = in_channels
+        self.filter_channels = filter_channels
+        self.n_heads = n_heads
+        self.n_layers = n_layers
+        self.kernel_size = kernel_size
+        self.p_dropout = p_dropout
+        self.window_size = window_size
+        self.gin_channels = gin_channels
+
+        self.transformer_encoder = attentions.Encoder(
+            in_channels,
+            filter_channels,
+            n_heads,
+            n_layers,
+            kernel_size,
+            p_dropout,
+            window_size=window_size,
+            gin_channels=gin_channels,
+            cond_layer_idx=cond_layer_idx,
+        )
+        self.output_proj = nn.Conv1d(in_channels, 1, 1)
+        self.output_proj.weight.data.zero_()
+        assert self.output_proj.bias is not None
+        self.output_proj.bias.data.zero_()
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        x_mask: torch.Tensor,
+        g: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        x = torch.detach(x)
+        if g is not None:
+            g = torch.detach(g)
+        x = self.transformer_encoder(x, x_mask, g=g)
+        x = self.output_proj(x * x_mask)
+        return x * x_mask
+
+
+class TransformerStochasticDurationPredictor(nn.Module):
+    def __init__(
+        self,
+        in_channels: int,
+        filter_channels: int,
+        transformer_filter_channels: int,
+        n_heads: int,
+        n_layers: int,
+        kernel_size: int,
+        p_dropout: float,
+        n_flows: int = 4,
+        window_size: int = 4,
+        gin_channels: int = 0,
+        cond_layer_idx: int = 2,
+    ) -> None:
+        super().__init__()
+        self.in_channels = in_channels
+        self.filter_channels = filter_channels
+        self.transformer_filter_channels = transformer_filter_channels
+        self.n_heads = n_heads
+        self.n_layers = n_layers
+        self.kernel_size = kernel_size
+        self.p_dropout = p_dropout
+        self.n_flows = n_flows
+        self.window_size = window_size
+        self.gin_channels = gin_channels
+
+        self.duration_log_flow = modules.Log()
+
+        self.prior_input_proj = nn.Conv1d(in_channels, filter_channels, 1)
+        self.prior_cond_encoder = attentions.Encoder(
+            filter_channels,
+            transformer_filter_channels,
+            n_heads,
+            n_layers,
+            kernel_size,
+            p_dropout,
+            window_size=window_size,
+            gin_channels=gin_channels,
+            cond_layer_idx=cond_layer_idx,
+        )
+        self.prior_output_proj = nn.Conv1d(filter_channels, filter_channels, 1)
+
+        self.posterior_input_proj = nn.Conv1d(1, filter_channels, 1)
+        self.posterior_cond_encoder = attentions.Encoder(
+            filter_channels,
+            transformer_filter_channels,
+            n_heads,
+            n_layers,
+            kernel_size,
+            p_dropout,
+            window_size=window_size,
+        )
+        self.posterior_output_proj = nn.Conv1d(filter_channels, filter_channels, 1)
+        self.posterior_output_proj.weight.data.zero_()
+        assert self.posterior_output_proj.bias is not None
+        self.posterior_output_proj.bias.data.zero_()
+
+        self.prior_flow_layers = nn.ModuleList()
+        self.prior_flow_layers.append(modules.ElementwiseAffine(2))
+        for _ in range(n_flows):
+            self.prior_flow_layers.append(
+                modules.ConvFlow(2, filter_channels, kernel_size, n_layers=3)
+            )
+            self.prior_flow_layers.append(modules.Flip())
+
+        self.posterior_flow_layers = nn.ModuleList()
+        self.posterior_flow_layers.append(modules.ElementwiseAffine(2))
+        for _ in range(n_flows):
+            self.posterior_flow_layers.append(
+                modules.ConvFlow(2, filter_channels, kernel_size, n_layers=3)
+            )
+            self.posterior_flow_layers.append(modules.Flip())
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        x_mask: torch.Tensor,
+        w: torch.Tensor | None = None,
+        g: torch.Tensor | None = None,
+        reverse: bool = False,
+        noise_scale: float = 1.0,
+    ) -> torch.Tensor:
+        x = torch.detach(x)
+        if g is not None:
+            g = torch.detach(g)
+        x = self.prior_input_proj(x)
+        x = self.prior_cond_encoder(x, x_mask, g=g)
+        x = self.prior_output_proj(x) * x_mask
+
+        if not reverse:
+            assert w is not None
+
+            logdet_tot_q = 0
+            h_w = self.posterior_input_proj(w)
+            h_w = self.posterior_cond_encoder(h_w, x_mask)
+            h_w = self.posterior_output_proj(h_w) * x_mask
+            e_q = (
+                torch.randn(w.size(0), 2, w.size(2)).to(device=x.device, dtype=x.dtype)
+                * x_mask
+            )
+            z_q = e_q
+            for flow in self.posterior_flow_layers:
+                z_q, logdet_q = flow(z_q, x_mask, g=(x + h_w))
+                logdet_tot_q += logdet_q
+            z_u, z1 = torch.split(z_q, [1, 1], 1)
+            u = torch.sigmoid(z_u) * x_mask
+            z0 = (w - u) * x_mask
+            logdet_tot_q += torch.sum(
+                (F.logsigmoid(z_u) + F.logsigmoid(-z_u)) * x_mask, [1, 2]
+            )
+            logq = (
+                torch.sum(-0.5 * (math.log(2 * math.pi) + (e_q**2)) * x_mask, [1, 2])
+                - logdet_tot_q
+            )
+
+            logdet_tot = 0
+            z0, logdet = self.duration_log_flow(z0, x_mask)
+            logdet_tot += logdet
+            z = torch.cat([z0, z1], 1)
+            for flow in self.prior_flow_layers:
+                z, logdet = flow(z, x_mask, g=x, reverse=reverse)
+                logdet_tot = logdet_tot + logdet
+            nll = (
+                torch.sum(0.5 * (math.log(2 * math.pi) + (z**2)) * x_mask, [1, 2])
+                - logdet_tot
+            )
+            return nll + logq
+
+        flows = list(reversed(self.prior_flow_layers))
+        flows = flows[:-2] + [flows[-1]]
+        z = (
+            torch.randn(x.size(0), 2, x.size(2)).to(device=x.device, dtype=x.dtype)
+            * noise_scale
+        )
+        for flow in flows:
+            z = flow(z, x_mask, g=x, reverse=reverse)
+        z0, _ = torch.split(z, [1, 1], 1)
+        return z0
+
+
 class Bottleneck(nn.Sequential):
     def __init__(self, in_dim: int, hidden_dim: int) -> None:
         c_fc1 = nn.Linear(in_dim, hidden_dim, bias=False)
@@ -1078,6 +1273,16 @@ class SynthesizerTrn(nn.Module):
         self.mas_noise_scale_initial = kwargs.get("mas_noise_scale_initial", 0.01)
         self.noise_scale_delta = kwargs.get("noise_scale_delta", 2e-6)
         self.current_mas_noise_scale = self.mas_noise_scale_initial
+        self.use_transformer_duration_predictor = kwargs.get(
+            "use_transformer_duration_predictor", False
+        )
+        self.duration_filter_channels = int(
+            kwargs.get("duration_filter_channels", hidden_channels)
+        )
+        self.use_duration_token_type_embedding = kwargs.get(
+            "use_duration_token_type_embedding", False
+        )
+        self.duration_token_type_count = int(kwargs.get("duration_token_type_count", 4))
         self.enc_gin_channels = 0
         if self.use_spk_conditioned_encoder and gin_channels > 0:
             self.enc_gin_channels = gin_channels
@@ -1133,12 +1338,50 @@ class SynthesizerTrn(nn.Module):
                 n_flow_layer,
                 gin_channels=gin_channels,
             )
-        self.sdp = StochasticDurationPredictor(
-            hidden_channels, 192, 3, 0.5, 4, gin_channels=gin_channels
-        )
-        self.dp = DurationPredictor(
-            hidden_channels, 256, 3, 0.5, gin_channels=gin_channels
-        )
+        if self.use_transformer_duration_predictor is True:
+            self.sdp = TransformerStochasticDurationPredictor(
+                hidden_channels,
+                hidden_channels,
+                self.duration_filter_channels,
+                n_heads,
+                4,
+                kernel_size,
+                p_dropout,
+                4,
+                window_size=4,
+                gin_channels=gin_channels,
+                cond_layer_idx=2,
+            )
+            self.dp = TransformerDurationPredictor(
+                hidden_channels,
+                self.duration_filter_channels,
+                n_heads,
+                6,
+                kernel_size,
+                p_dropout,
+                window_size=4,
+                gin_channels=gin_channels,
+                cond_layer_idx=2,
+            )
+        else:
+            self.sdp = StochasticDurationPredictor(
+                hidden_channels, 192, 3, 0.5, 4, gin_channels=gin_channels
+            )
+            self.dp = DurationPredictor(
+                hidden_channels, 256, 3, 0.5, gin_channels=gin_channels
+            )
+        if self.use_duration_token_type_embedding is True:
+            self.duration_token_type_emb = nn.Embedding(
+                self.duration_token_type_count,
+                hidden_channels,
+            )
+            nn.init.normal_(
+                self.duration_token_type_emb.weight,
+                0.0,
+                hidden_channels**-0.5,
+            )
+        else:
+            self.duration_token_type_emb = None
 
         if n_speakers >= 1:
             self.emb_g = nn.Embedding(n_speakers, gin_channels)
@@ -1327,6 +1570,24 @@ class SynthesizerTrn(nn.Module):
             "statistics_initialized": statistics_initialized,
         }
 
+    def _apply_duration_token_types(
+        self,
+        x: torch.Tensor,
+        token_types: torch.Tensor | None,
+    ) -> torch.Tensor:
+        if self.duration_token_type_emb is None:
+            return x
+        if token_types is None:
+            # token_types 未指定時は全トークンをタイプ0として扱う
+            token_types = torch.zeros(
+                x.size(0),
+                x.size(2),
+                dtype=torch.long,
+                device=x.device,
+            )
+        token_type_emb = self.duration_token_type_emb(token_types).transpose(1, 2)
+        return x + token_type_emb
+
     def _resolve_g(
         self,
         sid: torch.Tensor,
@@ -1374,6 +1635,7 @@ class SynthesizerTrn(nn.Module):
         style_vec: torch.Tensor,
         speaker_embedding: torch.Tensor | None = None,
         g_adjust: torch.Tensor | None = None,
+        token_types: torch.Tensor | None = None,
     ) -> tuple[
         torch.Tensor,
         torch.Tensor,
@@ -1424,12 +1686,13 @@ class SynthesizerTrn(nn.Module):
             )
 
         w = attn.sum(2)
+        duration_x = self._apply_duration_token_types(x, token_types)
 
-        l_length_sdp = self.sdp(x, x_mask, w, g=g)
+        l_length_sdp = self.sdp(duration_x, x_mask, w, g=g)
         l_length_sdp = l_length_sdp / torch.sum(x_mask)
 
         logw_ = torch.log(w + 1e-6) * x_mask
-        logw = self.dp(x, x_mask, g=g)
+        logw = self.dp(duration_x, x_mask, g=g)
         # logw_sdp = self.sdp(x, x_mask, g=g, reverse=True, noise_scale=1.0)
         l_length_dp = torch.sum((logw - logw_) ** 2, [1, 2]) / torch.sum(
             x_mask
@@ -1477,6 +1740,7 @@ class SynthesizerTrn(nn.Module):
         durations_frames_override_mask: torch.Tensor | None = None,
         speaker_embedding: torch.Tensor | None = None,
         g_adjust: torch.Tensor | None = None,
+        token_types: torch.Tensor | None = None,
     ) -> tuple[
         torch.Tensor,
         torch.Tensor,
@@ -1516,9 +1780,14 @@ class SynthesizerTrn(nn.Module):
         # 精度クリティカルな部分 (SDP/DP, Flow) は常に FP32 で実行する
 
         # SDP (Stochastic Duration Predictor) / DP (Duration Predictor)
-        logw = self.sdp(x, x_mask, g=g, reverse=True, noise_scale=noise_scale_w) * (
-            sdp_ratio
-        ) + self.dp(x, x_mask, g=g) * (1 - sdp_ratio)
+        duration_x = self._apply_duration_token_types(x, token_types)
+        logw = self.sdp(
+            duration_x,
+            x_mask,
+            g=g,
+            reverse=True,
+            noise_scale=noise_scale_w,
+        ) * (sdp_ratio) + self.dp(duration_x, x_mask, g=g) * (1 - sdp_ratio)
 
         w = torch.exp(logw) * x_mask * length_scale
         w_ceil = torch.ceil(w)
@@ -1617,6 +1886,7 @@ class SynthesizerTrn(nn.Module):
         durations_frames_override_mask: torch.Tensor | None = None,
         speaker_embedding: torch.Tensor | None = None,
         g_adjust: torch.Tensor | None = None,
+        token_types: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, tuple[torch.Tensor, ...]]:
         # Generator 実行前の共通処理
         z, y_mask, g, attn, z_p, m_p, logs_p = self.infer_input_feature(
@@ -1637,6 +1907,7 @@ class SynthesizerTrn(nn.Module):
             durations_frames_override_mask,
             speaker_embedding,
             g_adjust,
+            token_types,
         )
 
         # Generator (Decoder) のみ全体を FP16 / AMP (Automatic Mixed Precision) で実行
