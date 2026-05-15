@@ -231,7 +231,7 @@ NORMAL_SYMBOLS = sorted(set(ZH_SYMBOLS + JP_SYMBOLS + EN_SYMBOLS))
 SYMBOLS = [PAD] + NORMAL_SYMBOLS + PUNCTUATION_SYMBOLS
 NANAIRO_SYMBOLS = SYMBOLS + NANAIRO_EMOJI_SYMBOLS
 
-# Nanairo の DP/SDP へ渡す duration 専用トークン種別
+# Transformer-based DP/SDP へ渡す duration 専用トークン種別
 ## 音素 ID は個々の記号を表し、こちらは休止・境界・絵文字制御の粗い性質だけを表す
 ## 値を変更すると学習済み duration_token_type_emb の意味が変わるため、既存値の並び替えは禁止
 DURATION_TOKEN_TYPE_CONTENT = 0

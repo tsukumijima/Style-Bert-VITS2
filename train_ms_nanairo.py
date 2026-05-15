@@ -80,6 +80,12 @@ from training.data_utils import (
     TextAudioSpeakerCollate,
     TextAudioSpeakerLoader,
 )
+from training.duration_observability import (
+    build_generator_optimizer_parameter_groups,
+    clip_generator_gradients,
+    collect_duration_residual_tail_metrics,
+    collect_duration_type_metrics,
+)
 from training.losses import (
     WavLMLoss,
     discriminator_loss,
@@ -526,8 +532,18 @@ def run():
                 param.requires_grad = True
 
     net_d = MultiPeriodDiscriminator(hps.model.use_spectral_norm).cuda(local_rank)
+    # Transformer-based DP/SDP では duration 系だけ weight decay の有無を明示的に分ける
+    ## 旧構成では従来通り単一パラメータ群にして既存 FT の学習条件を変えない
+    generator_parameters: Any
+    if hps.model.use_transformer_duration_predictor is True:
+        generator_parameters = build_generator_optimizer_parameter_groups(
+            net_g,
+            hps.train.learning_rate,
+        )
+    else:
+        generator_parameters = filter(lambda p: p.requires_grad, net_g.parameters())
     optim_g = torch.optim.AdamW(
-        filter(lambda p: p.requires_grad, net_g.parameters()),
+        generator_parameters,
         hps.train.learning_rate,
         betas=hps.train.betas,
         eps=hps.train.eps,
@@ -629,12 +645,28 @@ def run():
                 logger.info("Initialize wavlm with default learning rate")
 
         try:
-            _, optim_g, g_resume_lr, epoch_str = utils.checkpoints.load_checkpoint(
-                utils.checkpoints.get_latest_checkpoint_path(model_dir, "G_*.pth"),
-                net_g,
-                optim_g,
-                skip_optimizer=hps.train.skip_optimizer,
+            generator_checkpoint_path = utils.checkpoints.get_latest_checkpoint_path(
+                model_dir, "G_*.pth"
             )
+            try:
+                _, optim_g, g_resume_lr, epoch_str = utils.checkpoints.load_checkpoint(
+                    generator_checkpoint_path,
+                    net_g,
+                    optim_g,
+                    skip_optimizer=hps.train.skip_optimizer,
+                )
+            except ValueError as ex:
+                if "different number of parameter groups" not in str(ex):
+                    raise
+                logger.warning(
+                    f"Skip loading generator optimizer state because parameter groups changed: {ex}"
+                )
+                _, optim_g, g_resume_lr, epoch_str = utils.checkpoints.load_checkpoint(
+                    generator_checkpoint_path,
+                    net_g,
+                    optim_g,
+                    skip_optimizer=True,
+                )
             _, optim_d, d_resume_lr, epoch_str = utils.checkpoints.load_checkpoint(
                 utils.checkpoints.get_latest_checkpoint_path(model_dir, "D_*.pth"),
                 net_d,
@@ -1002,6 +1034,10 @@ def train_and_evaluate(
 
     use_speaker_embedding = getattr(hps.data, "use_speaker_embedding", False)
     use_duration_token_types = hps.model.use_duration_token_type_embedding
+    should_use_duration_clip = (
+        hps.model.use_transformer_duration_predictor is True
+        or use_duration_token_types is True
+    )
     disable_discriminators = (
         hps.train.train_speaker_adapter_only
         and hps.train.disable_discriminators_for_adapter
@@ -1191,6 +1227,7 @@ def train_and_evaluate(
         losses_dur_gen: list[torch.Tensor] | None = None
         loss_teacher = torch.tensor(0.0, device=y.device)
         loss_delta_l2 = torch.tensor(0.0, device=y.device)
+        generator_grad_metrics: dict[str, float] = {}
         # 分布診断メトリクス
         adapter_dist_metrics: dict[str, torch.Tensor] | None = None
 
@@ -1434,10 +1471,11 @@ def train_and_evaluate(
         grad_norm_g = 0.0
         if should_step:
             scaler.unscale_(optim_g)
-            # 勾配爆発を防ぐため、常に勾配クリッピングを適用
-            # if getattr(hps.train, "bf16_run", False):
-            torch.nn.utils.clip_grad_norm_(parameters=net_g.parameters(), max_norm=500)
-            grad_norm_g = commons.clip_grad_value_(net_g.parameters(), None)
+            # Transformer-based DP/SDP は duration 系だけ強めに抑えて初期 flow の暴れを監視する
+            grad_norm_g, generator_grad_metrics = clip_generator_gradients(
+                net_g,
+                should_use_duration_clip=should_use_duration_clip,
+            )
             scaler.step(optim_g)
             scaler.update()
 
@@ -1482,6 +1520,26 @@ def train_and_evaluate(
                         "loss/delta_l2": loss_delta_l2,
                     }
                 )
+                scalar_dict.update(generator_grad_metrics)
+                if use_duration_token_types is True:
+                    scalar_dict.update(
+                        collect_duration_type_metrics(
+                            logw=logw,
+                            logw_target=logw_,
+                            x_mask=x_mask,
+                            token_types=token_types,
+                        )
+                    )
+                    scalar_dict.update(
+                        collect_duration_residual_tail_metrics(
+                            net_g=net_g,
+                            hidden_x=hidden_x,
+                            x_mask=x_mask,
+                            g=g,
+                            logw=logw,
+                            token_types=token_types,
+                        )
+                    )
                 scalar_dict.update({f"loss/g/{i}": v for i, v in enumerate(losses_gen)})
                 scalar_dict.update(
                     {f"loss/d_r/{i}": v for i, v in enumerate(losses_disc_r)}
