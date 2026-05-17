@@ -124,6 +124,7 @@ def test_nanairo_duration_token_type_count_default_matches_symbols() -> None:
 
     assert model.duration_token_type_emb is not None
     assert model.duration_token_type_emb.num_embeddings == DURATION_TOKEN_TYPE_COUNT
+    assert torch.count_nonzero(model.duration_token_type_emb.weight).item() == 0
 
 
 def test_text_audio_speaker_collate_keeps_jp_extra_batch_shape_without_opt_in() -> None:

@@ -1380,11 +1380,8 @@ class SynthesizerTrn(nn.Module):
                 self.duration_token_type_count,
                 hidden_channels,
             )
-            nn.init.normal_(
-                self.duration_token_type_emb.weight,
-                0.0,
-                hidden_channels**-0.5,
-            )
+            # 未学習の token type の埋め込みが初期ランダム値のまま残らないようにする
+            nn.init.zeros_(self.duration_token_type_emb.weight)
         else:
             self.duration_token_type_emb = None
 
