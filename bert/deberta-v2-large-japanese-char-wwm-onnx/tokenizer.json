@@ -2,16 +2,83 @@
   "version": "1.0",
   "truncation": null,
   "padding": null,
-  "added_tokens": [],
+  "added_tokens": [
+    {
+      "id": 0,
+      "content": "[PAD]",
+      "single_word": false,
+      "lstrip": false,
+      "rstrip": false,
+      "normalized": false,
+      "special": true
+    },
+    {
+      "id": 1,
+      "content": "[CLS]",
+      "single_word": false,
+      "lstrip": false,
+      "rstrip": false,
+      "normalized": false,
+      "special": true
+    },
+    {
+      "id": 2,
+      "content": "[SEP]",
+      "single_word": false,
+      "lstrip": false,
+      "rstrip": false,
+      "normalized": false,
+      "special": true
+    },
+    {
+      "id": 3,
+      "content": "[UNK]",
+      "single_word": false,
+      "lstrip": false,
+      "rstrip": false,
+      "normalized": false,
+      "special": true
+    },
+    {
+      "id": 4,
+      "content": "[MASK]",
+      "single_word": false,
+      "lstrip": false,
+      "rstrip": false,
+      "normalized": false,
+      "special": true
+    }
+  ],
   "normalizer": {
-    "type": "BertNormalizer",
-    "clean_text": true,
-    "handle_chinese_chars": false,
-    "strip_accents": false,
-    "lowercase": false
+    "type": "Sequence",
+    "normalizers": [
+      {
+        "type": "BertNormalizer",
+        "clean_text": true,
+        "handle_chinese_chars": false,
+        "strip_accents": false,
+        "lowercase": false
+      },
+      {
+        "type": "NFKC"
+      }
+    ]
   },
   "pre_tokenizer": {
-    "type": "BertPreTokenizer"
+    "type": "Sequence",
+    "pretokenizers": [
+      {
+        "type": "WhitespaceSplit"
+      },
+      {
+        "type": "Split",
+        "pattern": {
+          "Regex": "."
+        },
+        "behavior": "Isolated",
+        "invert": false
+      }
+    ]
   },
   "post_processor": {
     "type": "TemplateProcessing",
@@ -88,16 +155,9 @@
       }
     }
   },
-  "decoder": {
-    "type": "WordPiece",
-    "prefix": "##",
-    "cleanup": true
-  },
+  "decoder": null,
   "model": {
-    "type": "WordPiece",
-    "unk_token": "[UNK]",
-    "continuing_subword_prefix": "##",
-    "max_input_chars_per_word": 100,
+    "type": "WordLevel",
     "vocab": {
       "[PAD]": 0,
       "[CLS]": 1,
@@ -22111,6 +22171,7 @@
       "􀀀": 22009,
       "􂷂": 22010,
       "􏰁": 22011
-    }
+    },
+    "unk_token": "[UNK]"
   }
 }

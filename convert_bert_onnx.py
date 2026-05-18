@@ -1,10 +1,10 @@
 # Usage: uv run python convert_bert_onnx.py --language JP
 
-# https://github.com/tuna2134/sbv2-api/blob/main/scripts/convert/convert_deberta.py を参考に実装した
+# https://github.com/neodyland/sbv2-api/blob/main/scripts/convert/convert_deberta.py を参考に実装した
 #
 # MIT License
 # Copyright (c) 2024 tuna2134
-# Copyright (c) 2024-2025 tsukumi
+# Copyright (c) 2024-2026 tsukumi
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -37,12 +37,81 @@ from onnxsim import model_info, simplify
 from rich import print
 from rich.rule import Rule
 from rich.style import Style
+from tokenizers import Regex, Tokenizer
+from tokenizers.models import WordLevel
+from tokenizers.normalizers import NFKC, BertNormalizer
+from tokenizers.normalizers import Sequence as NormalizerSequence
+from tokenizers.pre_tokenizers import (
+    Sequence as PreTokenizerSequence,
+)
+from tokenizers.pre_tokenizers import (
+    Split,
+    WhitespaceSplit,
+)
+from tokenizers.processors import TemplateProcessing
 from torch import nn
-from transformers import AutoTokenizer, DebertaV2Tokenizer, PreTrainedTokenizerBase
-from transformers.convert_slow_tokenizer import BertConverter, convert_slow_tokenizer
+from transformers import (
+    AutoTokenizer,
+    DebertaV2Tokenizer,
+    PreTrainedTokenizerBase,
+)
+from transformers.convert_slow_tokenizer import convert_slow_tokenizer
 
 from style_bert_vits2.constants import DEFAULT_BERT_MODEL_PATHS, Languages
 from style_bert_vits2.nlp import bert_models
+
+
+def convert_japanese_character_tokenizer(
+    pretrained_model_name_or_path: Path,
+) -> Tokenizer:
+    """
+    日本語 char-wwm BERT 向けの Fast Tokenizer を生成する。
+
+    Args:
+        pretrained_model_name_or_path (Path): `vocab.txt` を含む BERT モデルディレクトリ
+
+    Returns:
+        Tokenizer: Slow `BertJapaneseTokenizer` の文字単位分割と同じ ID 列を返す Tokenizer
+    """
+
+    vocab_path = pretrained_model_name_or_path / "vocab.txt"
+    vocab: dict[str, int] = {}
+    for token in vocab_path.read_text(encoding="utf-8").split("\n"):
+        # `vocab.txt` には `U+2028` などの Unicode 改行文字が語彙として含まれるため、`\n` だけで分割する
+        if token == "":
+            continue
+        vocab[token] = len(vocab)
+
+    # 日本語 char-wwm は WordPiece ではなく、正規化後の各文字をそのまま語彙に引く
+    tokenizer = Tokenizer(WordLevel(vocab=vocab, unk_token="[UNK]"))
+    tokenizer.add_special_tokens(["[PAD]", "[CLS]", "[SEP]", "[UNK]", "[MASK]"])
+    tokenizer.normalizer = NormalizerSequence(
+        [
+            BertNormalizer(
+                clean_text=True,
+                handle_chinese_chars=False,
+                strip_accents=False,
+                lowercase=False,
+            ),
+            NFKC(),
+        ]
+    )
+    # Slow 実装の BasicTokenizer と CharacterTokenizer に合わせ、空白を落としてから 1 文字ずつ分割する
+    tokenizer.pre_tokenizer = PreTokenizerSequence(
+        [
+            WhitespaceSplit(),
+            Split(Regex("."), behavior="isolated"),
+        ]
+    )
+    tokenizer.post_processor = TemplateProcessing(
+        single="[CLS] $A [SEP]",
+        pair="[CLS] $A [SEP] $B:1 [SEP]:1",
+        special_tokens=[
+            ("[CLS]", vocab["[CLS]"]),
+            ("[SEP]", vocab["[SEP]"]),
+        ],
+    )
+    return tokenizer
 
 
 def validate_model_outputs(
@@ -194,7 +263,11 @@ def validate_model_outputs(
     with torch.no_grad():
         for text in test_texts:
             # PyTorch
-            inputs = tokenizer(text, return_tensors="pt")
+            inputs = tokenizer(
+                text,
+                return_tensors="pt",
+                return_token_type_ids=True,
+            )
             torch_output = original_model(
                 inputs["input_ids"],
                 inputs["token_type_ids"],
@@ -238,6 +311,11 @@ if __name__ == "__main__":
         default=Languages.JP,
         help="Language of the BERT model to be converted",
     )
+    parser.add_argument(
+        "--tokenizer-only",
+        action="store_true",
+        help="Only generate tokenizer.json and skip ONNX model conversion",
+    )
     args = parser.parse_args()
 
     # モデルの入出力先ファイルパスを取得
@@ -260,11 +338,9 @@ if __name__ == "__main__":
         )
         convert_slow_tokenizer(tokenizer).save(str(tokenizer_json_path))
     elif language == Languages.JP:
-        tokenizer = AutoTokenizer.from_pretrained(
+        convert_japanese_character_tokenizer(
             pretrained_model_name_or_path,
-            use_fast=False,  # 明示的に Slow Tokenizer を使う
-        )
-        BertConverter(tokenizer).converted().save(str(tokenizer_json_path))
+        ).save(str(tokenizer_json_path))
     elif language == Languages.ZH:
         tokenizer = AutoTokenizer.from_pretrained(
             pretrained_model_name_or_path,
@@ -277,12 +353,24 @@ if __name__ == "__main__":
     print(f"[bold green]Tokenizer JSON saved to {tokenizer_json_path}[/bold green]")
     print(Rule(characters="=", style=Style(color="blue")))
 
+    if args.tokenizer_only is True:
+        print("[bold green]Tokenizer-only conversion completed[/bold green]")
+        print(Rule(characters="=", style=Style(color="blue")))
+        print(f"[bold green]Total time: {time.time() - start_time:.2f}s[/bold green]")
+        print(Rule(characters="=", style=Style(color="blue")))
+        raise SystemExit(0)
+
     class ONNXBert(nn.Module):
         def __init__(self):
             super().__init__()
             self.model = bert_models.load_model(language)
 
-        def forward(self, input_ids, token_type_ids, attention_mask):
+        def forward(
+            self,
+            input_ids: torch.Tensor,
+            token_type_ids: torch.Tensor,
+            attention_mask: torch.Tensor,
+        ) -> torch.Tensor:
             inputs = {
                 "input_ids": input_ids,
                 "token_type_ids": token_type_ids,
@@ -292,14 +380,20 @@ if __name__ == "__main__":
             res = torch.cat(res["hidden_states"][-3:-2], -1)[0].cpu()
             return res
 
-    # 再度 Fast Tokenizer でロード
+    # ONNX 変換と検証に利用する BERT トークナイザーをロード
     tokenizer = bert_models.load_tokenizer(language)
 
     # ONNX 変換用の BERT モデルをロード
     model = ONNXBert()
-    inputs = tokenizer("今日はいい天気ですね", return_tensors="pt")
+    inputs = tokenizer(
+        "今日はいい天気ですね",
+        return_tensors="pt",
+        return_token_type_ids=True,
+    )
 
     # モデルを ONNX に変換
+    # NOTE: 2026年5月時点ではおそらく依存関係の更新によるリグレッションで
+    # ONNX 変換に失敗するが（正常なグラフ構造が構築されない？）、既に変換済みのため当面放置する
     print(Rule(characters="=", style=Style(color="blue")))
     print("[bold cyan]Exporting ONNX model...[/bold cyan]")
     print(Rule(characters="=", style=Style(color="blue")))
