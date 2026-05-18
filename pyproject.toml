@@ -42,10 +42,11 @@ dependencies = [
     "pypinyin",
     "pyworld-prebuilt>=0.3.5.post2",
     "safetensors",
-    # transformers 4.50.0 以降、なぜか ku-nlp/deberta-v2-large-japanese-char-wwm (日本語用 BERT) が
-    # ロード時にハングアップするため、やむを得ず当面の間 4.50.0 未満に固定する
-    # ref: https://github.com/huggingface/transformers/issues/36803
-    "transformers<4.50.0",
+    # transformers 4.50.0 ~ 4.57.x には日本語 BERT の pytorch_model.bin を自動的に meta デバイスにロードしようとして
+    # フリーズしてしまう既知の不具合がある (v5 ではロード経路自体の変更により修正済み)
+    # safetensors 版を使用していればこの問題を回避できるため、transformers 4.50.0 ~ 4.57.x を利用する際は、
+    # initialize.py を再実行して、事前に safetensors 版の日本語 BERT モデルをダウンロードしておく必要がある
+    "transformers>=4.49.0,<6.0.0",
 ]
 
 # ライブラリ利用者向けのオプション依存関係
