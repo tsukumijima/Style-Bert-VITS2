@@ -19,13 +19,16 @@ import onnxruntime
 from huggingface_hub import hf_hub_download
 from transformers import (
     AutoTokenizer,
-    DebertaV2TokenizerFast,
+    BertJapaneseTokenizer,
     PreTrainedTokenizer,
     PreTrainedTokenizerFast,
 )
 
 from style_bert_vits2.constants import DEFAULT_ONNX_BERT_MODEL_PATHS, Languages
 from style_bert_vits2.logging import logger
+from style_bert_vits2.nlp.english.tokenizer import (
+    load_deberta_v3_sentencepiece_tokenizer,
+)
 
 
 # 各言語ごとのロード済みの BERT モデルを格納する辞書
@@ -34,7 +37,7 @@ __loaded_models: dict[Languages, onnxruntime.InferenceSession] = {}
 # 各言語ごとのロード済みの BERT トークナイザーを格納する辞書
 __loaded_tokenizers: dict[
     Languages,
-    PreTrainedTokenizer | PreTrainedTokenizerFast | DebertaV2TokenizerFast,
+    PreTrainedTokenizer | PreTrainedTokenizerFast,
 ] = {}
 
 
@@ -153,7 +156,7 @@ def load_tokenizer(
     pretrained_model_name_or_path: str | None = None,
     cache_dir: str | None = None,
     revision: str = "main",
-) -> PreTrainedTokenizer | PreTrainedTokenizerFast | DebertaV2TokenizerFast:
+) -> PreTrainedTokenizer | PreTrainedTokenizerFast:
     """
     指定された言語の ONNX 版 BERT トークナイザーをロードし、ロード済みの ONNX 版 BERT トークナイザーを返す。
     一度ロードされていれば、ロード済みの ONNX 版 BERT トークナイザーを即座に返す。
@@ -172,7 +175,7 @@ def load_tokenizer(
         revision (str): モデルの Hugging Face 上の Git リビジョン。指定しない場合は最新の main ブランチの内容が利用される (デフォルト: None)
 
     Returns:
-        PreTrainedTokenizer | PreTrainedTokenizerFast | DebertaV2TokenizerFast: ロード済みの BERT トークナイザー
+        PreTrainedTokenizer | PreTrainedTokenizerFast: ロード済みの BERT トークナイザー
     """
 
     # すでにロード済みの場合はそのまま返す
@@ -186,9 +189,17 @@ def load_tokenizer(
         pretrained_model_name_or_path = str(DEFAULT_ONNX_BERT_MODEL_PATHS[language])
 
     # BERT トークナイザーをロードし、辞書に格納して返す
-    ## 英語のみ DebertaV2TokenizerFast でロードする必要がある
-    if language == Languages.EN:
-        __loaded_tokenizers[language] = DebertaV2TokenizerFast.from_pretrained(
+    ## 日本語 char-wwm は Fast Tokenizer 互換の `tokenizer.json` がないため Slow 実装で固定する
+    if language == Languages.JP:
+        __loaded_tokenizers[language] = BertJapaneseTokenizer.from_pretrained(
+            pretrained_model_name_or_path,
+            cache_dir=cache_dir,
+            revision=revision,
+        )
+    ## transformers v5 の `DebertaV2Tokenizer` は SentencePiece の正規化を再現できず、全角英数字が [UNK] 相当になる
+    ## v4 と同じ ID 列を維持するため、英語 BERT だけ `spm.model` からトークナイザーを組み立てる
+    elif language == Languages.EN:
+        __loaded_tokenizers[language] = load_deberta_v3_sentencepiece_tokenizer(
             pretrained_model_name_or_path,
             cache_dir=cache_dir,
             revision=revision,
@@ -198,7 +209,7 @@ def load_tokenizer(
             pretrained_model_name_or_path,
             cache_dir=cache_dir,
             revision=revision,
-            use_fast=True,  # デフォルトで True だが念のため明示的に指定
+            use_fast=True,  # 明示的に Fast Tokenizer を使う
         )
     logger.info(
         f"Loaded the {language.name} ONNX BERT tokenizer from {pretrained_model_name_or_path}"
