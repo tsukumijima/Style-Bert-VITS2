@@ -141,7 +141,6 @@ train = [
     "speechbrain>=1.1.0",
     "tensorboard",
     "torchaudio>=2.9.1,<2.10.0",
-    "torchcodec>=0.9.1,<0.10.0",
     "utmosv2",
 ]
 ## ここまでの依存関係を全てインストールするグループ
@@ -202,10 +201,7 @@ source-exclude = [
 e2k = { git = "https://github.com/tsukumijima/e2k.git", rev = "9920754e15d8c96404bef0bd81d424352fb7a48b" }
 # pyannote.audio 4.x が torchaudio / torchcodec 周りの非互換性を理由に torch/torchaudio を 2.8.0 に固定しているため、
 # torch/torchaudio の固定を解除したフォークを利用する
-"pyannote.audio" = { git = "https://github.com/tsukumijima/pyannote-audio.git", rev = "8ef26980df1126469979565bf84f637c8a8f6d3c" }
-# speechbrain は2026年3月末時点では PyTorch 2.9 以降に対応した 1.1.0 が PyPI に公開されていないため、GitHub から取得する
-# ref: https://github.com/speechbrain/speechbrain/issues/3012
-speechbrain = { git = "https://github.com/speechbrain/speechbrain.git", rev = "638ffd6c8e555f3a83ba21b6816517f11cb8ca12" }
+"pyannote.audio" = { git = "https://github.com/tsukumijima/pyannote-audio.git", rev = "f155cf0cc0b2f293fa78726b6ae54fc90bd42f5a" }
 # torch / torchaudio のソース指定
 # Windows x64・Linux x64: CUDA 12.8 版
 # macOS・その他: PyPI から CPU 版
@@ -216,7 +212,7 @@ torchaudio = [
     { index = "pytorch-cu128", marker = "(sys_platform == 'linux' and platform_machine == 'x86_64') or sys_platform == 'win32'" },
 ]
 # UTMOSv2 は PyPI に公開されていないため GitHub から取得する
-utmosv2 = { git = "https://github.com/sarulab-speech/UTMOSv2.git", rev = "14a281c6072d6fad2bf31f992ed2e60304400075" }
+utmosv2 = { git = "https://github.com/sarulab-speech/UTMOSv2.git", rev = "cc2700db57bb83ee13dc31ebe1b868c254e15d09" }
 
 # PyTorch の CUDA 12.8 版のパッケージインデックス
 [[tool.uv.index]]
