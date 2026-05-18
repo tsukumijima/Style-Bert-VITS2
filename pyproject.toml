@@ -42,6 +42,7 @@ dependencies = [
     "pypinyin",
     "pyworld-prebuilt>=0.3.5.post2",
     "safetensors",
+    "sentencepiece",
     # transformers 4.50.0 ~ 4.57.x には日本語 BERT の pytorch_model.bin を自動的に meta デバイスにロードしようとして
     # フリーズしてしまう既知の不具合がある (v5 ではロード経路自体の変更により修正済み)
     # safetensors 版を使用していればこの問題を回避できるため、transformers 4.50.0 ~ 4.57.x を利用する際は、
