@@ -17,17 +17,17 @@ from style_bert_vits2.nlp.nanairo_emoji import (
 from style_bert_vits2.nlp.symbols import (
     DURATION_EVENT_EMOJI_SYMBOLS,
     DURATION_PROSODY_MARKER_EMOJI_SYMBOLS,
-    DURATION_TOKEN_TYPE_BLANK,
-    DURATION_TOKEN_TYPE_COMMA,
-    DURATION_TOKEN_TYPE_CONTENT,
-    DURATION_TOKEN_TYPE_ELLIPSIS_DOT,
-    DURATION_TOKEN_TYPE_EVENT_EMOJI,
-    DURATION_TOKEN_TYPE_EXCLAMATION,
-    DURATION_TOKEN_TYPE_HYPHEN,
-    DURATION_TOKEN_TYPE_PERIOD,
-    DURATION_TOKEN_TYPE_PROSODY_MARKER_EMOJI,
-    DURATION_TOKEN_TYPE_QUESTION,
-    DURATION_TOKEN_TYPE_QUOTE_BOUNDARY,
+    DURATION_SYMBOL_TYPE_BLANK,
+    DURATION_SYMBOL_TYPE_COMMA,
+    DURATION_SYMBOL_TYPE_CONTENT,
+    DURATION_SYMBOL_TYPE_ELLIPSIS_DOT,
+    DURATION_SYMBOL_TYPE_EVENT_EMOJI,
+    DURATION_SYMBOL_TYPE_EXCLAMATION,
+    DURATION_SYMBOL_TYPE_HYPHEN,
+    DURATION_SYMBOL_TYPE_PERIOD,
+    DURATION_SYMBOL_TYPE_PROSODY_MARKER_EMOJI,
+    DURATION_SYMBOL_TYPE_QUESTION,
+    DURATION_SYMBOL_TYPE_QUOTE_BOUNDARY,
     LANGUAGE_ID_MAP,
     LANGUAGE_TONE_START_MAP,
     NANAIRO_SYMBOLS,
@@ -508,31 +508,31 @@ def cleaned_text_to_sequence(
     return phones, tones, lang_ids
 
 
-def phone_symbols_to_duration_token_types(
+def phone_symbols_to_duration_symbol_type_ids(
     phone_symbols: Sequence[str],
     *,
     add_blank: bool = False,
 ) -> list[int]:
     """
-    音素記号列から Nanairo duration 用のトークン種別 ID 列を生成する
+    音素記号列から Nanairo duration 用の記号種別 ID 列を生成する
 
     Args:
         phone_symbols (Sequence[str]): `clean_text_with_given_phone_tone()` 由来の音素記号列
         add_blank (bool): `commons.intersperse()` と同じ規則で blank 種別を挿入するかどうか
 
     Returns:
-        list[int]: 音素記号列と同じ長さの duration トークン種別 ID 列
+        list[int]: 音素記号列と同じ長さの duration 記号種別 ID 列
     """
 
-    token_types: list[int] = []
+    duration_symbol_type_ids: list[int] = []
     phone_count = len(phone_symbols)
     for phone_index, phone_symbol in enumerate(phone_symbols):
         if phone_symbol in {"_", "SP"}:
-            token_types.append(DURATION_TOKEN_TYPE_BLANK)
+            duration_symbol_type_ids.append(DURATION_SYMBOL_TYPE_BLANK)
         elif phone_symbol in DURATION_EVENT_EMOJI_SYMBOLS:
-            token_types.append(DURATION_TOKEN_TYPE_EVENT_EMOJI)
+            duration_symbol_type_ids.append(DURATION_SYMBOL_TYPE_EVENT_EMOJI)
         elif phone_symbol in DURATION_PROSODY_MARKER_EMOJI_SYMBOLS:
-            token_types.append(DURATION_TOKEN_TYPE_PROSODY_MARKER_EMOJI)
+            duration_symbol_type_ids.append(DURATION_SYMBOL_TYPE_PROSODY_MARKER_EMOJI)
         elif phone_symbol == ".":
             previous_is_period = (
                 phone_index > 0 and phone_symbols[phone_index - 1] == "."
@@ -541,29 +541,31 @@ def phone_symbols_to_duration_token_types(
                 phone_index + 1 < phone_count and phone_symbols[phone_index + 1] == "."
             )
             if previous_is_period is True or next_is_period is True:
-                token_types.append(DURATION_TOKEN_TYPE_ELLIPSIS_DOT)
+                duration_symbol_type_ids.append(DURATION_SYMBOL_TYPE_ELLIPSIS_DOT)
             else:
-                token_types.append(DURATION_TOKEN_TYPE_PERIOD)
+                duration_symbol_type_ids.append(DURATION_SYMBOL_TYPE_PERIOD)
         elif phone_symbol == ",":
-            token_types.append(DURATION_TOKEN_TYPE_COMMA)
+            duration_symbol_type_ids.append(DURATION_SYMBOL_TYPE_COMMA)
         elif phone_symbol == "?":
-            token_types.append(DURATION_TOKEN_TYPE_QUESTION)
+            duration_symbol_type_ids.append(DURATION_SYMBOL_TYPE_QUESTION)
         elif phone_symbol == "!":
-            token_types.append(DURATION_TOKEN_TYPE_EXCLAMATION)
+            duration_symbol_type_ids.append(DURATION_SYMBOL_TYPE_EXCLAMATION)
         elif phone_symbol == "'":
-            token_types.append(DURATION_TOKEN_TYPE_QUOTE_BOUNDARY)
+            duration_symbol_type_ids.append(DURATION_SYMBOL_TYPE_QUOTE_BOUNDARY)
         elif phone_symbol == "-":
-            token_types.append(DURATION_TOKEN_TYPE_HYPHEN)
+            duration_symbol_type_ids.append(DURATION_SYMBOL_TYPE_HYPHEN)
         else:
-            token_types.append(DURATION_TOKEN_TYPE_CONTENT)
+            duration_symbol_type_ids.append(DURATION_SYMBOL_TYPE_CONTENT)
 
     if add_blank is False:
-        return token_types
+        return duration_symbol_type_ids
 
     # 音素 ID と同じ blank 挿入規則を使い、DP/SDP に渡す補助系列の長さを一致させる
-    interspersed_token_types = [DURATION_TOKEN_TYPE_BLANK] * (len(token_types) * 2 + 1)
-    interspersed_token_types[1::2] = token_types
-    return interspersed_token_types
+    interspersed_duration_symbol_type_ids = [DURATION_SYMBOL_TYPE_BLANK] * (
+        len(duration_symbol_type_ids) * 2 + 1
+    )
+    interspersed_duration_symbol_type_ids[1::2] = duration_symbol_type_ids
+    return interspersed_duration_symbol_type_ids
 
 
 class InvalidPhoneError(ValueError):

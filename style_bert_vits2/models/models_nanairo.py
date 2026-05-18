@@ -9,7 +9,7 @@ from torch.nn.utils import remove_weight_norm, spectral_norm, weight_norm
 
 from style_bert_vits2.models import attentions, commons, modules, monotonic_alignment
 from style_bert_vits2.nlp.symbols import (
-    DURATION_TOKEN_TYPE_COUNT,
+    DURATION_SYMBOL_TYPE_COUNT,
     NANAIRO_SYMBOLS,
     NUM_LANGUAGES,
     NUM_TONES,
@@ -1282,11 +1282,11 @@ class SynthesizerTrn(nn.Module):
         self.duration_filter_channels = int(
             kwargs.get("duration_filter_channels", hidden_channels)
         )
-        self.use_duration_token_type_embedding = kwargs.get(
-            "use_duration_token_type_embedding", False
+        self.use_duration_symbol_type_embedding = kwargs.get(
+            "use_duration_symbol_type_embedding", False
         )
-        self.duration_token_type_count = int(
-            kwargs.get("duration_token_type_count", DURATION_TOKEN_TYPE_COUNT)
+        self.duration_symbol_type_count = int(
+            kwargs.get("duration_symbol_type_count", DURATION_SYMBOL_TYPE_COUNT)
         )
         self.enc_gin_channels = 0
         if self.use_spk_conditioned_encoder and gin_channels > 0:
@@ -1375,15 +1375,15 @@ class SynthesizerTrn(nn.Module):
             self.dp = DurationPredictor(
                 hidden_channels, 256, 3, 0.5, gin_channels=gin_channels
             )
-        if self.use_duration_token_type_embedding is True:
-            self.duration_token_type_emb = nn.Embedding(
-                self.duration_token_type_count,
+        if self.use_duration_symbol_type_embedding is True:
+            self.duration_symbol_type_emb = nn.Embedding(
+                self.duration_symbol_type_count,
                 hidden_channels,
             )
-            # 未学習の token type の埋め込みが初期ランダム値のまま残らないようにする
-            nn.init.zeros_(self.duration_token_type_emb.weight)
+            # 未学習の symbol type の埋め込みが初期ランダム値のまま残らないようにする
+            nn.init.zeros_(self.duration_symbol_type_emb.weight)
         else:
-            self.duration_token_type_emb = None
+            self.duration_symbol_type_emb = None
 
         if n_speakers >= 1:
             self.emb_g = nn.Embedding(n_speakers, gin_channels)
@@ -1572,26 +1572,28 @@ class SynthesizerTrn(nn.Module):
             "statistics_initialized": statistics_initialized,
         }
 
-    def apply_duration_token_types(
+    def apply_duration_symbol_type_ids(
         self,
         x: torch.Tensor,
-        token_types: torch.Tensor | None,
+        duration_symbol_type_ids: torch.Tensor | None,
     ) -> torch.Tensor:
         # duration loss が TextEncoder へ逆流しない性質を保ちつつ、
         # duration 専用種別埋め込みだけは DP/SDP 側の学習対象にする
         x = torch.detach(x)
-        if self.duration_token_type_emb is None:
+        if self.duration_symbol_type_emb is None:
             return x
-        if token_types is None:
-            # token_types 未指定時は全トークンをタイプ0として扱う
-            token_types = torch.zeros(
+        if duration_symbol_type_ids is None:
+            # 種別 ID が未指定の場合は全位置を content 相当として扱う
+            duration_symbol_type_ids = torch.zeros(
                 x.size(0),
                 x.size(2),
                 dtype=torch.long,
                 device=x.device,
             )
-        token_type_emb = self.duration_token_type_emb(token_types).transpose(1, 2)
-        return x + token_type_emb
+        symbol_type_emb = self.duration_symbol_type_emb(
+            duration_symbol_type_ids
+        ).transpose(1, 2)
+        return x + symbol_type_emb
 
     def _resolve_g(
         self,
@@ -1640,7 +1642,7 @@ class SynthesizerTrn(nn.Module):
         style_vec: torch.Tensor,
         speaker_embedding: torch.Tensor | None = None,
         g_adjust: torch.Tensor | None = None,
-        token_types: torch.Tensor | None = None,
+        duration_symbol_type_ids: torch.Tensor | None = None,
     ) -> tuple[
         torch.Tensor,
         torch.Tensor,
@@ -1691,7 +1693,7 @@ class SynthesizerTrn(nn.Module):
             )
 
         w = attn.sum(2)
-        duration_x = self.apply_duration_token_types(x, token_types)
+        duration_x = self.apply_duration_symbol_type_ids(x, duration_symbol_type_ids)
 
         l_length_sdp = self.sdp(duration_x, x_mask, w, g=g)
         l_length_sdp = l_length_sdp / torch.sum(x_mask)
@@ -1745,7 +1747,7 @@ class SynthesizerTrn(nn.Module):
         durations_frames_override_mask: torch.Tensor | None = None,
         speaker_embedding: torch.Tensor | None = None,
         g_adjust: torch.Tensor | None = None,
-        token_types: torch.Tensor | None = None,
+        duration_symbol_type_ids: torch.Tensor | None = None,
     ) -> tuple[
         torch.Tensor,
         torch.Tensor,
@@ -1785,7 +1787,7 @@ class SynthesizerTrn(nn.Module):
         # 精度クリティカルな部分 (SDP/DP, Flow) は常に FP32 で実行する
 
         # SDP (Stochastic Duration Predictor) / DP (Duration Predictor)
-        duration_x = self.apply_duration_token_types(x, token_types)
+        duration_x = self.apply_duration_symbol_type_ids(x, duration_symbol_type_ids)
         logw = self.sdp(
             duration_x,
             x_mask,
@@ -1891,7 +1893,7 @@ class SynthesizerTrn(nn.Module):
         durations_frames_override_mask: torch.Tensor | None = None,
         speaker_embedding: torch.Tensor | None = None,
         g_adjust: torch.Tensor | None = None,
-        token_types: torch.Tensor | None = None,
+        duration_symbol_type_ids: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, tuple[torch.Tensor, ...]]:
         # Generator 実行前の共通処理
         z, y_mask, g, attn, z_p, m_p, logs_p = self.infer_input_feature(
@@ -1912,7 +1914,7 @@ class SynthesizerTrn(nn.Module):
             durations_frames_override_mask,
             speaker_embedding,
             g_adjust,
-            token_types,
+            duration_symbol_type_ids,
         )
 
         # Generator (Decoder) のみ全体を FP16 / AMP (Automatic Mixed Precision) で実行

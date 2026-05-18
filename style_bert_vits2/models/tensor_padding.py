@@ -56,6 +56,7 @@ def pad_sequence_tensor(
     pool_type: str = "vits2_sequence",
     max_overhead_ratio: float = 1.3,
     use_pool: bool = True,
+    padding_value: int | float = 0,
 ) -> tuple[torch.Tensor, int]:
     """
     音素・トークン系列テンソルをパディングする。
@@ -66,6 +67,7 @@ def pad_sequence_tensor(
         pool_type (str): プール種別
         max_overhead_ratio (float): 許容する最大オーバーヘッド比率
         use_pool (bool): メモリプールを使用するか
+        padding_value (int | float): パディング領域に入れる値
 
     Returns:
         tuple[torch.Tensor, int]: パディングされたテンソルと実際の長さ
@@ -93,6 +95,9 @@ def pad_sequence_tensor(
         use_pool,
         zero_init=True,  # パディング部分をゼロ初期化
     )
+    # ID 系列の padding は 0 以外が意味を持つ場合があるため、コピー前に全体を指定値で初期化する
+    if padding_value != 0:
+        padded_tensor.fill_(padding_value)
 
     # データをコピー
     # copy_() による in-place 更新で効率化

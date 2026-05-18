@@ -288,7 +288,7 @@ def main() -> None:
                 ja_bert,
                 en_bert,
                 style_vec_tensor,
-                _token_types,
+                _duration_symbol_type_ids,
             ) = prepare_inference_data(
                 args.text,
                 style_vec=style_vec,

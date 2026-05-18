@@ -23,7 +23,7 @@ from style_bert_vits2.models.hyper_parameters import HyperParametersData
 from style_bert_vits2.nlp import (
     cleaned_text_to_sequence,
     convert_unsupported_phones_for_current_model,
-    phone_symbols_to_duration_token_types,
+    phone_symbols_to_duration_symbol_type_ids,
 )
 from training.mel_processing import mel_spectrogram_torch, spectrogram_torch
 from training.utils import load_filepaths_and_text, load_wav_to_torch
@@ -45,7 +45,7 @@ class TextAudioSpeakerLoader(Dataset[tuple[Any, ...]]):
         hparams: HyperParametersData,
         wavs_dir: Path,
         spec_cache: bool = True,
-        return_duration_token_types: bool = False,
+        return_duration_symbol_type_ids: bool = False,
     ):
         """
         TextAudioSpeakerLoader を初期化する。
@@ -55,7 +55,7 @@ class TextAudioSpeakerLoader(Dataset[tuple[Any, ...]]):
             hparams (HyperParametersData): ハイパーパラメータ
             wavs_dir (Path): wavs ディレクトリのパス (train.list 内の相対パスの基準)
             spec_cache (bool): スペクトログラムをキャッシュするかどうか
-            return_duration_token_types (bool): Nanairo duration 用のトークン種別を返すかどうか
+            return_duration_symbol_type_ids (bool): Nanairo duration 用の記号種別を返すかどうか
         """
 
         self.wavs_dir = wavs_dir
@@ -71,7 +71,7 @@ class TextAudioSpeakerLoader(Dataset[tuple[Any, ...]]):
         self.hparams = hparams
         self.use_jp_extra = getattr(hparams, "use_jp_extra", False)
         self.use_nanairo = getattr(hparams, "use_nanairo", False)
-        self.return_duration_token_types = return_duration_token_types
+        self.return_duration_symbol_type_ids = return_duration_symbol_type_ids
 
         self.use_mel_spec_posterior = getattr(
             hparams, "use_mel_posterior_encoder", False
@@ -257,7 +257,7 @@ class TextAudioSpeakerLoader(Dataset[tuple[Any, ...]]):
             phones,
             tone,
             language,
-            duration_token_types,
+            duration_symbol_type_ids,
         ) = self.get_text(text, word2ph, phones, tone, language, audiopath)
 
         spec, wav = self.get_audio(audiopath)
@@ -298,14 +298,14 @@ class TextAudioSpeakerLoader(Dataset[tuple[Any, ...]]):
                     ja_bert,
                     style_vec,
                 )
-                if self.return_duration_token_types is True:
-                    assert duration_token_types is not None
-                    return (*sample, duration_token_types, speaker_embedding)
+                if self.return_duration_symbol_type_ids is True:
+                    assert duration_symbol_type_ids is not None
+                    return (*sample, duration_symbol_type_ids, speaker_embedding)
                 return (*sample, speaker_embedding)
             sample = (phones, spec, wav, sid, tone, language, ja_bert, style_vec)
-            if self.return_duration_token_types is True:
-                assert duration_token_types is not None
-                return (*sample, duration_token_types)
+            if self.return_duration_symbol_type_ids is True:
+                assert duration_symbol_type_ids is not None
+                return (*sample, duration_symbol_type_ids)
             return sample
         else:
             if self.use_speaker_embedding:
@@ -322,9 +322,9 @@ class TextAudioSpeakerLoader(Dataset[tuple[Any, ...]]):
                     en_bert,
                     style_vec,
                 )
-                if self.return_duration_token_types is True:
-                    assert duration_token_types is not None
-                    return (*sample, duration_token_types, speaker_embedding)
+                if self.return_duration_symbol_type_ids is True:
+                    assert duration_symbol_type_ids is not None
+                    return (*sample, duration_symbol_type_ids, speaker_embedding)
                 return (*sample, speaker_embedding)
             sample = (
                 phones,
@@ -338,9 +338,9 @@ class TextAudioSpeakerLoader(Dataset[tuple[Any, ...]]):
                 en_bert,
                 style_vec,
             )
-            if self.return_duration_token_types is True:
-                assert duration_token_types is not None
-                return (*sample, duration_token_types)
+            if self.return_duration_symbol_type_ids is True:
+                assert duration_symbol_type_ids is not None
+                return (*sample, duration_symbol_type_ids)
             return sample
 
     def get_audio(self, filename: str) -> tuple[torch.Tensor, torch.Tensor]:
@@ -456,10 +456,10 @@ class TextAudioSpeakerLoader(Dataset[tuple[Any, ...]]):
             word2ph,
             language,
         )
-        duration_token_type_seq: list[int] | None = None
-        if self.return_duration_token_types is True:
+        duration_symbol_type_id_seq: list[int] | None = None
+        if self.return_duration_symbol_type_ids is True:
             # DP/SDP だけに渡す補助情報なので、音素 ID 化前の記号列から休止・境界・絵文字制御の粗い種別を作る
-            duration_token_type_seq = phone_symbols_to_duration_token_types(
+            duration_symbol_type_id_seq = phone_symbols_to_duration_symbol_type_ids(
                 phone,
                 add_blank=self.add_blank,
             )
@@ -476,13 +476,13 @@ class TextAudioSpeakerLoader(Dataset[tuple[Any, ...]]):
             for i in range(len(word2ph)):
                 word2ph[i] = word2ph[i] * 2
             word2ph[0] += 1
-        if duration_token_type_seq is not None and len(duration_token_type_seq) != len(
-            phone_seq
-        ):
+        if duration_symbol_type_id_seq is not None and len(
+            duration_symbol_type_id_seq
+        ) != len(phone_seq):
             mismatch_msg = (
-                f"duration_token_type_seq length ({len(duration_token_type_seq)}) != "
+                f"duration_symbol_type_id_seq length ({len(duration_symbol_type_id_seq)}) != "
                 f"phone sequence length ({len(phone_seq)}); verify "
-                f"phone_symbols_to_duration_token_types matches cleaned_text_to_sequence "
+                f"phone_symbols_to_duration_symbol_type_ids matches cleaned_text_to_sequence "
                 f"with add_blank / commons.intersperse"
             )
             logger.error(mismatch_msg)
@@ -522,9 +522,9 @@ class TextAudioSpeakerLoader(Dataset[tuple[Any, ...]]):
         phone_tensor = torch.LongTensor(phone_seq)
         tone_tensor = torch.LongTensor(tone_seq)
         language_tensor = torch.LongTensor(language_seq)
-        duration_token_type_tensor = (
-            torch.LongTensor(duration_token_type_seq)
-            if duration_token_type_seq is not None
+        duration_symbol_type_ids_tensor = (
+            torch.LongTensor(duration_symbol_type_id_seq)
+            if duration_symbol_type_id_seq is not None
             else None
         )
         return (
@@ -534,7 +534,7 @@ class TextAudioSpeakerLoader(Dataset[tuple[Any, ...]]):
             phone_tensor,
             tone_tensor,
             language_tensor,
-            duration_token_type_tensor,
+            duration_symbol_type_ids_tensor,
         )
 
     def get_sid(self, sid: str) -> torch.Tensor:
@@ -585,7 +585,7 @@ class TextAudioSpeakerCollate:
         return_ids: bool = False,
         use_jp_extra: bool = False,
         use_speaker_embedding: bool = False,
-        return_duration_token_types: bool = False,
+        return_duration_symbol_type_ids: bool = False,
     ):
         """
         TextAudioSpeakerCollate を初期化する。
@@ -594,13 +594,13 @@ class TextAudioSpeakerCollate:
             return_ids (bool): ID を返すかどうか
             use_jp_extra (bool): JP-Extra モデルを使用するかどうか
             use_speaker_embedding (bool): 話者埋め込みを使用するかどうか
-            return_duration_token_types (bool): Nanairo duration 用のトークン種別を返すかどうか
+            return_duration_symbol_type_ids (bool): Nanairo duration 用の記号種別を返すかどうか
         """
 
         self.return_ids = return_ids
         self.use_jp_extra = use_jp_extra
         self.use_speaker_embedding = use_speaker_embedding
-        self.return_duration_token_types = return_duration_token_types
+        self.return_duration_symbol_type_ids = return_duration_symbol_type_ids
 
     def __call__(self, batch: list[tuple[Any, ...]]) -> tuple[Any, ...]:
         """
@@ -630,9 +630,9 @@ class TextAudioSpeakerCollate:
         text_padded = torch.LongTensor(len(batch), max_text_len)
         tone_padded = torch.LongTensor(len(batch), max_text_len)
         language_padded = torch.LongTensor(len(batch), max_text_len)
-        duration_token_types_padded: torch.Tensor | None = None
-        if self.return_duration_token_types is True:
-            duration_token_types_padded = torch.LongTensor(len(batch), max_text_len)
+        duration_symbol_type_ids_padded: torch.Tensor | None = None
+        if self.return_duration_symbol_type_ids is True:
+            duration_symbol_type_ids_padded = torch.LongTensor(len(batch), max_text_len)
         # This is ZH bert if not use_jp_extra, JA bert if use_jp_extra
         bert_padded = torch.FloatTensor(len(batch), 1024, max_text_len)
         ja_bert_padded: torch.Tensor | None = None
@@ -645,11 +645,11 @@ class TextAudioSpeakerCollate:
         if self.use_speaker_embedding:
             if self.use_jp_extra:
                 speaker_embedding_index = (
-                    9 if self.return_duration_token_types is True else 8
+                    9 if self.return_duration_symbol_type_ids is True else 8
                 )
             else:
                 speaker_embedding_index = (
-                    11 if self.return_duration_token_types is True else 10
+                    11 if self.return_duration_symbol_type_ids is True else 10
                 )
             speaker_embedding = torch.FloatTensor(
                 len(batch), batch[0][speaker_embedding_index].numel()
@@ -660,8 +660,8 @@ class TextAudioSpeakerCollate:
         text_padded.zero_()
         tone_padded.zero_()
         language_padded.zero_()
-        if duration_token_types_padded is not None:
-            duration_token_types_padded.zero_()
+        if duration_symbol_type_ids_padded is not None:
+            duration_symbol_type_ids_padded.zero_()
         spec_padded.zero_()
         wav_padded.zero_()
         bert_padded.zero_()
@@ -703,16 +703,16 @@ class TextAudioSpeakerCollate:
 
             if self.use_jp_extra:
                 style_vec[i, :] = row[7]
-                if self.return_duration_token_types is True:
-                    assert duration_token_types_padded is not None
-                    duration_token_types = row[8]
-                    duration_token_types_padded[i, : duration_token_types.size(0)] = (
-                        duration_token_types
-                    )
+                if self.return_duration_symbol_type_ids is True:
+                    assert duration_symbol_type_ids_padded is not None
+                    duration_symbol_type_ids = row[8]
+                    duration_symbol_type_ids_padded[
+                        i, : duration_symbol_type_ids.size(0)
+                    ] = duration_symbol_type_ids
                 if self.use_speaker_embedding:
                     assert speaker_embedding is not None
                     speaker_embedding_index = (
-                        9 if self.return_duration_token_types is True else 8
+                        9 if self.return_duration_symbol_type_ids is True else 8
                     )
                     speaker_embedding[i, :] = row[speaker_embedding_index].reshape(-1)
             else:
@@ -724,16 +724,16 @@ class TextAudioSpeakerCollate:
                 assert en_bert_padded is not None
                 en_bert_padded[i, :, : en_bert.size(1)] = en_bert
                 style_vec[i, :] = row[9]
-                if self.return_duration_token_types is True:
-                    assert duration_token_types_padded is not None
-                    duration_token_types = row[10]
-                    duration_token_types_padded[i, : duration_token_types.size(0)] = (
-                        duration_token_types
-                    )
+                if self.return_duration_symbol_type_ids is True:
+                    assert duration_symbol_type_ids_padded is not None
+                    duration_symbol_type_ids = row[10]
+                    duration_symbol_type_ids_padded[
+                        i, : duration_symbol_type_ids.size(0)
+                    ] = duration_symbol_type_ids
                 if self.use_speaker_embedding:
                     assert speaker_embedding is not None
                     speaker_embedding_index = (
-                        11 if self.return_duration_token_types is True else 10
+                        11 if self.return_duration_symbol_type_ids is True else 10
                     )
                     speaker_embedding[i, :] = row[speaker_embedding_index].reshape(-1)
 
@@ -753,11 +753,11 @@ class TextAudioSpeakerCollate:
                     bert_padded,
                     style_vec,
                 )
-                if self.return_duration_token_types is True:
-                    assert duration_token_types_padded is not None
+                if self.return_duration_symbol_type_ids is True:
+                    assert duration_symbol_type_ids_padded is not None
                     return (
                         *batch_items,
-                        duration_token_types_padded,
+                        duration_symbol_type_ids_padded,
                         speaker_embedding,
                     )
                 return (*batch_items, speaker_embedding)
@@ -774,9 +774,9 @@ class TextAudioSpeakerCollate:
                 bert_padded,
                 style_vec,
             )
-            if self.return_duration_token_types is True:
-                assert duration_token_types_padded is not None
-                return (*batch_items, duration_token_types_padded)
+            if self.return_duration_symbol_type_ids is True:
+                assert duration_symbol_type_ids_padded is not None
+                return (*batch_items, duration_symbol_type_ids_padded)
             return batch_items
         else:
             if self.use_speaker_embedding:
@@ -798,11 +798,11 @@ class TextAudioSpeakerCollate:
                     en_bert_padded,
                     style_vec,
                 )
-                if self.return_duration_token_types is True:
-                    assert duration_token_types_padded is not None
+                if self.return_duration_symbol_type_ids is True:
+                    assert duration_symbol_type_ids_padded is not None
                     return (
                         *batch_items,
-                        duration_token_types_padded,
+                        duration_symbol_type_ids_padded,
                         speaker_embedding,
                     )
                 return (*batch_items, speaker_embedding)
@@ -823,9 +823,9 @@ class TextAudioSpeakerCollate:
                 en_bert_padded,
                 style_vec,
             )
-            if self.return_duration_token_types is True:
-                assert duration_token_types_padded is not None
-                return (*batch_items, duration_token_types_padded)
+            if self.return_duration_symbol_type_ids is True:
+                assert duration_symbol_type_ids_padded is not None
+                return (*batch_items, duration_symbol_type_ids_padded)
             return batch_items
 
 

@@ -10,13 +10,13 @@ import torch
 
 from style_bert_vits2.models import commons
 from style_bert_vits2.models.models_nanairo import SynthesizerTrn
-from style_bert_vits2.nlp.symbols import DURATION_TOKEN_TYPE_NAMES
+from style_bert_vits2.nlp.symbols import DURATION_SYMBOL_TYPE_NAMES
 
 
 GENERATOR_DURATION_PARAM_PREFIXES = (
     "dp.",
     "sdp.",
-    "duration_token_type_emb.",
+    "duration_symbol_type_emb.",
 )
 GENERATOR_NO_WEIGHT_DECAY_MARKERS = (
     "bias",
@@ -159,26 +159,26 @@ def build_generator_optimizer_parameter_groups(
     return parameter_groups
 
 
-def collect_duration_type_metrics(
+def collect_duration_symbol_type_metrics(
     logw: torch.Tensor,
     logw_target: torch.Tensor,
     x_mask: torch.Tensor,
-    token_types: torch.Tensor | None,
+    duration_symbol_type_ids: torch.Tensor | None,
 ) -> dict[str, float]:
     """
-    DP の type 別 MSE と token 数を TensorBoard 用に集計する
+    DP の記号種別別 MSE と記号数を TensorBoard 用に集計する
 
     Args:
         logw (torch.Tensor): DP が予測した log duration
         logw_target (torch.Tensor): MAS 由来の教師 log duration
-        x_mask (torch.Tensor): 有効 token のマスク
-        token_types (torch.Tensor | None): duration token type ID
+        x_mask (torch.Tensor): 有効位置のマスク
+        duration_symbol_type_ids (torch.Tensor | None): duration 記号種別 ID
 
     Returns:
         dict[str, float]: TensorBoard に出力するスカラー
     """
 
-    if token_types is None:
+    if duration_symbol_type_ids is None:
         return {}
 
     metrics: dict[str, float] = {}
@@ -188,11 +188,13 @@ def collect_duration_type_metrics(
     if valid_count == 0:
         return metrics
 
-    for type_id, type_name in enumerate(DURATION_TOKEN_TYPE_NAMES):
-        type_mask = (token_types == type_id) & valid_mask
+    for type_id, type_name in enumerate(DURATION_SYMBOL_TYPE_NAMES):
+        type_mask = (duration_symbol_type_ids == type_id) & valid_mask
         type_count = int(type_mask.sum().item())
-        metrics[f"count/dur_types/{type_name}"] = float(type_count)
-        metrics[f"fraction/dur_types/{type_name}"] = type_count / valid_count
+        metrics[f"count/duration_symbol_types/{type_name}"] = float(type_count)
+        metrics[f"fraction/duration_symbol_types/{type_name}"] = (
+            type_count / valid_count
+        )
         if type_count > 0:
             metrics[f"loss/dur_dp/{type_name}"] = float(
                 squared_error[type_mask].mean().item()
@@ -207,7 +209,7 @@ def collect_duration_residual_tail_metrics(
     x_mask: torch.Tensor,
     g: torch.Tensor,
     logw: torch.Tensor,
-    token_types: torch.Tensor | None,
+    duration_symbol_type_ids: torch.Tensor | None,
 ) -> dict[str, float]:
     """
     SDP sampled residual の tail を観測専用メトリクスとして集計する
@@ -215,22 +217,24 @@ def collect_duration_residual_tail_metrics(
     Args:
         net_g (Any): DDP でラップされた Generator
         hidden_x (torch.Tensor): TextEncoder の出力
-        x_mask (torch.Tensor): 有効 token のマスク
+        x_mask (torch.Tensor): 有効位置のマスク
         g (torch.Tensor): 話者条件ベクトル
         logw (torch.Tensor): DP が予測した log duration
-        token_types (torch.Tensor | None): duration token type ID
+        duration_symbol_type_ids (torch.Tensor | None): duration 記号種別 ID
 
     Returns:
         dict[str, float]: TensorBoard に出力するスカラー
     """
 
-    if token_types is None:
+    if duration_symbol_type_ids is None:
         return {}
 
     metrics: dict[str, float] = {}
     with torch.no_grad():
         model = unwrap_generator(net_g)
-        duration_x = model.apply_duration_token_types(hidden_x, token_types)
+        duration_x = model.apply_duration_symbol_type_ids(
+            hidden_x, duration_symbol_type_ids
+        )
         sampled_logw = model.sdp(
             duration_x,
             x_mask,
@@ -241,8 +245,10 @@ def collect_duration_residual_tail_metrics(
         residual_abs = (sampled_logw - logw.detach()).abs().squeeze(1).float()
         valid_mask = x_mask.detach().squeeze(1) > 0.5
 
-        for type_id, type_name in enumerate(DURATION_TOKEN_TYPE_NAMES):
-            type_values = residual_abs[(token_types == type_id) & valid_mask]
+        for type_id, type_name in enumerate(DURATION_SYMBOL_TYPE_NAMES):
+            type_values = residual_abs[
+                (duration_symbol_type_ids == type_id) & valid_mask
+            ]
             if type_values.numel() == 0:
                 continue
             metrics[f"duration_residual/{type_name}/p50"] = float(
@@ -294,7 +300,7 @@ def clip_generator_gradients(
         "sdp_posterior": [],
         "sdp_flow": [],
         "sdp_other": [],
-        "token_type_emb": [],
+        "symbol_type_emb": [],
     }
 
     for parameter_name, parameter in model.named_parameters():
@@ -314,8 +320,8 @@ def clip_generator_gradients(
                 duration_prefix_parameters["sdp_posterior"].append(parameter)
             elif parameter_name.startswith("sdp."):
                 duration_prefix_parameters["sdp_other"].append(parameter)
-            elif parameter_name.startswith("duration_token_type_emb."):
-                duration_prefix_parameters["token_type_emb"].append(parameter)
+            elif parameter_name.startswith("duration_symbol_type_emb."):
+                duration_prefix_parameters["symbol_type_emb"].append(parameter)
         else:
             other_parameters.append(parameter)
 

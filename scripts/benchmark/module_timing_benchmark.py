@@ -98,11 +98,13 @@ def measure_module_timings(
 
     # テキストを処理して入力テンソルを準備
     # JP-Extra モデルでは ja_bert のみ使用する (bert_ori, en_bert は使用しない)
-    _bert_ori, ja_bert, _en_bert, phones, tones, lang_ids, _token_types = get_text(
-        text,
-        Languages.JP,
-        hps,
-        device,
+    _bert_ori, ja_bert, _en_bert, phones, tones, lang_ids, _duration_symbol_type_ids = (
+        get_text(
+            text,
+            Languages.JP,
+            hps,
+            device,
+        )
     )
 
     # テンソルを GPU に転送

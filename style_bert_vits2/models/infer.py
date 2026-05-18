@@ -25,9 +25,13 @@ from style_bert_vits2.nlp import (
     clean_text_with_given_phone_tone,
     cleaned_text_to_sequence,
     extract_bert_feature,
-    phone_symbols_to_duration_token_types,
+    phone_symbols_to_duration_symbol_type_ids,
 )
-from style_bert_vits2.nlp.symbols import NANAIRO_SYMBOLS, SYMBOLS
+from style_bert_vits2.nlp.symbols import (
+    DURATION_SYMBOL_TYPE_BLANK,
+    NANAIRO_SYMBOLS,
+    SYMBOLS,
+)
 
 
 class EmptyInitOnDevice(TorchFunctionMode):
@@ -92,8 +96,8 @@ def get_net_g(
                 slm=hps.model.slm,
                 use_transformer_duration_predictor=hps.model.use_transformer_duration_predictor,
                 duration_filter_channels=hps.model.duration_filter_channels,
-                use_duration_token_type_embedding=hps.model.use_duration_token_type_embedding,
-                duration_token_type_count=hps.model.duration_token_type_count,
+                use_duration_symbol_type_embedding=hps.model.use_duration_symbol_type_embedding,
+                duration_symbol_type_count=hps.model.duration_symbol_type_count,
                 use_speaker_adapter=hps.model.use_speaker_adapter,
                 speaker_adapter_input_dim=hps.model.speaker_adapter_input_dim,
                 speaker_adapter_bottleneck_dim=hps.model.speaker_adapter_bottleneck_dim,
@@ -220,16 +224,18 @@ def get_text(
         raise_yomi_error=False,
         jtalk=jtalk,
     )
-    duration_token_types: torch.Tensor | None = None
+    duration_symbol_type_ids: torch.Tensor | None = None
     if (
         is_nanairo_like_model is True
-        and hps.model.use_duration_token_type_embedding is True
+        and hps.model.use_duration_symbol_type_embedding is True
     ):
-        duration_token_type_seq = phone_symbols_to_duration_token_types(
+        duration_symbol_type_id_seq = phone_symbols_to_duration_symbol_type_ids(
             phone,
             add_blank=hps.data.add_blank,
         )
-        duration_token_types = torch.LongTensor(duration_token_type_seq).to(device)
+        duration_symbol_type_ids = torch.LongTensor(duration_symbol_type_id_seq).to(
+            device
+        )
 
     phone, tone, language = cleaned_text_to_sequence(
         phone,
@@ -249,17 +255,17 @@ def get_text(
         word2ph[0] += 1
 
     # Nanairo 用 duration 種別列は training/data_utils.py と同じく intersperse 後の音素列長と一致しなければならない
-    if duration_token_types is not None:
+    if duration_symbol_type_ids is not None:
         interspersed_phone = (
             commons.intersperse(phone_before_add_blank, 0)
             if hps.data.add_blank is True
             else phone_before_add_blank
         )
-        if duration_token_types.shape[0] != len(interspersed_phone):
+        if duration_symbol_type_ids.shape[0] != len(interspersed_phone):
             mismatch_msg = (
-                f"duration_token_types length ({duration_token_types.shape[0]}) != "
+                f"duration_symbol_type_ids length ({duration_symbol_type_ids.shape[0]}) != "
                 f"interspersed phone sequence length ({len(interspersed_phone)}); "
-                f"verify phone_symbols_to_duration_token_types matches "
+                f"verify phone_symbols_to_duration_symbol_type_ids matches "
                 f"cleaned_text_to_sequence with add_blank / commons.intersperse"
             )
             logger.error(mismatch_msg)
@@ -320,7 +326,7 @@ def get_text(
     phone = torch.LongTensor(phone).to(device)
     tone = torch.LongTensor(tone).to(device)
     language = torch.LongTensor(language).to(device)
-    return zh_bert, ja_bert, en_bert, phone, tone, language, duration_token_types
+    return zh_bert, ja_bert, en_bert, phone, tone, language, duration_symbol_type_ids
 
 
 def prepare_inference_data(
@@ -355,20 +361,22 @@ def prepare_inference_data(
     infer() と infer_stream() で共通に使用される。
 
     Returns:
-        tuple: (x_tst, x_tst_lengths, sid_tensor, tones, lang_ids, zh_bert, ja_bert, en_bert, style_vec_tensor, token_types)
+        tuple: (x_tst, x_tst_lengths, sid_tensor, tones, lang_ids, zh_bert, ja_bert, en_bert, style_vec_tensor, duration_symbol_type_ids)
     """
     # テキストから BERT 特徴量・音素列・アクセント列・言語 ID を取得
     # zh_bert, ja_bert, en_bert のうち、指定された言語に対応する1つのみが実際の特徴量を持ち、残りの2つは空のテンソルになる
-    zh_bert, ja_bert, en_bert, phones, tones, lang_ids, token_types = get_text(
-        text,
-        language,
-        hps,
-        device,
-        assist_text=assist_text,
-        assist_text_weight=assist_text_weight,
-        given_phone=given_phone,
-        given_tone=given_tone,
-        jtalk=jtalk,
+    zh_bert, ja_bert, en_bert, phones, tones, lang_ids, duration_symbol_type_ids = (
+        get_text(
+            text,
+            language,
+            hps,
+            device,
+            assist_text=assist_text,
+            assist_text_weight=assist_text_weight,
+            given_phone=given_phone,
+            given_tone=given_tone,
+            jtalk=jtalk,
+        )
     )
     if skip_start:
         phones = phones[3:]
@@ -377,8 +385,8 @@ def prepare_inference_data(
         zh_bert = zh_bert[:, 3:]
         ja_bert = ja_bert[:, 3:]
         en_bert = en_bert[:, 3:]
-        if token_types is not None:
-            token_types = token_types[3:]
+        if duration_symbol_type_ids is not None:
+            duration_symbol_type_ids = duration_symbol_type_ids[3:]
     if skip_end:
         phones = phones[:-2]
         tones = tones[:-2]
@@ -386,8 +394,8 @@ def prepare_inference_data(
         zh_bert = zh_bert[:, :-2]
         ja_bert = ja_bert[:, :-2]
         en_bert = en_bert[:, :-2]
-        if token_types is not None:
-            token_types = token_types[:-2]
+        if duration_symbol_type_ids is not None:
+            duration_symbol_type_ids = duration_symbol_type_ids[:-2]
 
     x_tst = phones.unsqueeze(0)
     tones = tones.unsqueeze(0)
@@ -395,8 +403,8 @@ def prepare_inference_data(
     zh_bert = zh_bert.unsqueeze(0)
     ja_bert = ja_bert.unsqueeze(0)
     en_bert = en_bert.unsqueeze(0)
-    if token_types is not None:
-        token_types = token_types.unsqueeze(0)
+    if duration_symbol_type_ids is not None:
+        duration_symbol_type_ids = duration_symbol_type_ids.unsqueeze(0)
     x_tst_lengths = torch.LongTensor([phones.size(0)]).to(device)
     style_vec_tensor = torch.from_numpy(style_vec).to(device).unsqueeze(0)
 
@@ -443,12 +451,13 @@ def prepare_inference_data(
                 pool_type="vits2_en_bert",
                 use_pool=True,
             )
-        if token_types is not None:
-            token_types, _ = pad_sequence_tensor(
-                token_types,
+        if duration_symbol_type_ids is not None:
+            duration_symbol_type_ids, _ = pad_sequence_tensor(
+                duration_symbol_type_ids,
                 length_dim=1,
-                pool_type="vits2_duration_token_types",
+                pool_type="vits2_duration_symbol_type_ids",
                 use_pool=True,
+                padding_value=DURATION_SYMBOL_TYPE_BLANK,
             )
 
     del phones
@@ -464,7 +473,7 @@ def prepare_inference_data(
         ja_bert,
         en_bert,
         style_vec_tensor,
-        token_types,
+        duration_symbol_type_ids,
     )
 
 
@@ -522,7 +531,7 @@ def predict_token_durations(
             ja_bert,
             en_bert,
             style_vec_tensor,
-            token_types,
+            duration_symbol_type_ids,
         ) = prepare_inference_data(
             text,
             style_vec=style_vec,
@@ -604,10 +613,12 @@ def predict_token_durations(
         # DP（deterministic）は揺らぎが少なく、比較的安定しやすい
         net_g_duration = cast(Any, net_g)
         duration_x = x
-        if is_nanairo_like_model is True and token_types is not None:
-            duration_x = cast(SynthesizerTrnNanairo, net_g).apply_duration_token_types(
+        if is_nanairo_like_model is True and duration_symbol_type_ids is not None:
+            duration_x = cast(
+                SynthesizerTrnNanairo, net_g
+            ).apply_duration_symbol_type_ids(
                 x,
-                token_types,
+                duration_symbol_type_ids,
             )
         logw = net_g_duration.sdp(
             duration_x,
@@ -867,7 +878,7 @@ def infer(
             ja_bert,
             en_bert,
             style_vec_tensor,
-            token_types,
+            duration_symbol_type_ids,
         ) = prepare_inference_data(
             text,
             style_vec=style_vec,
@@ -936,7 +947,7 @@ def infer(
                     durations_frames_override_mask=durations_frames_override_mask,
                     speaker_embedding=speaker_embedding,
                     g_adjust=g_adjust,
-                    token_types=token_types,
+                    duration_symbol_type_ids=duration_symbol_type_ids,
                 )
             else:
                 output = cast(SynthesizerTrnJPExtra, net_g).infer(
@@ -987,7 +998,7 @@ def infer(
             ja_bert,
             en_bert,
             style_vec_tensor,
-            token_types,
+            duration_symbol_type_ids,
         )
 
         # CUDA メモリを解放する (デフォルトでは True)
@@ -1052,7 +1063,7 @@ def infer_stream(
             ja_bert,
             en_bert,
             style_vec_tensor,
-            token_types,
+            duration_symbol_type_ids,
         ) = prepare_inference_data(
             text,
             style_vec=style_vec,
@@ -1107,7 +1118,7 @@ def infer_stream(
                     use_fp16=use_fp16,
                     durations_frames_override=durations_frames_override,
                     durations_frames_override_mask=durations_frames_override_mask,
-                    token_types=token_types,
+                    duration_symbol_type_ids=duration_symbol_type_ids,
                 )
             else:
                 z, y_mask, g, attn, z_p, m_p, logs_p = cast(
@@ -1227,7 +1238,7 @@ def infer_stream(
             ja_bert,
             en_bert,
             style_vec_tensor,
-            token_types,
+            duration_symbol_type_ids,
             z,
             y_mask,
             g,

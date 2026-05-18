@@ -11,7 +11,7 @@ from pathlib import Path
 from pydantic import BaseModel, ConfigDict, model_validator
 
 from style_bert_vits2.logging import logger
-from style_bert_vits2.nlp.symbols import DURATION_TOKEN_TYPE_COUNT
+from style_bert_vits2.nlp.symbols import DURATION_SYMBOL_TYPE_COUNT
 
 
 class HyperParametersTrain(BaseModel):
@@ -113,8 +113,8 @@ class HyperParametersModel(BaseModel):
     gin_channels: int = 512
     use_transformer_duration_predictor: bool = False
     duration_filter_channels: int = 192
-    use_duration_token_type_embedding: bool = False
-    duration_token_type_count: int = DURATION_TOKEN_TYPE_COUNT
+    use_duration_symbol_type_embedding: bool = False
+    duration_symbol_type_count: int = DURATION_SYMBOL_TYPE_COUNT
     use_speaker_adapter: bool = False
     speaker_adapter_input_dim: int = 384
     speaker_adapter_bottleneck_dim: int = 96

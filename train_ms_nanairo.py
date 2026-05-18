@@ -84,7 +84,7 @@ from training.duration_observability import (
     build_generator_optimizer_parameter_groups,
     clip_generator_gradients,
     collect_duration_residual_tail_metrics,
-    collect_duration_type_metrics,
+    collect_duration_symbol_type_metrics,
 )
 from training.losses import (
     WavLMLoss,
@@ -340,12 +340,12 @@ def run():
         hps.data,
         wavs_dir=paths.wavs_dir,
         spec_cache=runtime_config.spec_cache,
-        return_duration_token_types=hps.model.use_duration_token_type_embedding,
+        return_duration_symbol_type_ids=hps.model.use_duration_symbol_type_embedding,
     )
     collate_fn = TextAudioSpeakerCollate(
         use_jp_extra=True,
         use_speaker_embedding=hps.data.use_speaker_embedding,
-        return_duration_token_types=hps.model.use_duration_token_type_embedding,
+        return_duration_symbol_type_ids=hps.model.use_duration_symbol_type_embedding,
     )
     if not args.not_use_custom_batch_sampler:
         train_sampler = DistributedBucketSampler(
@@ -409,7 +409,7 @@ def run():
             hps.data,
             wavs_dir=paths.wavs_dir,
             spec_cache=runtime_config.spec_cache,
-            return_duration_token_types=hps.model.use_duration_token_type_embedding,
+            return_duration_symbol_type_ids=hps.model.use_duration_symbol_type_embedding,
         )
         eval_loader = DataLoader(
             eval_dataset,
@@ -493,8 +493,8 @@ def run():
         slm=hps.model.slm,
         use_transformer_duration_predictor=hps.model.use_transformer_duration_predictor,
         duration_filter_channels=hps.model.duration_filter_channels,
-        use_duration_token_type_embedding=hps.model.use_duration_token_type_embedding,
-        duration_token_type_count=hps.model.duration_token_type_count,
+        use_duration_symbol_type_embedding=hps.model.use_duration_symbol_type_embedding,
+        duration_symbol_type_count=hps.model.duration_symbol_type_count,
         use_speaker_adapter=hps.model.use_speaker_adapter,
         speaker_adapter_input_dim=hps.model.speaker_adapter_input_dim,
         speaker_adapter_bottleneck_dim=hps.model.speaker_adapter_bottleneck_dim,
@@ -1033,10 +1033,10 @@ def train_and_evaluate(
         net_wd.train()
 
     use_speaker_embedding = getattr(hps.data, "use_speaker_embedding", False)
-    use_duration_token_types = hps.model.use_duration_token_type_embedding
+    use_duration_symbol_type_ids = hps.model.use_duration_symbol_type_embedding
     should_use_duration_clip = (
         hps.model.use_transformer_duration_predictor is True
-        or use_duration_token_types is True
+        or use_duration_symbol_type_ids is True
     )
     disable_discriminators = (
         hps.train.train_speaker_adapter_only
@@ -1066,7 +1066,7 @@ def train_and_evaluate(
     is_accumulating = gradient_accumulation_steps > 1
 
     for batch_idx, batch in enumerate(train_loader):
-        if use_speaker_embedding and use_duration_token_types:
+        if use_speaker_embedding and use_duration_symbol_type_ids:
             (
                 x,
                 x_lengths,
@@ -1079,7 +1079,7 @@ def train_and_evaluate(
                 language,
                 bert,
                 style_vec,
-                token_types,
+                duration_symbol_type_ids,
                 speaker_embedding,
             ) = batch
         elif use_speaker_embedding:
@@ -1097,8 +1097,8 @@ def train_and_evaluate(
                 style_vec,
                 speaker_embedding,
             ) = batch
-            token_types = None
-        elif use_duration_token_types:
+            duration_symbol_type_ids = None
+        elif use_duration_symbol_type_ids:
             (
                 x,
                 x_lengths,
@@ -1111,7 +1111,7 @@ def train_and_evaluate(
                 language,
                 bert,
                 style_vec,
-                token_types,
+                duration_symbol_type_ids,
             ) = batch
             speaker_embedding = None
         else:
@@ -1129,7 +1129,7 @@ def train_and_evaluate(
                 style_vec,
             ) = batch
             speaker_embedding = None
-            token_types = None
+            duration_symbol_type_ids = None
         if net_g.module.use_noise_scaled_mas:
             current_mas_noise_scale = (
                 net_g.module.mas_noise_scale_initial
@@ -1153,8 +1153,10 @@ def train_and_evaluate(
         language = language.cuda(local_rank, non_blocking=True)
         bert = bert.cuda(local_rank, non_blocking=True)
         style_vec = style_vec.cuda(local_rank, non_blocking=True)
-        if token_types is not None:
-            token_types = token_types.cuda(local_rank, non_blocking=True)
+        if duration_symbol_type_ids is not None:
+            duration_symbol_type_ids = duration_symbol_type_ids.cuda(
+                local_rank, non_blocking=True
+            )
         if speaker_embedding is not None:
             speaker_embedding = speaker_embedding.cuda(local_rank, non_blocking=True)
 
@@ -1184,7 +1186,7 @@ def train_and_evaluate(
                 bert,
                 style_vec,
                 speaker_embedding,
-                token_types=token_types,
+                duration_symbol_type_ids=duration_symbol_type_ids,
             )
             mel = spec_to_mel_torch(
                 spec,
@@ -1521,13 +1523,13 @@ def train_and_evaluate(
                     }
                 )
                 scalar_dict.update(generator_grad_metrics)
-                if use_duration_token_types is True:
+                if use_duration_symbol_type_ids is True:
                     scalar_dict.update(
-                        collect_duration_type_metrics(
+                        collect_duration_symbol_type_metrics(
                             logw=logw,
                             logw_target=logw_,
                             x_mask=x_mask,
-                            token_types=token_types,
+                            duration_symbol_type_ids=duration_symbol_type_ids,
                         )
                     )
                     scalar_dict.update(
@@ -1537,7 +1539,7 @@ def train_and_evaluate(
                             x_mask=x_mask,
                             g=g,
                             logw=logw,
-                            token_types=token_types,
+                            duration_symbol_type_ids=duration_symbol_type_ids,
                         )
                     )
                 scalar_dict.update({f"loss/g/{i}": v for i, v in enumerate(losses_gen)})
@@ -1627,6 +1629,7 @@ def train_and_evaluate(
 
                 # 分布診断メトリクス
                 ## 診断専用なので勾配を持たせず、TensorBoard と警告ログにだけ利用する
+                assert g is not None
                 if speaker_embedding is not None and g.shape[0] >= 4:
                     if adapter_dist_metrics is None:
                         with torch.no_grad():
@@ -1810,7 +1813,7 @@ def evaluate(
     print()
     logger.info("Evaluating ...")
     use_speaker_embedding = getattr(hps.data, "use_speaker_embedding", False)
-    use_duration_token_types = hps.model.use_duration_token_type_embedding
+    use_duration_symbol_type_ids = hps.model.use_duration_symbol_type_embedding
 
     # Adapter 経由 g の分布診断: eval_loader 全体で g を集約し、分布縮小を Aggregate 統計で検出する
     ## ステップ単位ログ (バッチ内分散) はノイズが大きいため、より信頼性の高い検査を eval 時に行う
@@ -1829,7 +1832,7 @@ def evaluate(
                     t.clone() if isinstance(t, torch.Tensor) else t for t in batch
                 )
 
-            if use_speaker_embedding and use_duration_token_types:
+            if use_speaker_embedding and use_duration_symbol_type_ids:
                 (
                     x,
                     x_lengths,
@@ -1842,7 +1845,7 @@ def evaluate(
                     language,
                     bert,
                     style_vec,
-                    token_types,
+                    duration_symbol_type_ids,
                     speaker_embedding,
                 ) = batch
             elif use_speaker_embedding:
@@ -1860,8 +1863,8 @@ def evaluate(
                     style_vec,
                     speaker_embedding,
                 ) = batch
-                token_types = None
-            elif use_duration_token_types:
+                duration_symbol_type_ids = None
+            elif use_duration_symbol_type_ids:
                 (
                     x,
                     x_lengths,
@@ -1874,7 +1877,7 @@ def evaluate(
                     language,
                     bert,
                     style_vec,
-                    token_types,
+                    duration_symbol_type_ids,
                 ) = batch
                 speaker_embedding = None
             else:
@@ -1892,7 +1895,7 @@ def evaluate(
                     style_vec,
                 ) = batch
                 speaker_embedding = None
-                token_types = None
+                duration_symbol_type_ids = None
             x, x_lengths = x.cuda(), x_lengths.cuda()
             spec, spec_lengths = spec.cuda(), spec_lengths.cuda()
             y, y_lengths = y.cuda(), y_lengths.cuda()
@@ -1901,8 +1904,8 @@ def evaluate(
             tone = tone.cuda()
             language = language.cuda()
             style_vec = style_vec.cuda()
-            if token_types is not None:
-                token_types = token_types.cuda()
+            if duration_symbol_type_ids is not None:
+                duration_symbol_type_ids = duration_symbol_type_ids.cuda()
             if speaker_embedding is not None:
                 speaker_embedding = speaker_embedding.cuda()
 
@@ -1932,7 +1935,7 @@ def evaluate(
                     max_len=1000,
                     sdp_ratio=0.0 if not use_sdp else 1.0,
                     speaker_embedding=speaker_embedding,
-                    token_types=token_types,
+                    duration_symbol_type_ids=duration_symbol_type_ids,
                 )
                 y_hat_lengths = mask.sum([1, 2]).long() * hps.data.hop_length
                 # 以降のログは計算が重い気がするし誰も見てない気がするのでコメントアウト
@@ -1980,7 +1983,7 @@ def evaluate(
         # 固定サンプルによる定期合成 (学習進行に伴う品質変化の追跡用)
         # 常に同一入力から合成することで、ステップ間の品質推移を TensorBoard で聴き比べ可能にする
         if _fixed_eval_batch is not None:
-            if use_speaker_embedding and use_duration_token_types:
+            if use_speaker_embedding and use_duration_symbol_type_ids:
                 (
                     fixed_x,
                     fixed_x_lengths,
@@ -1993,7 +1996,7 @@ def evaluate(
                     fixed_language,
                     fixed_bert,
                     fixed_style_vec,
-                    fixed_token_types,
+                    fixed_duration_symbol_type_ids,
                     fixed_speaker_embedding,
                 ) = _fixed_eval_batch
             elif use_speaker_embedding:
@@ -2011,8 +2014,8 @@ def evaluate(
                     fixed_style_vec,
                     fixed_speaker_embedding,
                 ) = _fixed_eval_batch
-                fixed_token_types = None
-            elif use_duration_token_types:
+                fixed_duration_symbol_type_ids = None
+            elif use_duration_symbol_type_ids:
                 (
                     fixed_x,
                     fixed_x_lengths,
@@ -2025,7 +2028,7 @@ def evaluate(
                     fixed_language,
                     fixed_bert,
                     fixed_style_vec,
-                    fixed_token_types,
+                    fixed_duration_symbol_type_ids,
                 ) = _fixed_eval_batch
                 fixed_speaker_embedding = None
             else:
@@ -2043,7 +2046,7 @@ def evaluate(
                     fixed_style_vec,
                 ) = _fixed_eval_batch
                 fixed_speaker_embedding = None
-                fixed_token_types = None
+                fixed_duration_symbol_type_ids = None
             fixed_x = fixed_x.cuda()
             fixed_x_lengths = fixed_x_lengths.cuda()
             fixed_spec = fixed_spec.cuda()
@@ -2055,8 +2058,8 @@ def evaluate(
             fixed_tone = fixed_tone.cuda()
             fixed_language = fixed_language.cuda()
             fixed_style_vec = fixed_style_vec.cuda()
-            if fixed_token_types is not None:
-                fixed_token_types = fixed_token_types.cuda()
+            if fixed_duration_symbol_type_ids is not None:
+                fixed_duration_symbol_type_ids = fixed_duration_symbol_type_ids.cuda()
             if fixed_speaker_embedding is not None:
                 fixed_speaker_embedding = fixed_speaker_embedding.cuda()
             for use_sdp in [True, False]:
@@ -2072,7 +2075,7 @@ def evaluate(
                     max_len=1000,
                     sdp_ratio=0.0 if not use_sdp else 1.0,
                     speaker_embedding=fixed_speaker_embedding,
-                    token_types=fixed_token_types,
+                    duration_symbol_type_ids=fixed_duration_symbol_type_ids,
                 )
                 y_hat_lengths = mask.sum([1, 2]).long() * hps.data.hop_length
                 audio_dict[f"fixed/audio_{use_sdp}"] = y_hat[0, :, : y_hat_lengths[0]]
