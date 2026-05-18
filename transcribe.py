@@ -99,7 +99,7 @@ def transcribe_files_with_hf_whisper(
         "no_repeat_ngram_size": no_repeat_ngram_size,
     }
     logger.info(f"generate_kwargs: {generate_kwargs}, loading pipeline...")
-    pipe = pipeline(
+    pipe = pipeline(  # pyright: ignore[reportCallIssue]
         model=model_id,
         max_new_tokens=128,
         chunk_length_s=30,
