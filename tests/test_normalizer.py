@@ -7,7 +7,10 @@ normalize_text() のテスト。
 
 import pytest
 
-from style_bert_vits2.nlp.japanese.normalizer import normalize_text
+from style_bert_vits2.nlp.japanese.normalizer import (
+    __IRODORI_SYMBOL_REPLACE_MAP,
+    normalize_text,
+)
 
 
 def test_normalize_text_basic():
@@ -27,6 +30,204 @@ def test_normalize_text_basic():
     # 重複する記号
     assert normalize_text("！！！？？？。。。") == "!!!???..."
     assert normalize_text("。。。、、、") == "...,,,"
+
+
+def _build_irodori_symbol_replace_map_cases() -> list[tuple[str, str]]:
+    """__IRODORI_SYMBOL_REPLACE_MAP の各エントリをひらがな文脈で検証するケースを生成する"""
+    cases: list[tuple[str, str]] = []
+    for key, value in __IRODORI_SYMBOL_REPLACE_MAP.items():
+        if key == "\n":
+            continue
+        cases.append((f"あ{key}い", f"あ{value}い"))
+    return cases
+
+
+def _build_dash_variant_between_japanese_cases() -> list[tuple[str, str]]:
+    """日本語間のダッシュ変種が半角ハイフンとして保持されるケース"""
+    dash_chars = [
+        "-",
+        "\u02d7",
+        "\u2010",
+        "\u2012",
+        "\u2013",
+        "\u2014",
+        "\u2015",
+        "\u2212",
+        "\u2500",
+        "\u2501",
+        "\u2e3a",
+        "\u2e3b",
+    ]
+    cases: list[tuple[str, str]] = []
+    for dash_char in dash_chars:
+        cases.append((f"あ{dash_char}い", "あ-い"))
+        cases.append((f"東京{dash_char}大阪", "東京-大阪"))
+    return cases
+
+
+def _build_irodori_fullwidth_punctuation_variant_cases() -> list[tuple[str, str]]:
+    """NFKC で半角化される全角句読点・括弧の入力を、自然な日本語表記へ戻すケース"""
+    return [
+        # 句読点
+        ("こんにちは。さようなら。", "こんにちは。さようなら。"),
+        ("おはよう、こんばんは、", "おはよう、こんばんは、"),
+        ("すごい!やばい!", "すごい！やばい！"),
+        ("なに?どうして?", "なに？どうして？"),
+        ("テスト，です", "テスト、です"),
+        ("終了．", "終了。"),
+        ("項目：名称", "項目、名称"),
+        ("A；B", "A、B"),
+        # 括弧
+        ("(テスト)", "（テスト）"),
+        ("（全角）", "（全角）"),
+        ("[引用]", "「引用」"),
+        ("【見出し】", "「見出し」"),
+        ("《書名》", "「書名」"),
+        # 鉤括弧・引用符
+        ("「すごい！」と聞いた？", "「すごい！」と聞いた？"),
+        ("\u201ctest\u201d", "「テスト」"),
+        ("\u2018test\u2019", "「テスト」"),
+        # 三点リーダー
+        ("…", "…"),
+        ("···", "…"),
+        ("・・・", "…"),
+        # 重複記号
+        ("！！！？？？。。。", "！！！？？？。。。"),
+        ("。。。、、、", "。。。、、、"),
+    ]
+
+
+def _build_irodori_differs_from_sbv2_cases() -> list[tuple[str, str, str]]:
+    """Irodori と SBV2 で句読点の正規化結果が異なるケース (text, irodori_expected, sbv2_expected)"""
+    return [
+        (
+            "こんにちは。さようなら。",
+            "こんにちは。さようなら。",
+            "こんにちは.さようなら.",
+        ),
+        ("おはよう、こんばんは、", "おはよう、こんばんは、", "おはよう,こんばんは,"),
+        ("すごい！やばい！", "すごい！やばい！", "すごい!やばい!"),
+        ("「テスト」", "「テスト」", "'テスト'"),
+        ("(確認)", "（確認）", "'確認'"),
+        ("なるほど…。", "なるほど…。", "なるほど...."),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    _build_irodori_symbol_replace_map_cases(),
+)
+def test_normalize_text_for_irodori_symbol_replace_map(text: str, expected: str):
+    """Irodori 記号置換マップの各エントリが自然な日本語表記へ変換される"""
+
+    assert normalize_text(text, for_irodori=True) == expected
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    _build_irodori_fullwidth_punctuation_variant_cases(),
+)
+def test_normalize_text_for_irodori_fullwidth_punctuation_variants(
+    text: str, expected: str
+):
+    """全角句読点の保持と、NFKC 半角化後の日本語表記への復元"""
+
+    assert normalize_text(text, for_irodori=True) == expected
+
+
+@pytest.mark.parametrize(
+    ("text", "irodori_expected", "sbv2_expected"),
+    _build_irodori_differs_from_sbv2_cases(),
+)
+def test_normalize_text_for_irodori_differs_from_sbv2_on_punctuation(
+    text: str, irodori_expected: str, sbv2_expected: str
+):
+    """Irodori は自然な日本語表記、SBV2 は symbols.PUNCTUATIONS の半角記号へ正規化する"""
+
+    assert normalize_text(text, for_irodori=True) == irodori_expected
+    assert normalize_text(text, for_irodori=False) == sbv2_expected
+
+
+def test_normalize_text_for_irodori_whitespace_and_newlines():
+    """空白・改行を自然な日本語の句点へ変換する"""
+
+    assert normalize_text("text\u3000text", for_irodori=True) == "テキスト。テキスト"
+    assert normalize_text("text\ntext", for_irodori=True) == "テキスト。テキスト"
+    assert normalize_text("上段\n下段", for_irodori=True) == "上段。下段"
+
+
+def test_normalize_text_for_irodori_retains_pause_apostrophe():
+    """
+    号室番号等のポーズ用先頭 ' は鉤括弧化せず残す。
+
+    SBV2 と同様に数字の桁区切りポーズとして使われるため、
+    ペアになっていない ' はそのまま維持する。
+    """
+    assert (
+        normalize_text("グリーンコート赤坂409号室", for_irodori=True)
+        == "グリーンコート赤坂'ヨンマルキュー号室"
+    )
+    assert normalize_text("5090 32G", for_irodori=True) == "5090'32G"
+
+
+def test_normalize_text_for_irodori_dash_variants_to_halfwidth_hyphen():
+    """Irodori: ダッシュ変種は半角ハイフンへ正規化して保持する"""
+
+    assert normalize_text("あ—い", for_irodori=True) == "あ-い"
+    assert normalize_text("あ―い", for_irodori=True) == "あ-い"
+    assert normalize_text("あ─い", for_irodori=True) == "あ-い"
+    assert normalize_text("東京–大阪", for_irodori=True) == "東京-大阪"
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    _build_dash_variant_between_japanese_cases(),
+)
+def test_normalize_text_dash_variants_preserved_between_japanese_sbv2(
+    text: str, expected: str
+):
+    """SBV2: 日本語間のダッシュ変種は PUNCTUATIONS の半角ハイフンとして保持する"""
+
+    assert normalize_text(text) == expected
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    _build_dash_variant_between_japanese_cases(),
+)
+def test_normalize_text_dash_variants_preserved_between_japanese_irodori(
+    text: str, expected: str
+):
+    """Irodori: 日本語間のダッシュ変種は半角ハイフンとして保持する"""
+
+    assert normalize_text(text, for_irodori=True) == expected
+
+
+def test_normalize_text_english_hyphenated_words_still_merge():
+    """英単語内のハイフン連結は従来通り一語として扱う"""
+
+    assert normalize_text("good-pen") == "グッドペン"
+    assert normalize_text("OFDMEXA-modular") == "OFDMEXAモジュラー"
+    assert normalize_text("good-pen", for_irodori=True) == "グッドペン"
+
+
+def test_normalize_text_for_irodori_natural_prose_integration():
+    """実際の読み上げ文に近い複合ケースを自然な日本語表記へ正規化する"""
+
+    assert (
+        normalize_text(
+            "彼は「本当に!?\u3000そうなの?」と聞いた。",
+            for_irodori=True,
+        )
+        == "彼は「本当に！？。そうなの？」と聞いた。"
+    )
+    assert (
+        normalize_text(
+            "【重要】今日の予定(仮)を確認，お願いします…",
+            for_irodori=True,
+        )
+        == "「重要」今日の予定（仮）を確認、お願いします…"
+    )
 
 
 def test_normalize_text_zero_variant_characters():

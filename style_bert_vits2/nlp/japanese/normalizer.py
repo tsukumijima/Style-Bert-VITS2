@@ -689,6 +689,7 @@ __ENGLISH_WORD_PATTERN = re.compile(r"[a-zA-Z0-9]")
 # =========== replace_punctuation() で使う定数・正規表現パターン ===========
 
 # 記号類の正規化マップ
+## 置換先は style_bert_vits2.nlp.symbols.PUNCTUATIONS ( !, ?, …, ,, ., ', - ) に合わせた半角記号
 __SYMBOL_REPLACE_MAP = {
     "：": ",",
     "；": ",",
@@ -747,10 +748,70 @@ __SYMBOL_REPLACE_MAP = {
     # "～": "-",  # これは長音記号「ー」として扱うよう変更
     # "~": "-",  # これも長音記号「ー」として扱うよう変更
 }
+
+# 記号類の正規化マップ (Irodori-TTS 向け)
+## Irodori-TTS はテキストエンコーダーへ g2p レスで直接入力するため、
+## SBV2 の PUNCTUATIONS 向け半角記号正規化ではなく、通常の日本語文章に近い表記に変換する
+## replace_punctuation() は NFKC 正規化後に実行されるため、キーは NFKC 後に残る文字のみとする
+## 全角の「！」「？」等は NFKC で半角化されるので、半角キーから全角へ戻す
+__IRODORI_SYMBOL_REPLACE_MAP = {
+    "\n": "。",
+    ":": "、",
+    ";": "、",
+    ",": "、",
+    ".": "。",
+    "!": "！",
+    "?": "？",
+    "...": "…",
+    "···": "…",
+    "・・・": "…",
+    "\\": "。",
+    "·": "、",
+    "・": "、",
+    "$": "。",
+    "“": "「",
+    "”": "」",
+    '"': "「",
+    "(": "（",
+    ")": "）",
+    "《": "「",
+    "》": "」",
+    "【": "「",
+    "】": "」",
+    "[": "「",
+    "]": "」",
+    # NFKC 正規化後のハイフン・ダッシュの変種を全て通常半角ハイフン - \u002d に変換
+    "\u02d7": "\u002d",  # ˗, Modifier Letter Minus Sign
+    "\u2010": "\u002d",  # ‐, Hyphen,
+    # "\u2011": "\u002d",  # ‑, Non-Breaking Hyphen, NFKC により \u2010 に変換される
+    "\u2012": "\u002d",  # ‒, Figure Dash
+    "\u2013": "\u002d",  # –, En Dash
+    "\u2014": "\u002d",  # —, Em Dash
+    "\u2015": "\u002d",  # ―, Horizontal Bar
+    "\u2043": "\u002d",  # ⁃, Hyphen Bullet
+    "\u2212": "\u002d",  # −, Minus Sign
+    "\u23af": "\u002d",  # ⎯, Horizontal Line Extension
+    "\u23e4": "\u002d",  # ⏤, Straightness
+    "\u2500": "\u002d",  # ─, Box Drawings Light Horizontal
+    "\u2501": "\u002d",  # ━, Box Drawings Heavy Horizontal
+    "\u2e3a": "\u002d",  # ⸺, Two-Em Dash
+    "\u2e3b": "\u002d",  # ⸻, Three-Em Dash
+}
 # 記号類の正規化パターン
 __SYMBOL_REPLACE_PATTERN = re.compile(
     "|".join(re.escape(p) for p in __SYMBOL_REPLACE_MAP)
 )
+# Irodori-TTS 向けの正規化パターン
+## NFKC 正規化で全角の「！」「？」等が半角になるため、半角記号の置換キーも含めた専用パターンを使う
+__IRODORI_SYMBOL_REPLACE_PATTERN = re.compile(
+    "|".join(
+        re.escape(p)
+        for p in sorted(__IRODORI_SYMBOL_REPLACE_MAP, key=len, reverse=True)
+    )
+)
+# __convert_english_to_katakana() で引用符が半角 ' に正規化されたペアを鉤括弧へ戻す
+## 先頭のみの ' (号室番号のポーズマーカー等) は対象外
+__IRODORI_STRAIGHT_QUOTE_PAIR_PATTERN = re.compile(r"'([^']+)'")
 # 正規化後に残す文字種を表すパターン
 __PUNCTUATION_CLEANUP_PATTERN = re.compile(
     # ↓ ひらがな、カタカナ、漢字
@@ -765,11 +826,34 @@ __PUNCTUATION_CLEANUP_PATTERN = re.compile(
     + r"\uFF21-\uFF3A\uFF41-\uFF5A"
     # ↓ ギリシャ文字
     + r"\u0370-\u03FF\u1F00-\u1FFF"
-    # ↓ "!", "?", "…", ",", ".", "'", "-", 但し`…`はすでに`...`に変換されている
+    # ↓ PUNCTUATIONS (symbols.py) で定義された半角記号種。但し `…` はすでに `...` に変換されている
     # スラッシュは pyopenjtalk での形態素解析処理で重要なので、例外的に正規化後も残す (g2p 処理内で "." に変換される)
     # pyopenjtalk は「漢字の直後に2つ以上の連続する半角ハイフンがある場合」にその漢字の読みが取得できなくなる謎のバグがあるため、
     # 正規化処理でダッシュが変換されるなどして2つ以上の連続する半角ハイフンが生まれた場合、Long EM Dash に変換してから g2p 処理に渡す
     + "".join(re.escape(p) for p in (PUNCTUATIONS + ["/", "—"]))
+    + r"]+"
+)
+__IRODORI_PUNCTUATION_CLEANUP_PATTERN = re.compile(
+    # ↓ ひらがな、カタカナ、漢字
+    r"[^\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF\u3400-\u4DBF\u3005"
+    # ↓ 半角数字
+    + r"\u0030-\u0039"
+    # ↓ 全角数字
+    + r"\uFF10-\uFF19"
+    # ↓ 半角アルファベット（大文字と小文字）
+    + r"\u0041-\u005A\u0061-\u007A"
+    # ↓ 全角アルファベット（大文字と小文字）
+    + r"\uFF21-\uFF3A\uFF41-\uFF5A"
+    # ↓ ギリシャ文字
+    + r"\u0370-\u03FF\u1F00-\u1FFF"
+    # ↓ Irodori-TTS 側で自然な間として扱わせたい日本語記号
+    + "".join(
+        re.escape(p)
+        for p in (
+            PUNCTUATIONS
+            + ["。", "、", "！", "？", "…", "（", "）", "「", "」", "/", "—"]
+        )
+    )
     + r"]+"
 )
 
@@ -827,10 +911,12 @@ def __normalize_kanji_and_separators(text: str) -> str:
     return text
 
 
-def normalize_text(text: str) -> str:
+def normalize_text(text: str, *, for_irodori: bool = False) -> str:
     """
     日本語のテキストを正規化する。
-    結果は、ちょうど次の文字のみからなる：
+
+    デフォルト (for_irodori=False) の結果は symbols.PUNCTUATIONS に合わせ、
+    ちょうど次の文字のみからなる：
     - ひらがな
     - カタカナ（全角長音記号「ー」が入る！）
     - 漢字
@@ -852,6 +938,9 @@ def normalize_text(text: str) -> str:
 
     Args:
         text (str): 正規化するテキスト
+        for_irodori (bool): Irodori-TTS 向けの正規化ルールを適用するかどうか。
+            True のときはテキストエンコーダー入力用に、句読点・括弧・疑問符等を
+            全角役物 (、。！？「」… 等) に変換し、通常の日本語文章に近い形にする。
 
     Returns:
         str: 正規化されたテキスト
@@ -902,7 +991,8 @@ def normalize_text(text: str) -> str:
     # "5090 32G" → "509032G" → 「ゴジュウマンキュウセンサンジュウニ」のような数字連結を防ぐ
     res = __DIGIT_SPACE_DIGIT_PATTERN.sub(r"\1'\2", res)
 
-    res = replace_punctuation(res)  # 句読点等正規化、読めない文字を削除
+    # 句読点等正規化、読めない文字を削除
+    res = replace_punctuation(res, for_irodori=for_irodori)
 
     # 結合文字の濁点・半濁点を削除
     # 通常の「ば」等はそのままのこされる、「あ゛」は上で「あ゙」になりここで「あ」になる
@@ -2520,6 +2610,23 @@ def __convert_english_to_katakana(text: str) -> str:
                     i = j  # 数字の最後の位置まで進める
                     continue
 
+        # 日本語・数字間のハイフンは英単語連結として潰さず、そのまま残す
+        ## good-pen や A-B のように前後が英字の場合だけ current_word へ取り込む
+        if char == "-":
+            is_english_hyphen = (
+                bool(current_word)
+                and __ALPHABET_PATTERN.search(current_word) is not None
+            ) or (
+                __ALPHABET_PATTERN.match(prev_char) is not None
+                and __ALPHABET_PATTERN.match(next_char) is not None
+            )
+            if is_english_hyphen is False and current_word == "":
+                words.append(char)
+                is_english_converted.append(False)
+                prev_char = char
+                i += 1
+                continue
+
         # 英数字または特定の記号であれば current_word に追加
         if __ENGLISH_WORD_PATTERN.match(char) is not None or char in "-&+'":
             current_word += char
@@ -2650,17 +2757,32 @@ def __convert_english_to_katakana(text: str) -> str:
     return "".join(new_words)
 
 
-def replace_punctuation(text: str) -> str:
+def replace_punctuation(text: str, *, for_irodori: bool = False) -> str:
     """
-    句読点等を「.」「,」「!」「?」「'」「-」に正規化し、OpenJTalk で読みが取得できるもののみ残す：
-    漢字・平仮名・カタカナ、数字、アルファベット、ギリシャ文字
+    句読点等を正規化し、読み上げに不要な文字を除去する。
+
+    for_irodori=False の時、 symbols.PUNCTUATIONS に合わせて「.」「,」「!」「?」「'」「-」等の半角記号へ変換し、
+    ひらがな・カタカナ・漢字・数字・アルファベット・ギリシャ文字と共に残す。
+    for_irodori=True の時、自然な日本語表記 (。、！？「」… 等) に変換する。
 
     Args:
         text (str): 正規化するテキスト
+        for_irodori (bool): Irodori-TTS 向けの正規化ルールを適用するかどうか
 
     Returns:
         str: 正規化されたテキスト
     """
+
+    # Irodori-TTS 向けには異なる正規化ルールを適用
+    if for_irodori is True:
+        replaced_text = __IRODORI_SYMBOL_REPLACE_PATTERN.sub(
+            lambda x: __IRODORI_SYMBOL_REPLACE_MAP[x.group()], text
+        )
+        # 英単語変換で ' に潰された引用符ペアを鉤括弧へ戻す
+        replaced_text = __IRODORI_STRAIGHT_QUOTE_PAIR_PATTERN.sub(
+            r"「\1」", replaced_text
+        )
+        return __IRODORI_PUNCTUATION_CLEANUP_PATTERN.sub("", replaced_text)
 
     # 句読点を辞書で置換
     replaced_text = __SYMBOL_REPLACE_PATTERN.sub(
