@@ -816,6 +816,11 @@ __IRODORI_STRAIGHT_QUOTE_PAIR_PATTERN = re.compile(r"'([^']+)'")
 __PUNCTUATION_CLEANUP_PATTERN = re.compile(
     # ↓ ひらがな、カタカナ、漢字
     r"[^\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF\u3400-\u4DBF\u3005"
+    # ↓ CJK 互換漢字・CJK 拡張 B〜F・互換漢字補助
+    # NFKC 正規化で統合漢字に変換されない互換漢字 (﨑 等) や拡張 B 以降の異体字 (𠮷 等) が
+    # ここで削除されると「黒﨑→黒」のように表層が欠けた状態で読み上げられてしまうため、
+    # ITAIJI_MAP で変換しきれない字も削除せず未知語として g2p へ渡す
+    + r"\uF900-\uFAFF\U00020000-\U0002FA1F"
     # ↓ 半角数字
     + r"\u0030-\u0039"
     # ↓ 全角数字
@@ -836,6 +841,8 @@ __PUNCTUATION_CLEANUP_PATTERN = re.compile(
 __IRODORI_PUNCTUATION_CLEANUP_PATTERN = re.compile(
     # ↓ ひらがな、カタカナ、漢字
     r"[^\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF\u3400-\u4DBF\u3005"
+    # ↓ CJK 互換漢字・CJK 拡張 B〜F・互換漢字補助 (理由は __PUNCTUATION_CLEANUP_PATTERN と同じ)
+    + r"\uF900-\uFAFF\U00020000-\U0002FA1F"
     # ↓ 半角数字
     + r"\u0030-\u0039"
     # ↓ 全角数字

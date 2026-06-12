@@ -2788,6 +2788,31 @@ def test_normalize_text_itaiji():
     assert normalize_text("澤山の寶物") == "沢山の宝物"
 
 
+def test_normalize_text_cjk_compatibility_ideographs():
+    """CJK 互換漢字・拡張漢字の保持テスト
+
+    NFKC 正規化で統合漢字に変換されない互換漢字 (﨑 等) や CJK 拡張 B 以降の
+    異体字 (𠮷 等) が、文字種クリーンアップで削除され「黒﨑→黒」のように表層が
+    欠けるバグへのリグレッションテスト。
+    """
+
+    # ITAIJI_MAP に登録済みの互換漢字・拡張漢字は通用字へ変換される
+    assert normalize_text("黒﨑さん") == "黒崎さん"  # U+FA11
+    assert normalize_text("﨔の木") == "欅の木"  # U+FA14
+    assert normalize_text("𠮷野家") == "吉野家"  # U+20BB7 (CJK 拡張 B)
+    assert normalize_text("𡈽井さん") == "土井さん"  # U+2123D (CJK 拡張 B)
+
+    # NFKC で統合漢字へ正規化される互換漢字はそのまま変換される
+    assert normalize_text("神社") == "神社"  # U+FA19 神 -> U+795E 神
+
+    # ITAIJI_MAP 未登録の互換漢字・拡張漢字も削除されず未知語として残る
+    assert normalize_text("﨎") == "﨎"  # U+FA0E (通用字対応が不明確な IBM 拡張漢字)
+
+    # BMP 内の人名異体字 (削除対象になったことはないが、回帰防止として固定)
+    assert normalize_text("髙橋さん") == "髙橋さん"  # U+9AD9 はしご高
+    assert normalize_text("草彅剛") == "草彅剛"  # U+5F45
+
+
 def test_normalize_text_english():
     """英語関連の正規化のテスト"""
     # 基本的な英単語
