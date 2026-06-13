@@ -2813,6 +2813,55 @@ def test_normalize_text_cjk_compatibility_ideographs():
     assert normalize_text("草彅剛") == "草彅剛"  # U+5F45
 
 
+def test_normalize_text_japanese_unicode_blocks_keep_surface() -> None:
+    """日本語の表層として出現し得る Unicode ブロックの保持テスト"""
+
+    # 二の字点は pyopenjtalk が読みに展開しないため、直前の漢字を繰り返す
+    assert normalize_text("人〻") == "人人"  # U+303B
+    assert normalize_text("山〻") == "山山"  # U+303B
+
+    # CJK 記号と句読点内の日本語文字は、辞書表層から欠けないように残す
+    assert normalize_text("締〆") == "締〆"  # U+3006
+    assert normalize_text("〱〲〳〴〵") == "〱〲〳〴〵"  # U+3031-U+3035
+
+    # かな系の追加ブロックは、固有名詞や引用文の表層として残す
+    assert normalize_text("変体仮名𛀁") == "変体仮名𛀁"  # U+1B001
+    assert normalize_text("変体仮名𛄀") == "変体仮名𛄀"  # U+1B100
+    assert normalize_text("小書き𛅐") == "小書き𛅐"  # U+1B150
+    assert normalize_text("かな𚿰") == "かな𚿰"  # U+1AFF0
+
+    # 部首・筆画は読めない可能性があっても、漢字表層の一部として残す
+    assert normalize_text("部首⺅") == "部首⺅"  # U+2E85
+    assert normalize_text("康熙⼀") == "康熙一"  # U+2F00 は NFKC で一へ統合
+    assert normalize_text("筆画㇀") == "筆画㇀"  # U+31C0
+
+    # CJK 拡張 G 以降も、既存の拡張 B〜F と同じく未知語として残す
+    assert normalize_text("拡張G𰀀") == "拡張G𰀀"  # U+30000
+    assert normalize_text("拡張H𱍐") == "拡張H𱍐"  # U+31350
+    assert normalize_text("拡張J𲎰") == "拡張J𲎰"  # U+323B0
+
+    # Irodori-TTS 側も同じ日本語文字範囲を使い、句読点だけ専用表記にする
+    assert normalize_text("人〻、変体仮名𛀁", for_irodori=True) == "人人、変体仮名𛀁"
+
+
+def test_normalize_text_non_japanese_unicode_blocks_are_removed() -> None:
+    """現状の設計で読み上げ対象外として削除する Unicode ブロックのテスト"""
+
+    # 外国語文字は日本語向け normalizer の対象外として削除する
+    assert normalize_text("東京가서울") == "東京"  # Hangul Syllables
+    assert normalize_text("東京ЖМосква") == "東京"  # Cyrillic
+    assert normalize_text("東京عربي") == "東京"  # Arabic
+
+    # 結合文字は NFKC で合成できる日本語濁点だけ合成し、単独の装飾用結合文字は削除する
+    assert normalize_text("か\u3099") == "が"  # U+3099
+    assert normalize_text("は\u309a") == "ぱ"  # U+309A
+    assert normalize_text("あ\u0301あ") == "ああ"  # Combining Acute Accent
+
+    # 異体字セレクタは発音を持たないため削除するが、直前の漢字は残す
+    assert normalize_text("黒\ufe00崎") == "黒崎"  # Variation Selectors
+    assert normalize_text("黒\U000e0100崎") == "黒崎"  # Variation Selectors Supplement
+
+
 def test_normalize_text_english():
     """英語関連の正規化のテスト"""
     # 基本的な英単語
@@ -3407,7 +3456,7 @@ def test_normalize_text_complex():
         ),
         (
             "製品交換の送り先は〒263-0023 千葉県千葉市稲毛区緑町1-16-12、受付時間は9:30-17:00、電話は043-245-6789です。",
-            "製品交換の送り先は郵便番号ニーロクサンのゼロゼロニーサン,千葉県千葉市稲毛区緑町1の16の12,受付時間は九時30分十七時,電話はゼロヨンサン,ニーヨンゴ,ロクナナハチキューです.",
+            "製品交換の送り先は郵便番号ニーロクサンのゼロゼロニーサン,千葉県千葉市稲毛区緑町1の16の12,受付時間は九時30分-十七時,電話はゼロヨンサン,ニーヨンゴ,ロクナナハチキューです.",
         ),
         (
             "イベント当日は〒371-0024 群馬県前橋市表町2-30-8 AQERU前橋6Fに集合し、遅刻時は027-220-5500へご連絡ください。",

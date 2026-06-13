@@ -812,15 +812,46 @@ __IRODORI_SYMBOL_REPLACE_PATTERN = re.compile(
 # __convert_english_to_katakana() で引用符が半角 ' に正規化されたペアを鉤括弧へ戻す
 ## 先頭のみの ' (号室番号のポーズマーカー等) は対象外
 __IRODORI_STRAIGHT_QUOTE_PAIR_PATTERN = re.compile(r"'([^']+)'")
-# 正規化後に残す文字種を表すパターン
-__PUNCTUATION_CLEANUP_PATTERN = re.compile(
-    # ↓ ひらがな、カタカナ、漢字
-    r"[^\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF\u3400-\u4DBF\u3005"
-    # ↓ CJK 互換漢字・CJK 拡張 B〜F・互換漢字補助
+# 正規化後に残す漢字系文字の範囲
+## かなと分けておくと、〻 のように漢字だけを前提にする処理でも同じ範囲を使える
+__CJK_TEXT_CLEANUP_CHAR_CLASS = (
+    # ↓ CJK 部首補助・康熙部首・CJK 筆画
+    ## 部首や筆画は通常の読み上げ対象ではないが、漢字表層の一部として使われた時に消すより未知語として残す方が被害が小さい
+    r"\u2E80-\u2EFF\u2F00-\u2FDF\u31C0-\u31EF"
+    # ↓ CJK 統合漢字・CJK 拡張 A
+    + r"\u3400-\u4DBF\u4E00-\u9FFF"
+    # ↓ CJK 互換漢字・CJK 拡張 B〜F・I・互換漢字補助
     # NFKC 正規化で統合漢字に変換されない互換漢字 (﨑 等) や拡張 B 以降の異体字 (𠮷 等) が
     # ここで削除されると「黒﨑→黒」のように表層が欠けた状態で読み上げられてしまうため、
     # ITAIJI_MAP で変換しきれない字も削除せず未知語として g2p へ渡す
     + r"\uF900-\uFAFF\U00020000-\U0002FA1F"
+    # ↓ CJK 拡張 G〜J
+    ## Unicode の追加面は人名・地名・古典資料由来の字が増えるため、既存範囲と同じ扱いで残す
+    + r"\U00030000-\U0003347F"
+)
+# 正規化後に残す日本語文字の範囲
+# クリーンアップはホワイトリスト方式なので、ここから漏れた文字は警告なしに消える
+## 人名・地名・辞書表層に出る可能性がある漢字とかなは、OpenJTalk が読めない可能性があっても表層を欠けさせない
+__JAPANESE_TEXT_CLEANUP_CHAR_CLASS = (
+    # ↓ ひらがな、カタカナ
+    r"\u3040-\u309F\u30A0-\u30FF"
+    # ↓ 変体仮名・小書きかな・かな拡張
+    ## 現代文では稀だが、固有名詞や引用文の表層として現れた場合に無言削除すると読みと表層の対応が崩れる
+    + r"\U0001AFF0-\U0001AFFF\U0001B000-\U0001B16F"
+    # ↓ CJK 記号と句読点内の日本語文字
+    ## 々・〆・〇・縦書き用かな繰り返し記号・二の字点は、記号ブロック内でも日本語表記として扱う
+    + r"\u3005-\u3007\u3031-\u3035\u303B"
+    + __CJK_TEXT_CLEANUP_CHAR_CLASS
+)
+# 二の字点の展開元として扱う漢字範囲
+## pyopenjtalk は 〻 を読みへ展開しないため、漢字の直後だけ前の漢字を繰り返す
+__IDEOGRAPHIC_ITERATION_BASE_PATTERN = re.compile(
+    r"[" + __CJK_TEXT_CLEANUP_CHAR_CLASS + r"]"
+)
+# 正規化後に残す文字種を表すパターン
+__PUNCTUATION_CLEANUP_PATTERN = re.compile(
+    r"[^"
+    + __JAPANESE_TEXT_CLEANUP_CHAR_CLASS
     # ↓ 半角数字
     + r"\u0030-\u0039"
     # ↓ 全角数字
@@ -839,10 +870,8 @@ __PUNCTUATION_CLEANUP_PATTERN = re.compile(
     + r"]+"
 )
 __IRODORI_PUNCTUATION_CLEANUP_PATTERN = re.compile(
-    # ↓ ひらがな、カタカナ、漢字
-    r"[^\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF\u3400-\u4DBF\u3005"
-    # ↓ CJK 互換漢字・CJK 拡張 B〜F・互換漢字補助 (理由は __PUNCTUATION_CLEANUP_PATTERN と同じ)
-    + r"\uF900-\uFAFF\U00020000-\U0002FA1F"
+    r"[^"
+    + __JAPANESE_TEXT_CLEANUP_CHAR_CLASS
     # ↓ 半角数字
     + r"\u0030-\u0039"
     # ↓ 全角数字
@@ -984,6 +1013,25 @@ def normalize_text(text: str, *, for_irodori: bool = False) -> str:
     # OpenJTalk (MeCab) 辞書に存在しない可能性が高い旧字体を新字体に統一し、辞書ヒット率を高める
     ## NFKC 正規化後に実行することで、NFKC で統一しきれない旧字体も新字体に置換できる
     res = res.translate(__ITAIJI_TRANSLATE_TABLE)
+
+    # 二の字点は pyopenjtalk が読みに展開しないため、直前の漢字を複製して表層欠けを避ける
+    ## 先頭や漢字以外の直後にある 〻 は読みを確定できないので、後続のクリーンアップで削除する
+    if "\u303b" in res:
+        expanded_characters: list[str] = []
+        previous_character = ""
+        for character in res:
+            # 漢字の直後だけ 〻 を前文字へ展開
+            if (
+                character == "\u303b"
+                and __IDEOGRAPHIC_ITERATION_BASE_PATTERN.fullmatch(previous_character)
+                is not None
+            ):
+                expanded_characters.append(previous_character)
+                continue
+
+            expanded_characters.append(character)
+            previous_character = character
+        res = "".join(expanded_characters)
 
     res = __convert_english_to_katakana(res)  # 英単語をカタカナに変換
 
