@@ -2830,8 +2830,24 @@ def replace_punctuation(text: str, *, for_irodori: bool = False) -> str:
 
     # Irodori-TTS 向けには異なる正規化ルールを適用
     if for_irodori is True:
+
+        def _replace_irodori_symbol(match: re.Match[str]) -> str:
+            matched = match.group()
+            # 数字に挟まれた「.」は小数点なので句点へ変換せず保持する
+            ## pyopenjtalk の数詞処理は「2.5」を「ニーテンゴ」と正しく読めるため、
+            ## 小数点まで句点化すると「2。5」→「ニ。ゴ」のように泣き別れて読みが壊れる
+            if (
+                matched == "."
+                and match.start() > 0
+                and text[match.start() - 1].isdigit()
+                and match.end() < len(text)
+                and text[match.end()].isdigit()
+            ):
+                return matched
+            return __IRODORI_SYMBOL_REPLACE_MAP[matched]
+
         replaced_text = __IRODORI_SYMBOL_REPLACE_PATTERN.sub(
-            lambda x: __IRODORI_SYMBOL_REPLACE_MAP[x.group()], text
+            _replace_irodori_symbol, text
         )
         # 英単語変換で ' に潰された引用符ペアを鉤括弧へ戻す
         replaced_text = __IRODORI_STRAIGHT_QUOTE_PAIR_PATTERN.sub(
