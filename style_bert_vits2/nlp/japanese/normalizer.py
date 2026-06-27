@@ -589,6 +589,13 @@ __UNIT_PATTERN = re.compile(
     r"(?P<suffix>/[hs])?"
     r"(?=($|(?=/([^A-Za-z]|$))|[^/A-Za-z]))"
 )
+# 温度と角度の度数表記を単位変換の前に「度」へ畳む
+# `℃` / `℉` は NFKC で `°C` / `°F` に分解されるため、記号置換だけだと ASCII 入力と同じ漏れ方をする
+__DEGREE_UNIT_PATTERN = re.compile(
+    r"(?P<sign>[+\-−－ー])?\s*"
+    r"(?P<number>[0-9.]*[0-9](?:[eE][-+]?[0-9]+)?)\s*"
+    r"(?P<unit>℃|℉|°\s*[CcFf]|度\s*[CcFf]|°|度)"
+)
 # ページ数表記パターン
 # 「40p」「96P」のような略記を「ページ」に変換する
 # 「No.40p」のような通し番号や「3pm」「40pts」などは誤変換しないようにする
@@ -2020,12 +2027,30 @@ def __convert_numbers_to_words(text: str) -> str:
         str: 変換されたテキスト
     """
 
+    def convert_degree_unit(match: re.Match[str]) -> str:
+        number = match.group("number")
+        sign = match.group("sign")
+        sign_text = ""
+
+        # 度数表記の符号は読み上げで「マイナス」「プラス」と読む
+        # 長音記号の `ー` もニュース原稿などでは負号代わりに混ざるため、数値直前だけ符号として扱う
+        if sign in {"-", "−", "－", "ー"}:
+            sign_text = "マイナス"
+        elif sign == "+":
+            sign_text = "プラス"
+
+        # `°C` / `°F` は記号置換で `度C` / `度F` になり、後段に英字を残すと「シー」「エフ」と読まれてしまう
+        ## 単位の種類にかかわらず口頭では「度」と読ませたいので、ここで末尾英字ごと畳む
+        return f"{sign_text}{number}度"
+
     def convert_page_unit(match: re.Match[str]) -> str:
         page_number = match.group("number").replace(",", "")
         return f"{page_number}ページ"
 
+    res = __DEGREE_UNIT_PATTERN.sub(convert_degree_unit, text)
+
     # 「40p」のようなページ数略記を「40ページ」に変換する
-    res = __PAGE_UNIT_PATTERN.sub(convert_page_unit, text)
+    res = __PAGE_UNIT_PATTERN.sub(convert_page_unit, res)
 
     # 単位の変換（平方メートルなどの特殊な単位も含む）
     def convert_unit(match: re.Match[str]) -> str:

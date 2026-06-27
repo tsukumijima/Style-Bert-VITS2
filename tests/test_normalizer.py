@@ -105,7 +105,7 @@ def _build_irodori_fullwidth_punctuation_variant_cases() -> list[tuple[str, str]
 
 
 def _build_irodori_differs_from_sbv2_cases() -> list[tuple[str, str, str]]:
-    """Irodori と SBV2 で句読点の正規化結果が異なるケース (text, irodori_expected, sbv2_expected)"""
+    """Irodori-TTS と SBV2 で句読点の正規化結果が異なるケース (text, irodori_expected, sbv2_expected)"""
     return [
         (
             "こんにちは。さようなら。",
@@ -125,7 +125,7 @@ def _build_irodori_differs_from_sbv2_cases() -> list[tuple[str, str, str]]:
     _build_irodori_symbol_replace_map_cases(),
 )
 def test_normalize_text_for_irodori_symbol_replace_map(text: str, expected: str):
-    """Irodori 記号置換マップの各エントリが自然な日本語表記へ変換される"""
+    """Irodori-TTS 記号置換マップの各エントリが自然な日本語表記へ変換される"""
 
     assert normalize_text(text, for_irodori=True) == expected
 
@@ -149,7 +149,7 @@ def test_normalize_text_for_irodori_fullwidth_punctuation_variants(
 def test_normalize_text_for_irodori_differs_from_sbv2_on_punctuation(
     text: str, irodori_expected: str, sbv2_expected: str
 ):
-    """Irodori は自然な日本語表記、SBV2 は symbols.PUNCTUATIONS の半角記号へ正規化する"""
+    """Irodori-TTS は自然な日本語表記、SBV2 は symbols.PUNCTUATIONS の半角記号へ正規化する"""
 
     assert normalize_text(text, for_irodori=True) == irodori_expected
     assert normalize_text(text, for_irodori=False) == sbv2_expected
@@ -2544,6 +2544,25 @@ def test_normalize_text_units():
     assert normalize_text("100m2") == "100平方メートル"
     assert normalize_text("1km2") == "1平方キロメートル"
     assert normalize_text("50m3") == "50立方メートル"
+    # 温度・角度
+    assert normalize_text("50℃") == "50度"
+    assert normalize_text("5.6°C") == "5.6度"
+    assert normalize_text("0.3°c") == "0.3度"
+    assert normalize_text("30°C以上") == "30度以上"
+    assert normalize_text("1.5°C高い") == "1.5度高い"
+    assert normalize_text("32℉") == "32度"
+    assert normalize_text("98.6°F") == "98.6度"
+    assert normalize_text("100°f") == "100度"
+    assert normalize_text("30° F") == "30度"
+    assert normalize_text("180°回転") == "180度回転"
+    assert normalize_text("-3℃") == "マイナス3度"
+    assert normalize_text("ー10.7℃") == "マイナス10.7度"
+    assert normalize_text("－0.3°C") == "マイナス0.3度"
+    assert normalize_text("+1.5°C") == "プラス1.5度"
+    assert normalize_text("-40°F") == "マイナス40度"
+    assert normalize_text("+30°") == "プラス30度"
+    assert normalize_text("5.6°C", for_irodori=True) == "5.6度"
+    assert normalize_text("98.6°F", for_irodori=True) == "98.6度"
     # 単位付き指数
     assert normalize_text("1.23e-6") == "零点零零零零零一二三"
     assert normalize_text("1.23e+4") == "一万二千三百"
@@ -2679,6 +2698,90 @@ def test_normalize_text_units():
     assert normalize_text("€100で") == "100ユーロで"
     assert normalize_text("5㎞") == "5キロメートル"
     assert normalize_text("5㎡") == "5平方メートル"
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        # 摂氏記号
+        ("50℃", "50度"),
+        ("5.6℃", "5.6度"),
+        ("30℃以上", "30度以上"),
+        ("1.5℃高い", "1.5度高い"),
+        # 摂氏の ASCII 表記
+        ("50°C", "50度"),
+        ("50° C", "50度"),
+        ("50°c", "50度"),
+        ("50° c", "50度"),
+        ("30°C以上", "30度以上"),
+        ("1.5°C高い", "1.5度高い"),
+        # 既に `°` が `度` へ置換された後の表記
+        ("50度C", "50度"),
+        ("50度 C", "50度"),
+        ("50度c", "50度"),
+        ("50度 c", "50度"),
+        # 華氏記号
+        ("32℉", "32度"),
+        ("98.6℉", "98.6度"),
+        ("100℉以上", "100度以上"),
+        ("1.5℉高い", "1.5度高い"),
+        # 華氏の ASCII 表記
+        ("98.6°F", "98.6度"),
+        ("98.6° F", "98.6度"),
+        ("100°f", "100度"),
+        ("100° f", "100度"),
+        ("32°F以上", "32度以上"),
+        ("1.5°F高い", "1.5度高い"),
+        # 既に `°` が `度` へ置換された後の華氏表記
+        ("98.6度F", "98.6度"),
+        ("98.6度 F", "98.6度"),
+        ("100度f", "100度"),
+        ("100度 f", "100度"),
+        # 角度記号
+        ("90°", "90度"),
+        ("180°回転", "180度回転"),
+        ("45°傾ける", "45度傾ける"),
+        ("90度", "90度"),
+        ("180度回転", "180度回転"),
+        # 符号付き表記
+        ("-3℃", "マイナス3度"),
+        ("−3℃", "マイナス3度"),
+        ("－3℃", "マイナス3度"),
+        ("ー3℃", "マイナス3度"),
+        ("+1.5°C", "プラス1.5度"),
+        ("-40°F", "マイナス40度"),
+        ("+30°", "プラス30度"),
+        # 全角英数記号
+        ("５０℃", "50度"),
+        ("５０°Ｃ", "50度"),
+        ("９８．６°Ｆ", "98.6度"),
+        ("１８０°", "180度"),
+    ],
+)
+def test_normalize_text_degree_units(text: str, expected: str):
+    """温度・角度の度数表記を口頭読みの「度」へ正規化する"""
+
+    assert normalize_text(text) == expected
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        # Irodori-TTS 向けでも単位の読みは SBV2 と同じく「度」に畳む
+        ("5.6℃", "5.6度"),
+        ("5.6°C", "5.6度"),
+        ("5.6度C", "5.6度"),
+        ("98.6℉", "98.6度"),
+        ("98.6°F", "98.6度"),
+        ("98.6度F", "98.6度"),
+        ("180°回転", "180度回転"),
+        ("+30°", "プラス30度"),
+    ],
+)
+def test_normalize_text_degree_units_for_irodori(text: str, expected: str):
+    """Irodori-TTS 向けでも温度・角度の度数表記を同じ読みへ正規化する"""
+
+    assert normalize_text(text, for_irodori=True) == expected
 
 
 def test_normalize_text_chemical_formula_like_words():
