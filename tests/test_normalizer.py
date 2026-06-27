@@ -2525,6 +2525,9 @@ def test_normalize_text_units():
     assert normalize_text("1000.19mg") == "1000.19ミリグラム"
     assert normalize_text("100g") == "100グラム"
     assert normalize_text("2kg") == "2キログラム"
+    assert normalize_text("200万t以上") == "200万トン以上"
+    assert normalize_text("21万tを市場に出す") == "21万トンを市場に出す"
+    assert normalize_text("697万tから711万t") == "697万トンから711万トン"
     assert normalize_text("200ｍｇ") == "200ミリグラム"  # 全角英数
     # データ容量
     assert normalize_text("51B") == "51バイト"
