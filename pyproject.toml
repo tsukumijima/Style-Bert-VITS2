@@ -57,9 +57,17 @@ dependencies = [
 ## ただし CPU 版・CUDA 版・DirectML 版でパッケージが分かれており環境依存になるため、直接の依存関係には含めない
 ## CPU 版の onnxruntime (無印) と onnxruntime-gpu や onnxruntime-directml は共存できない
 onnxruntime = [
-    "onnxruntime; (sys_platform != 'linux' or platform_machine != 'x86_64') and sys_platform != 'win32'",
-    "onnxruntime-directml; sys_platform == 'win32'",
-    "onnxruntime-gpu; sys_platform == 'linux' and platform_machine == 'x86_64'",
+    ## onnxruntime (CPU): onnxruntime-directml / onnxruntime-gpu 非対応の環境すべて
+    ## macOS x64 のみ、Intel Mac に対応する最終バージョンである onnxruntime==1.23.2 に固定
+    "onnxruntime==1.23.2; sys_platform == 'darwin' and platform_machine == 'x86_64'",
+    ## macOS arm64 / Linux aarch64 は Intel Mac 向け wheel の無い 1.24 以降を使う
+    ## (universal lock により 1.23.2 側に固定されるのを防ぐ)
+    "onnxruntime>=1.24.0,<2.0.0; (sys_platform == 'darwin' and platform_machine != 'x86_64') or (sys_platform == 'linux' and platform_machine != 'x86_64')",
+    ## onnxruntime (DirectML): Windows のみ
+    "onnxruntime-directml>=1.24.0,<2.0.0; sys_platform == 'win32'",
+    ## onnxruntime (GPU): Linux x64 のみ
+    ## 1.27.0 以降、import した時点で CUDA 13 の .so がないとエラー吐くように改悪されたので当面 1.26.x に固定
+    "onnxruntime-gpu>=1.24.0,<1.27.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
 ]
 # PyTorch モデルで推論を行う場合は別途必須
 ## numba は monotonic_alignment.py で使用されている
@@ -77,9 +85,10 @@ torch = [
 core = [
     # ONNX Runtime 関連 (project.optional-dependencies.onnxruntime に相当)
     ## 必須依存関係なので、単体利用時はインストールされるバリアントを上記と同じロジックで固定する
-    "onnxruntime; (sys_platform != 'linux' or platform_machine != 'x86_64') and sys_platform != 'win32'",
-    "onnxruntime-directml; sys_platform == 'win32'",
-    "onnxruntime-gpu; sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "onnxruntime==1.23.2; sys_platform == 'darwin' and platform_machine == 'x86_64'",
+    "onnxruntime>=1.24.0,<2.0.0; (sys_platform == 'darwin' and platform_machine != 'x86_64') or (sys_platform == 'linux' and platform_machine != 'x86_64')",
+    "onnxruntime-directml>=1.24.0,<2.0.0; sys_platform == 'win32'",
+    "onnxruntime-gpu>=1.24.0,<1.27.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
     # PyTorch 関連 (project.optional-dependencies.torch に相当)
     ## 単体利用で ONNX 版推論だけ回すユースケースは極めて考えづらいので、常に PyTorch 関連も必須依存関係に含める
     ## PyTorch のバリアントは tool.uv.sources で torch / torchaudio のソース指定で固定している
@@ -176,6 +185,7 @@ test-onnx-coreml = "pytest -s tests/test_main.py::test_synthesize_onnx_coreml"
 # uv sync 実行時にデフォルトで core グループがインストールされるようにする
 [tool.uv]
 default-groups = ["core"]
+exclude-newer = "1 week"
 
 # ビルド設定
 [tool.uv.build-backend]
