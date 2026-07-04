@@ -732,7 +732,8 @@ def test_normalize_text_mathematical():
     assert normalize_text("x^") == "x"
     assert normalize_text("^n") == "n"
     assert normalize_text("注釈^4") == "注釈4"
-    assert normalize_text("10^^3") == "103"
+    assert normalize_text("10^^3") == "10'3"
+    assert normalize_text("10^^3", for_irodori=True) == "10'3"
     # 集合記号
     assert normalize_text("∈") == "属する"
     assert normalize_text("∉") == "属さない"
@@ -1789,6 +1790,16 @@ def test_normalize_text_phone_postal_address_edge_cases():
     assert normalize_text("2*abc") == "2エービーシー"
     assert normalize_text("abc*2") == "エービーシー2"
     assert normalize_text("2*3*abc") == "2かける3エービーシー"
+    # 読めない記号を削除する場合でも、数字同士は別の数として分離する
+    assert normalize_text("1_2") == "1'2"
+    assert normalize_text("1_2", for_irodori=True) == "1'2"
+    # OpenJTalk が読める記号は、数字に挟まれていても表層を残して分かち書きへ渡す
+    assert normalize_text("1@2") == "1@2"
+    assert normalize_text("1@2", for_irodori=True) == "1@2"
+    # 数字に挟まれていない読めない記号は、従来どおり読みを挿入せずに削除する
+    assert normalize_text("A_B") == "AB"
+    assert normalize_text("A_2") == "A2"
+    assert normalize_text("1_B") == "1B"
     # 価格やポイント表記の `＋` は数式として一体化せず、従来通り記号読みだけに留める
     assert normalize_text("53693円＋537ポイント") == "53693円プラス537ポイント"
     # `=` がない減算は住所・スコア・型番と衝突するため従来通り保持する
@@ -2462,10 +2473,22 @@ def test_normalize_text_cross_mark_context_dependent() -> None:
 def test_normalize_text_symbols():
     """記号関連の正規化のテスト"""
     # 基本的な記号
+    assert normalize_text("@") == "@"
+    assert normalize_text("＠") == "@"
+    assert normalize_text("&") == "&"
+    assert normalize_text("＆") == "&"
+    assert normalize_text("A@B") == "A@B"
+    assert normalize_text("A＠B") == "A@B"
+    assert normalize_text("A&B") == "A&B"
+    assert normalize_text("A＆B") == "A&B"
     assert normalize_text("ABC+ABC") == "エービーシープラスエービーシー"
-    assert normalize_text("ABC&ABC") == "エービーシーアンドエービーシー"
+    assert normalize_text("ABC&ABC") == "エービーシー&エービーシー"
     assert normalize_text("abc+abc") == "エービーシープラスエービーシー"
-    assert normalize_text("abc&abc") == "エービーシーアンドエービーシー"
+    assert normalize_text("abc&abc") == "エービーシー&エービーシー"
+    assert normalize_text("OpenAI&ChatGPT") == "オープンエーアイ&チャットジーピーティー"
+    assert (
+        normalize_text("OpenAI & ChatGPT") == "オープンエーアイ&チャットジーピーティー"
+    )
     assert (
         normalize_text("OpenAPI-Specification")
         == "オープンエーピーアイスペシフィケーション"
@@ -3203,7 +3226,7 @@ def test_normalize_text_english():
         normalize_text(
             "ではCinamicさん、WindsurfCascade-PriceはGemini+Claude&Deepseekesより安いか分かりますか？"
         )
-        == "ではシナマイクさん,ウインドサーフカスケードプライスはジェミニプラスクロードアンドディープシークエスより安いか分かりますか?"
+        == "ではシナマイクさん,ウインドサーフカスケードプライスはジェミニプラスクロード&ディープシークエスより安いか分かりますか?"
     )
     assert (
         normalize_text("I'm human, with ApplePencil. Because, We have iPhone 8.")
@@ -3395,7 +3418,7 @@ def test_normalize_text_complex():
         normalize_text(
             "ROCK5 is a series of Rockchip RK3588(s) based SBC(Single Board Computer) by Radxa. It can run Linux, Android, BSD and other distributions. ROCK5 comes in two models, Model A and Model B. Both models offer 4GB, 8GB, 16GB and 32GB options. For detailed difference between Model A and Model B, please check Specifications. ROCK5 features a Octa core ARM processor(4x Cortex-A76 + 4x Cortex-A55), 64bit 3200Mb/s LPDDR4, up to 8K@60 HDMI, MIPI DSI, MIPI CSI, 3.5mm jack with mic, USB Port, 2.5 GbE LAN, PCIe 3.0, PCIe 2.0, 40-pin color expansion header, RTC. Also, ROCK5 supports USB PD and QC powering."
         )
-        == "ロックファイブイズアシリーズオブロックチップRK3588's'ベースドエスビーシー'シングルボードコンピューター'バイラダ.イットキャンランリナックス,アンドロイド,ビーエスディーアンドアザーディストリビューションズ.ロックファイブカムズインツーモデルズ,モデルAアンドモデルB.ボスモデルズオファー4ギガバイト,8ギガバイト,16ギガバイトアンド32ギガバイトオプションズ.フォーディテールズディファレンスビトゥイーンモデルAアンドモデルB,プリーズチェックスペシフィケーションズ.ロックファイブフィーチャーズアオクタコアアームプロセッサー'4xコーテックスA76プラス4xコーテックスA55',64ビット3200メガビット毎秒エルピーディーディーアールフォー,アップトゥーはちケー60エイチディーエムアイ,ミピーディーエスアイ,ミピーシーエスアイ,3.5ミリメートルジャックウィズマイク,ユーエスビーポート,2.5ジービーイーラン,ピーシーアイイー3.0,ピーシーアイイー2.0,40ピンカラーエクスパンションヘッダー,アールティーシー.オルソ,ロックファイブサポーツユーエスビーピーディーアンドキューシーパワーリング."
+        == "ロックファイブイズアシリーズオブロックチップRK3588's'ベースドエスビーシー'シングルボードコンピューター'バイラダ.イットキャンランリナックス,アンドロイド,ビーエスディーアンドアザーディストリビューションズ.ロックファイブカムズインツーモデルズ,モデルAアンドモデルB.ボスモデルズオファー4ギガバイト,8ギガバイト,16ギガバイトアンド32ギガバイトオプションズ.フォーディテールズディファレンスビトゥイーンモデルAアンドモデルB,プリーズチェックスペシフィケーションズ.ロックファイブフィーチャーズアオクタコアアームプロセッサー'4xコーテックスA76プラス4xコーテックスA55',64ビット3200メガビット毎秒エルピーディーディーアールフォー,アップトゥーはちケー@60エイチディーエムアイ,ミピーディーエスアイ,ミピーシーエスアイ,3.5ミリメートルジャックウィズマイク,ユーエスビーポート,2.5ジービーイーラン,ピーシーアイイー3.0,ピーシーアイイー2.0,40ピンカラーエクスパンションヘッダー,アールティーシー.オルソ,ロックファイブサポーツユーエスビーピーディーアンドキューシーパワーリング."
     )
 
 
@@ -3488,7 +3511,7 @@ def test_normalize_text_complex():
         ),
         (
             "Q&Aセッションでは「なぜ今、生成AIなのか？」という質問が最多でした。",
-            "QアンドAセッションでは'なぜ今,生成エーアイなのか?'という質問が最多でした.",
+            "Q&Aセッションでは'なぜ今,生成エーアイなのか?'という質問が最多でした.",
         ),
         (
             "2025/7/5(土) 7:05発の便で出発し、現地時間13:20に到着予定。",

@@ -98,10 +98,6 @@ __CROSS_MARK_AS_BATSU_PATTERN = re.compile(r"[×✖⨯❌][\ufe0e\ufe0f]?")
 # 一度リストアップしたがユースケース上不要と判断した記号はコメントアウトされている
 __SYMBOL_YOMI_MAP = {
     # 一般記号
-    # "@": "アット",  # カタカナに変換するとユーザー辞書登録が効かなくなり不便なためコメントアウト
-    # "＠": "アット",  # カタカナに変換するとユーザー辞書登録が効かなくなり不便なためコメントアウト
-    # "&": "アンド",  # カタカナに変換するとユーザー辞書登録が効かなくなり不便なためコメントアウト
-    # "＆": "アンド",  # カタカナに変換するとユーザー辞書登録が効かなくなり不便なためコメントアウト
     # "*": "アスタリスク",  # 発音されると不都合な場合があるためコメントアウト
     # "＊": "アスタリスク",  # 発音されると不都合な場合があるためコメントアウト
     "#": "シャープ",
@@ -881,7 +877,9 @@ __PUNCTUATION_CLEANUP_PATTERN = re.compile(
     # スラッシュは pyopenjtalk での形態素解析処理で重要なので、例外的に正規化後も残す (g2p 処理内で "." に変換される)
     # pyopenjtalk は「漢字の直後に2つ以上の連続する半角ハイフンがある場合」にその漢字の読みが取得できなくなる謎のバグがあるため、
     # 正規化処理でダッシュが変換されるなどして2つ以上の連続する半角ハイフンが生まれた場合、Long EM Dash に変換してから g2p 処理に渡す
-    + "".join(re.escape(p) for p in (PUNCTUATIONS + ["/", "—"]))
+    # @ と & は OpenJTalk が記号として読めるため、カタカナに潰さず分かち書きへ渡す
+    ## OpenJTalk の解析結果から再度 replace_punctuation() を通す経路では全角記号が来るため、半角・全角の両方を残す
+    + "".join(re.escape(p) for p in (PUNCTUATIONS + ["/", "—", "@", "＠", "&", "＆"]))
     + r"]+"
 )
 __IRODORI_PUNCTUATION_CLEANUP_PATTERN = re.compile(
@@ -902,7 +900,23 @@ __IRODORI_PUNCTUATION_CLEANUP_PATTERN = re.compile(
         re.escape(p)
         for p in (
             PUNCTUATIONS
-            + ["。", "、", "！", "？", "…", "（", "）", "「", "」", "/", "—"]
+            + [
+                "。",
+                "、",
+                "！",
+                "？",
+                "…",
+                "（",
+                "）",
+                "「",
+                "」",
+                "/",
+                "—",
+                "@",
+                "＠",
+                "&",
+                "＆",
+            ]
         )
     )
     + r"]+"
@@ -2372,7 +2386,6 @@ def __convert_english_to_katakana(text: str) -> str:
 
         # 5. 記号で区切られた複合語の処理（部分的な変換を許可）
         for separator, join_word in [
-            ("&", "アンド"),
             ("-", ""),
             (".", ""),
             ("+", "プラス"),
@@ -2750,7 +2763,7 @@ def __convert_english_to_katakana(text: str) -> str:
                 continue
 
         # 英数字または特定の記号であれば current_word に追加
-        if __ENGLISH_WORD_PATTERN.match(char) is not None or char in "-&+'":
+        if __ENGLISH_WORD_PATTERN.match(char) is not None or char in "-+'":
             current_word += char
         # ピリオドの特別処理
         elif char == ".":
@@ -2895,6 +2908,19 @@ def replace_punctuation(text: str, *, for_irodori: bool = False) -> str:
         str: 正規化されたテキスト
     """
 
+    def _remove_unreadable_symbols(match: re.Match[str], source_text: str) -> str:
+        # 読めない記号の削除で数字同士が直結すると、桁の違う数として読まれてしまう
+        ## `10^^3` → `103` のような変化は元の区切りを失うため、ポーズ記号で数字を分離する
+        if (
+            match.start() > 0
+            and match.end() < len(source_text)
+            and source_text[match.start() - 1].isdigit() is True
+            and source_text[match.end()].isdigit() is True
+        ):
+            return "'"
+
+        return ""
+
     # Irodori-TTS 向けには異なる正規化ルールを適用
     if for_irodori is True:
 
@@ -2920,7 +2946,10 @@ def replace_punctuation(text: str, *, for_irodori: bool = False) -> str:
         replaced_text = __IRODORI_STRAIGHT_QUOTE_PAIR_PATTERN.sub(
             r"「\1」", replaced_text
         )
-        return __IRODORI_PUNCTUATION_CLEANUP_PATTERN.sub("", replaced_text)
+        return __IRODORI_PUNCTUATION_CLEANUP_PATTERN.sub(
+            lambda match: _remove_unreadable_symbols(match, replaced_text),
+            replaced_text,
+        )
 
     # 句読点を辞書で置換
     replaced_text = __SYMBOL_REPLACE_PATTERN.sub(
@@ -2928,7 +2957,10 @@ def replace_punctuation(text: str, *, for_irodori: bool = False) -> str:
     )
 
     # 上述以外の文字を削除
-    replaced_text = __PUNCTUATION_CLEANUP_PATTERN.sub("", replaced_text)
+    replaced_text = __PUNCTUATION_CLEANUP_PATTERN.sub(
+        lambda match: _remove_unreadable_symbols(match, replaced_text),
+        replaced_text,
+    )
 
     return replaced_text
 

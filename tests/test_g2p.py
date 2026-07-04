@@ -83,6 +83,28 @@ def _extract_joined_sep_kata(text: str) -> tuple[str, str]:
     return norm_text, "".join(sep_kata)
 
 
+def _extract_sep_text_and_kata(text: str) -> tuple[str, list[str], list[str]]:
+    """
+    入力テキストの正規化結果と、g2p が返した単語表層・カタカナ読みを取得する。
+
+    Args:
+        text (str): 分かち書きと読みを検証する入力テキスト
+
+    Returns:
+        tuple[str, list[str], list[str]]: 正規化後テキスト、単語表層、カタカナ読み
+    """
+
+    norm_text, _, _, _, sep_text, sep_kata, _ = clean_text_with_given_phone_tone(
+        text=text,
+        language=Languages.JP,
+        use_jp_extra=True,
+        raise_yomi_error=False,
+    )
+    assert sep_text is not None
+    assert sep_kata is not None
+    return norm_text, sep_text, sep_kata
+
+
 def _expected_minute_kata(minute: int) -> str:
     """
     分の助数詞表現における期待読みを返す。
@@ -319,6 +341,103 @@ def test_g2p_date_and_datetime_keep_expected_readings(
     norm_text, joined_sep_kata = _extract_joined_sep_kata(text)
     assert norm_text == expected_norm_text
     assert joined_sep_kata == expected_joined_sep_kata
+
+
+@pytest.mark.parametrize(
+    ("text", "expected_norm_text", "expected_sep_text", "expected_sep_kata"),
+    [
+        (
+            "@",
+            "@",
+            ["＠"],
+            ["アット"],
+        ),
+        (
+            "&",
+            "&",
+            ["＆"],
+            ["アンド"],
+        ),
+        (
+            "A@B",
+            "A@B",
+            ["Ａ", "＠", "Ｂ"],
+            ["エイ", "アット", "ビー"],
+        ),
+        (
+            "A&B",
+            "A&B",
+            ["Ａ", "＆", "Ｂ"],
+            ["エイ", "アンド", "ビー"],
+        ),
+        (
+            "1@2",
+            "1@2",
+            ["一", "＠", "二"],
+            ["イチ", "アット", "ニ"],
+        ),
+        (
+            "1&2",
+            "1&2",
+            ["一", "＆", "二"],
+            ["イチ", "アンド", "ニ"],
+        ),
+        (
+            "ABC&ABC",
+            "エービーシー&エービーシー",
+            ["エービーシー", "＆", "エービーシー"],
+            ["エービーシー", "アンド", "エービーシー"],
+        ),
+        (
+            "OpenAI&ChatGPT",
+            "オープンエーアイ&チャットジーピーティー",
+            ["オープン", "エーアイ", "＆", "チャット", "ジー", "ピー", "ティー"],
+            ["オープン", "エーアイ", "アンド", "チャット", "ジー", "ピー", "ティー"],
+        ),
+        (
+            "OpenAI & ChatGPT",
+            "オープンエーアイ&チャットジーピーティー",
+            ["オープン", "エーアイ", "＆", "チャット", "ジー", "ピー", "ティー"],
+            ["オープン", "エーアイ", "アンド", "チャット", "ジー", "ピー", "ティー"],
+        ),
+        (
+            "test@example.com",
+            "テスト,アットマーク,イグザンプルドットコム",
+            [
+                "テスト",
+                ",",
+                "アット",
+                "マーク",
+                ",",
+                "イグザンプル",
+                "ドット",
+                "コム",
+            ],
+            [
+                "テスト",
+                ",",
+                "アット",
+                "マーク",
+                ",",
+                "イグザンプル",
+                "ドット",
+                "コム",
+            ],
+        ),
+    ],
+)
+def test_g2p_keeps_openjtalk_readable_symbols_as_symbol_tokens(
+    text: str,
+    expected_norm_text: str,
+    expected_sep_text: list[str],
+    expected_sep_kata: list[str],
+) -> None:
+    """OpenJTalk が読める記号をカタカナへ潰さず、記号ノードとして読ませる。"""
+
+    norm_text, sep_text, sep_kata = _extract_sep_text_and_kata(text)
+    assert norm_text == expected_norm_text
+    assert sep_text == expected_sep_text
+    assert sep_kata == expected_sep_kata
 
 
 def test_g2p_dates_keep_same_prefix_reading_with_sentence_suffix() -> None:
