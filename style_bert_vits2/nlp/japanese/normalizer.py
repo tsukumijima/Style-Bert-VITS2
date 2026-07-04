@@ -61,6 +61,9 @@ __NUMBER_RANGE_PATTERN = re.compile(
 __NUMBER_MATH_PATTERN = re.compile(
     r"(\d+)\s*([+＋➕\-−－ー➖×✖⨯÷➗*＊])\s*(\d+)\s*=\s*(\d+)"
 )
+__NUMBER_MULTIPLICATION_PATTERN = re.compile(
+    r"(\d+(?:\.\d+)?)\s*([×✖⨯*＊])\s*(\d+(?:\.\d+)?)"
+)
 __NUMBER_COMPARISON_PATTERN = re.compile(r"(\d+)\s*([<＜>＞])\s*(\d+)")
 __WAREKI_PATTERN = re.compile(r"([RHS])(\d{1,2})\.(\d{1,2})\.(\d{1,2})")
 __DATE_EXPAND_PATTERN = re.compile(r"\d{2}[-/\.]\d{1,2}[-/\.]\d{1,2}")
@@ -72,6 +75,10 @@ __FRACTION_PATTERN = re.compile(r"(\d+)[/／](\d+)")
 __ZERO_HOUR_PATTERN = re.compile(r"(?<![0-9])(午前|午後)?0時(?![0-9分]|間)")
 __TIME_PATTERN = re.compile(r"(\d+)時(\d+)分(?:(\d+)秒)?")
 __ASPECT_PATTERN = re.compile(r"(\d+)[:：](\d+)(?:[:：](\d+))?")
+__POWER_PATTERN = re.compile(
+    r"(?P<base>[A-Za-z]+|\d+(?:\.\d+)?)?\s*\^\s*"
+    r"(?P<sign>[+\-−－ー]?)(?P<exponent>\d+)"
+)
 __EXPONENT_PATTERN = re.compile(r"(\d+(?:\.\d+)?)[eE]([-+]?\d+)")
 
 # × 系文字（×, ✖, ⨯, ❌）の文脈依存読み分けパターン
@@ -1233,6 +1240,18 @@ def __replace_symbols(text: str) -> str:
         ),
         text,
     )
+
+    # 乗算記号は寸法表記でも広く使われるため、空白なしでも数式読みへ寄せる
+    ## `*` は記号辞書に入れていないため、ここで処理しないと後段で消えて数字が連結してしまう
+    while True:
+        replaced_text = __NUMBER_MULTIPLICATION_PATTERN.sub(
+            lambda m: f"{m.group(1)}{get_symbol_yomi(m.group(2))}{m.group(3)}",
+            text,
+        )
+        # `2*3*4` のような連鎖表記は1回の置換だと後続の `3*4` が残る
+        if replaced_text == text:
+            break
+        text = replaced_text
     # 比較演算子を処理
     text = __NUMBER_COMPARISON_PATTERN.sub(
         lambda m: f"{m.group(1)}{get_comparison_yomi(m.group(2))}{m.group(3)}", text
@@ -1413,6 +1432,28 @@ def __replace_symbols(text: str) -> str:
 
     # 時刻またはアスペクト比パターンの処理（コロンで区切られた時分秒）
     text = __ASPECT_PATTERN.sub(convert_time_or_aspect, text)
+
+    def convert_power(match: re.Match[str]) -> str:
+        base = match.group("base") or ""
+        sign = match.group("sign")
+        exponent = match.group("exponent")
+
+        # 裸の `^4` は数式文脈として読むが、語の直後や `^^` は脚注・装飾の可能性が高いため展開しない
+        if base == "" and match.start() > 0:
+            previous_character = text[match.start() - 1]
+            if (
+                __WORD_CHAR_PATTERN.fullmatch(previous_character) is not None
+                or previous_character == "^"
+            ):
+                return match.group(0)
+
+        # 指数部の符号は数式記号の読みと同じ規則で明示する
+        sign_text = get_symbol_yomi(sign) if sign != "" else ""
+
+        return f"{base}の{sign_text}{exponent}乗"
+
+    # キャレット表記の指数は `^` が後段で消える前に「のn乗」へ展開する
+    text = __POWER_PATTERN.sub(convert_power, text)
 
     # 指数表記の処理
     ## 稀にランダムな英数字 ID にマッチしたことで OverflowError が発生するが、続行に支障はないため無視する

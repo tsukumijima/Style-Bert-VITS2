@@ -98,7 +98,7 @@ def resample(
         # ここで拡張子が .wav 以外でも .wav に置き換えられる
         output_path = output_dir / relative_path.with_suffix(".wav")
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        soundfile.write(output_path, wav, sr)
+        soundfile.write(output_path, wav, int(sr))
     except Exception as ex:
         logger.warning(f"Cannot load file, so skipping: {file}", exc_info=ex)
 

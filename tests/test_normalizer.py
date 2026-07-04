@@ -717,6 +717,22 @@ def test_normalize_text_mathematical():
     assert normalize_text("∂") == "パーシャル"
     assert normalize_text("∇") == "ナブラ"
     assert normalize_text("∝") == "比例"
+    # キャレット表記の指数
+    assert normalize_text("^4") == "の4乗"
+    assert normalize_text("2^4") == "2の4乗"
+    assert normalize_text("2 ^ 4") == "2の4乗"
+    assert normalize_text("x^4") == "xの4乗"
+    assert normalize_text("10^-3") == "10のマイナス3乗"
+    assert normalize_text("10^+3") == "10のプラス3乗"
+    assert normalize_text("10^−3") == "10のマイナス3乗"
+    assert normalize_text("10^－3") == "10のマイナス3乗"
+    assert normalize_text("10^ー3") == "10のマイナス3乗"
+    # 数字指数ではない `^` は装飾・脚注の可能性があるため、指数表記として展開しない
+    assert normalize_text("x^n") == "xn"
+    assert normalize_text("x^") == "x"
+    assert normalize_text("^n") == "n"
+    assert normalize_text("注釈^4") == "注釈4"
+    assert normalize_text("10^^3") == "103"
     # 集合記号
     assert normalize_text("∈") == "属する"
     assert normalize_text("∉") == "属さない"
@@ -1754,6 +1770,29 @@ def test_normalize_text_phone_postal_address_edge_cases():
     assert normalize_text("5-3=2") == "5マイナス3イコール2"
     # スペース付き数式（こちらは明確に数式）
     assert normalize_text("5 - 3 = 2") == "5マイナス3イコール2"
+    # `=` がない加算・乗算・除算は数式として読ませる
+    assert normalize_text("5 + 8 は") == "5プラス8は"
+    assert normalize_text("5*8は") == "5かける8は"
+    assert normalize_text("2*3*4は") == "2かける3かける4は"
+    assert normalize_text("2 * 3 * 4 は") == "2かける3かける4は"
+    assert normalize_text("2×3×4は") == "2かける3かける4は"
+    assert normalize_text("2✖3✖4は") == "2かける3かける4は"
+    assert normalize_text("2⨯3⨯4は") == "2かける3かける4は"
+    assert normalize_text("2＊3＊4は") == "2かける3かける4は"
+    assert normalize_text("1.5*2.5は") == "1.5かける2.5は"
+    assert normalize_text("1920×1080×2") == "1920かける1080かける2"
+    assert normalize_text("6 ÷ 2 は") == "6わる2は"
+    assert normalize_text("2*3=6") == "2かける3イコール6"
+    # `*` は数字同士のときだけ乗算として扱い、それ以外では従来通り記号として除去される
+    assert normalize_text("A*B") == "AB"
+    assert normalize_text("注釈*を確認") == "注釈を確認"
+    assert normalize_text("2*abc") == "2エービーシー"
+    assert normalize_text("abc*2") == "エービーシー2"
+    assert normalize_text("2*3*abc") == "2かける3エービーシー"
+    # 価格やポイント表記の `＋` は数式として一体化せず、従来通り記号読みだけに留める
+    assert normalize_text("53693円＋537ポイント") == "53693円プラス537ポイント"
+    # `=` がない減算は住所・スコア・型番と衝突するため従来通り保持する
+    assert normalize_text("5 - 3") == "5-3"
     # 先頭0のハイフン区切りは電話番号として処理される（数式より優先）
     assert (
         normalize_text("03-1234-5678") == "ゼロサン,イチニーサンヨン,ゴーロクナナハチ"
