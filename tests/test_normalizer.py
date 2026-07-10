@@ -577,6 +577,18 @@ def test_normalize_text_kanji_numeral_non_conversion():
     assert normalize_text("一二三四五郎") == "一二三四五郎"
 
 
+def test_normalize_text_kanji_numeral_sequence_with_zero() -> None:
+    """漢数字のゼロを含む位取り表記を数値として保持する。"""
+
+    # `〇` と非ゼロ漢数字が連続する表記は、伏せ字の丸ではなく各桁を表す数字列
+    assert normalize_text("成功率七〇％", for_irodori=True) == "成功率70パーセント"
+    assert normalize_text("二〇二六年", for_irodori=True) == "2026年"
+
+    # 非数値文脈の丸印と全て丸の伏せ字は従来どおり読みを残す
+    assert normalize_text("○子宮から", for_irodori=True) == "マル子宮から"
+    assert normalize_text("〇〇パン", for_irodori=True) == "マルマルパン"
+
+
 def test_normalize_text_circle_to_maru() -> None:
     """
     数値コンテキスト外の丸系文字（〇, ○, ◯, ⭕, ⚪ 等）が「マル」として読まれることを検証する。

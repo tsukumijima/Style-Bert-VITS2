@@ -45,6 +45,7 @@ def __should_transliterated_word_by_ngram(word: str) -> bool:
         score = sum(scores) / len(scores)
     return score > __english_word_ngram.threshold
 
+
 # 異体字・旧字体→新字体の変換テーブル
 # str.translate() 用に構築しておくことで、異体字・旧字体を新字体に高速に一括変換できる
 __ITAIJI_TRANSLATE_TABLE = str.maketrans(ITAIJI_MAP)
@@ -356,6 +357,9 @@ __KANJI_HYPHEN_CHAIN_PATTERN = re.compile(
 # 日本語の電話番号は10〜11桁のため、10文字以上を閾値とする
 # 10文字未満の連続漢数字は人名（一二三さん）や固有名詞の可能性があるため変換しない
 __LONG_KANJI_DIGIT_SEQUENCE_PATTERN = re.compile(r"[一二三四五六七八九〇]{10,}")
+# `〇` を含む2桁以上の漢数字列は、年・割合など各文字が1桁を表す位取り表記として扱う
+## 非ゼロ漢数字も必要条件にすることで、伏せ字の `〇〇` を数字へ変えない
+__KANJI_ZERO_DIGIT_SEQUENCE_PATTERN = re.compile(r"[一二三四五六七八九〇]{2,}")
 
 # 数字1桁→カタカナ読みのマッピング
 # 1モーラの数字（2, 5）は長音付き（ニー, ゴー）がデフォルト
@@ -977,7 +981,8 @@ def __normalize_kanji_and_separators(text: str) -> str:
       2. 数字間のカタカナ長音記号「ー」をハイフンに変換
          （ステップ 3 でハイフン区切りチェーンとして検出するため、先にハイフンに変換する）
       3. 漢数字の数列表記を半角数字に変換（ハイフン区切りチェーン or 10文字以上連続のみ）
-      4. 数値変換されずに残った〇を「マル」に変換
+      4. 〇と非ゼロ漢数字が連続する位取り表記を半角数字に変換
+      5. 数値変換されずに残った〇を「マル」に変換
          （〇〇電鉄→マルマル電鉄、ぶっ〇せ→ぶっマルせ 等のふせ字・伏せ字に対応）
 
     Args:
@@ -1005,7 +1010,19 @@ def __normalize_kanji_and_separators(text: str) -> str:
     # 「一般」「三月」のような漢語・複合語中の単独漢数字は変換しない
     text = __convert_kanji_numeral_sequences(text)
 
-    # 4. 数値変換されずに残った〇 (U+3007) を「マル」に変換する
+    # 4. 〇と非ゼロ漢数字が連続する位取り表記を半角数字に変換する
+    ## `七〇` や `二〇二六` は各文字が1桁を表す一方、`〇〇` は伏せ字として残す
+    def convert_kanji_zero_digit_sequence(match: re.Match[str]) -> str:
+        sequence = match.group()
+        if "〇" not in sequence or all(character == "〇" for character in sequence):
+            return sequence
+        return sequence.translate(__KANJI_TO_DIGIT_TABLE)
+
+    text = __KANJI_ZERO_DIGIT_SEQUENCE_PATTERN.sub(
+        convert_kanji_zero_digit_sequence, text
+    )
+
+    # 5. 数値変換されずに残った〇 (U+3007) を「マル」に変換する
     # Step 1 で全ての丸系文字（○, ◯, ⭕, ⚪ + バリエーションセレクタ付き）は〇に正規化済み
     # Step 3 で電話番号・郵便番号・住所等の数値コンテキスト内の〇は半角 0 に変換済み
     # ここで残っている〇は数値コンテキスト外のもの（ふせ字・伏せ字、プレースホルダー等）
