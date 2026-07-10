@@ -26,8 +26,8 @@ def __should_transliterated_word_by_ngram(word: str) -> bool:
         for character in word.lower()
         if character in __english_word_ngram.valid_chars
     )
-    # e2k 0.1.1 はモデルを set へ格納した後、順序付きの重み配列と zip() して評価する
-    ## プロセスごとのハッシュ順で重みが入れ替わるため、資産定義と同じ2/3/4-gram順で評価する
+    # e2k はモデルを set へ格納した後、順序付きの重み配列と zip() して評価する
+    ## プロセスごとのハッシュ順で重みが入れ替わるため、資産定義と同じ 2/3/4-gram 順で評価する
     scores = [
         model.score(cleaned_word)
         for model in sorted(__english_word_ngram.models, key=lambda model: model.n)

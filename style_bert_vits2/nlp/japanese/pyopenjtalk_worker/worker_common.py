@@ -4,7 +4,8 @@ from enum import IntEnum, auto
 from typing import Any, Final
 
 
-WORKER_PORT: Final[int] = 7861
+# Gradio は 7860 から空きポートを順に使うため、同じ範囲を避けて内部ワーカーを起動
+WORKER_PORT: Final[int] = 17860
 HEADER_SIZE: Final[int] = 4
 
 
