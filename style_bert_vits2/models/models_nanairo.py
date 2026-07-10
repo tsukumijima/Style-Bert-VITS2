@@ -1271,6 +1271,9 @@ class SynthesizerTrn(nn.Module):
         self.speaker_adapter_bottleneck_dim = kwargs.get(
             "speaker_adapter_bottleneck_dim", 96
         )
+        self.use_fixed_isometric_speaker_projection = kwargs.get(
+            "use_fixed_isometric_speaker_projection", False
+        )
         self.use_sdp = use_sdp
         self.use_noise_scaled_mas = kwargs.get("use_noise_scaled_mas", False)
         self.mas_noise_scale_initial = kwargs.get("mas_noise_scale_initial", 0.01)
@@ -1405,6 +1408,40 @@ class SynthesizerTrn(nn.Module):
             # Adapter 無効時でも g_neutral を登録し、チェックポイントの state_dict 互換性を維持する
             self.register_buffer("g_neutral", torch.zeros(1, gin_channels))
 
+        # 固定直交列行列は入力空間の距離と方向を学習中も変形させない
+        ## 非線形 Adapter が話者クラスタを暗黙の lookup として記憶する余地を基準線から除く
+        if self.use_fixed_isometric_speaker_projection is True:
+            if gin_channels < self.speaker_adapter_input_dim:
+                raise ValueError(
+                    "gin_channels must be greater than or equal to "
+                    "speaker_adapter_input_dim for fixed isometric projection"
+                )
+            projection_generator = torch.Generator(device="cpu")
+            projection_generator.manual_seed(20260710)
+            projection_source = torch.randn(
+                gin_channels,
+                self.speaker_adapter_input_dim,
+                generator=projection_generator,
+            )
+            fixed_projection, _ = torch.linalg.qr(projection_source, mode="reduced")
+            # safetensors は stride 付きテンソルを保存できないため、QR の転置 layout を連続化する
+            self.register_buffer(
+                "speaker_isometric_projection",
+                fixed_projection.contiguous(),
+            )
+            self.register_buffer(
+                "speaker_embedding_mean",
+                torch.zeros(1, self.speaker_adapter_input_dim),
+            )
+            self.speaker_projection_scale = nn.Parameter(
+                torch.tensor(float(kwargs.get("speaker_projection_scale_init", 1.0)))
+            )
+        else:
+            # 無効時は state_dict に新しいキーを増やさず、既存モデルの互換性を保つ
+            self.register_buffer("speaker_isometric_projection", None)
+            self.register_buffer("speaker_embedding_mean", None)
+            self.register_parameter("speaker_projection_scale", None)
+
         # 事前学習済み emb_g の分布統計を保持する
         ## Adapter 経路の出力分布が事前学習 emb_g 分布から逸脱していないかの監視と、分散保持 loss に使う
         ## Adapter 無効時でも buffer を登録しチェックポイント互換性を維持する
@@ -1433,6 +1470,29 @@ class SynthesizerTrn(nn.Module):
             neutral_g = neutral_g.unsqueeze(0)
         # register_buffer 由来のテンソル更新（属性経由だと型チェッカーに誤解釈される場合がある）
         self.get_buffer("g_neutral").copy_(neutral_g)
+
+    def set_speaker_embedding_stats(self, mean_embedding: torch.Tensor) -> None:
+        """
+        固定等長写像で中心化に使う話者埋め込み平均を設定する。
+
+        Args:
+            mean_embedding (torch.Tensor): 学習データ全体の話者埋め込み平均
+        """
+
+        if self.use_fixed_isometric_speaker_projection is not True:
+            raise RuntimeError("Fixed isometric speaker projection is disabled")
+        if mean_embedding.dim() == 1:
+            mean_embedding = mean_embedding.unsqueeze(0)
+        expected_shape = (1, self.speaker_adapter_input_dim)
+        if tuple(mean_embedding.shape) != expected_shape:
+            raise ValueError(
+                "Speaker embedding mean shape mismatch. "
+                f"expected: {expected_shape}, actual: {tuple(mean_embedding.shape)}"
+            )
+        speaker_embedding_mean = self.get_buffer("speaker_embedding_mean")
+        if speaker_embedding_mean is None:
+            raise RuntimeError("Speaker embedding mean buffer is not initialized")
+        speaker_embedding_mean.copy_(mean_embedding)
 
     def set_emb_g_statistics(self) -> None:
         """
@@ -1603,14 +1663,33 @@ class SynthesizerTrn(nn.Module):
         g_adjust: torch.Tensor | None,
     ) -> torch.Tensor:
         if speaker_embedding is not None:
-            if self.speaker_control_encoder is None or self.speaker_adapter is None:
-                raise ValueError("Speaker control encoder and adapter are required")
             if speaker_embedding.dim() == 1:
                 speaker_embedding = speaker_embedding.unsqueeze(0)
-            # g_neutral にゲート付き SpeakerAdapter の出力を加算して g を求める
-            ctrl = self.speaker_control_encoder(speaker_embedding)
-            gated_delta = self.speaker_adapter(ctrl)
-            g = self.g_neutral + gated_delta
+            g_neutral = self.get_buffer("g_neutral")
+            if g_neutral is None:
+                raise RuntimeError("Neutral speaker embedding buffer is missing")
+
+            # 固定等長写像では中心化後の距離と方向を単一スカラー倍まで保つ
+            if self.use_fixed_isometric_speaker_projection is True:
+                speaker_embedding_mean = self.get_buffer("speaker_embedding_mean")
+                fixed_projection = self.get_buffer("speaker_isometric_projection")
+                if speaker_embedding_mean is None or fixed_projection is None:
+                    raise RuntimeError("Fixed speaker projection buffers are missing")
+                speaker_projection_scale = self.get_parameter(
+                    "speaker_projection_scale"
+                )
+                if speaker_projection_scale is None:
+                    raise RuntimeError("Speaker projection scale is missing")
+                centered_embedding = speaker_embedding - speaker_embedding_mean
+                projected_embedding = F.linear(centered_embedding, fixed_projection)
+                g = g_neutral + speaker_projection_scale * projected_embedding
+            else:
+                if self.speaker_control_encoder is None or self.speaker_adapter is None:
+                    raise ValueError("Speaker control encoder and adapter are required")
+                # g_neutral にゲート付き SpeakerAdapter の出力を加算して g を求める
+                ctrl = self.speaker_control_encoder(speaker_embedding)
+                gated_delta = self.speaker_adapter(ctrl)
+                g = g_neutral + gated_delta
             g = g.unsqueeze(-1)
         else:
             if self.n_speakers > 0:

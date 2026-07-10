@@ -57,7 +57,12 @@ def process_line(
         else:
             device = "cpu"
 
-    wav_path, _, language_str, text, phones, tone, word2ph = line.strip().split("|")
+    fields = line.strip().split("|")
+    if len(fields) not in (7, 8):
+        raise ValueError(f"Invalid train.list line format: {line.strip()}")
+
+    # 属性 ID は学習時の条件入力なので、BERT 特徴量の生成では7列目までを使う
+    wav_path, _, language_str, text, phones, tone, word2ph = fields[:7]
     phone = phones.split(" ")
     tone = [int(i) for i in tone.split(" ")]
     word2ph = [int(i) for i in word2ph.split(" ")]

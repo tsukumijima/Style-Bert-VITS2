@@ -32,8 +32,6 @@ class HyperParametersTrain(BaseModel):
     c_mel: int = 45
     c_kl: float = 1.0
     c_commit: int = 100
-    c_teacher: float = 0.1
-    c_delta_l2: float = 0.01
     skip_optimizer: bool = False
     freeze_ZH_bert: bool = False
     freeze_JP_bert: bool = False
@@ -41,12 +39,13 @@ class HyperParametersTrain(BaseModel):
     freeze_emo: bool = False
     freeze_style: bool = False
     freeze_decoder: bool = False
-    train_speaker_adapter_only: bool = False
-    disable_discriminators_for_adapter: bool = True
+    freeze_emb_g: bool = False
     # 学習中に Adapter 出力分散比がこの値を下回ったら警告ログを出す閾値 (early stopping のシグナル)
     adapter_min_variance_ratio_warning: float = 0.5
     # 主成分別分散モニタで保持する PC 数 (PCA 上位 k 個の分散比を TensorBoard に記録)
     pc_variance_monitor_k: int = 8
+    # 話者情報の漏洩を防ぐ検証では、全発話の style_vec を同じ共有平均へ固定する
+    style_vec_shared_mean: bool = False
 
 
 class HyperParametersData(BaseModel):
@@ -118,6 +117,8 @@ class HyperParametersModel(BaseModel):
     use_speaker_adapter: bool = False
     speaker_adapter_input_dim: int = 384
     speaker_adapter_bottleneck_dim: int = 96
+    use_fixed_isometric_speaker_projection: bool = False
+    speaker_projection_scale_init: float = 1.0
     slm: HyperParametersModelSLM = HyperParametersModelSLM()
 
 

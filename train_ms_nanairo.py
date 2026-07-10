@@ -42,6 +42,7 @@ from contextlib import nullcontext
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+import numpy as np
 import torch
 import torch.distributed as dist
 from huggingface_hub import HfApi
@@ -137,6 +138,9 @@ ema_model: EMAModel | None = None
 # 常に同一入力から合成することで、学習進行に伴う品質変化を追跡できる
 _fixed_eval_batch: tuple[Any, ...] | None = None
 
+# style_vec の話者情報を遮断する検証では、学習と評価で同じ共有平均を使う
+_style_vec_shared_mean: torch.Tensor | None = None
+
 
 def run():
     paths_config = get_paths_config()
@@ -207,6 +211,13 @@ def run():
         help="Number of steps to accumulate gradients before updating weights. "
         "Effective batch size = batch_size * gradient_accumulation_steps. Default: 1 (no accumulation)",
     )
+    parser.add_argument(
+        "--max_steps",
+        type=int,
+        default=None,
+        help="Stop training after this global step and save the final checkpoint. "
+        "Default: run until the configured epoch count finishes.",
+    )
     args = parser.parse_args()
 
     # TrainingModelPaths を使ってパスを解決
@@ -256,6 +267,28 @@ def run():
     n_gpus = dist.get_world_size()
 
     hps = HyperParameters.load_from_json(paths.config_path)
+
+    # 共有平均を要求した実験は入力ファイルの欠落を黙って別条件へ切り替えず、起動時に停止する
+    global _style_vec_shared_mean
+    if hps.train.style_vec_shared_mean is True:
+        style_vec_mean_path = paths.dataset_dir / "style_vec_mean.npy"
+        if not style_vec_mean_path.exists():
+            raise FileNotFoundError(
+                "Shared style vector mean not found. "
+                f"Run prepare_nanairo_zeroshot_stats.py first: {style_vec_mean_path}"
+            )
+        style_vec_mean_array = np.load(style_vec_mean_path)
+        if style_vec_mean_array.shape != (256,):
+            raise ValueError(
+                "Shared style vector mean shape must be (256,). "
+                f"actual: {style_vec_mean_array.shape}"
+            )
+        _style_vec_shared_mean = torch.from_numpy(
+            style_vec_mean_array.astype(np.float32, copy=False)
+        )
+        logger.info(f"Loaded shared style vector mean: {style_vec_mean_path}")
+    else:
+        _style_vec_shared_mean = None
     runtime_config = TrainRuntimeConfig(
         model_name=hps.model_name,
         model_dir=model_dir,
@@ -264,7 +297,9 @@ def run():
         keep_ckpts=args.keep_ckpts,
         repo_id=args.repo_id,
         speedup=args.speedup,
-        spec_cache=True,
+        # spec キャッシュは音声ごとに約 10MB が追加され、数万ファイルに及ぶ多話者学習では数百 GB 級に膨らんで
+        # ストレージを枯渇させるため無効化する (spec は DataLoader worker が毎回計算する)
+        spec_cache=False,
     )
 
     """
@@ -275,16 +310,6 @@ def run():
     - runtime_config.out_dir: 推論用モデルの出力先 (model_assets/{model}/)
     - runtime_config.dataset_path: データセットパス (Data/{model}/)
     """
-
-    if hps.train.train_speaker_adapter_only is True:
-        if hps.data.use_speaker_embedding is not True:
-            raise ValueError(
-                "use_speaker_embedding must be true for adapter-only training."
-            )
-        if hps.model.use_speaker_adapter is not True:
-            raise ValueError(
-                "use_speaker_adapter must be true for adapter-only training."
-            )
 
     if args.repo_id is not None:
         # First try to upload config.json to check if the repo exists
@@ -325,6 +350,8 @@ def run():
 
     torch.manual_seed(hps.train.seed)
     torch.cuda.set_device(local_rank)
+    if _style_vec_shared_mean is not None:
+        _style_vec_shared_mean = _style_vec_shared_mean.cuda(local_rank)
 
     global global_step
     writer = None
@@ -498,6 +525,8 @@ def run():
         use_speaker_adapter=hps.model.use_speaker_adapter,
         speaker_adapter_input_dim=hps.model.speaker_adapter_input_dim,
         speaker_adapter_bottleneck_dim=hps.model.speaker_adapter_bottleneck_dim,
+        use_fixed_isometric_speaker_projection=hps.model.use_fixed_isometric_speaker_projection,
+        speaker_projection_scale_init=hps.model.speaker_projection_scale_init,
         # 主成分別分散モニタの PC 数
         pc_variance_monitor_k=hps.train.pc_variance_monitor_k,
     ).cuda(local_rank)
@@ -517,19 +546,22 @@ def run():
         for param in net_g.dec.parameters():
             param.requires_grad = False
 
-    if hps.train.train_speaker_adapter_only is True:
-        logger.info("Training speaker adapter only.")
-        for param in net_g.parameters():
+    # ゼロショット型の full 学習では lookup table を更新せず、全発話を SpeakerAdapter 経由で条件付けする
+    if hps.train.freeze_emb_g is True:
+        logger.info("Freezing speaker lookup embedding.")
+        for param in net_g.emb_g.parameters():
             param.requires_grad = False
-        if (
-            hasattr(net_g, "speaker_control_encoder")
-            and net_g.speaker_control_encoder is not None
-        ):
+
+    # 固定写像モードでは既存 Adapter を checkpoint 互換のため保持しつつ学習対象から外す
+    ## DDP が forward で使われないパラメータの勾配を待たないよう、ラップ前に凍結する
+    if hps.model.use_fixed_isometric_speaker_projection is True:
+        logger.info("Freezing speaker adapter modules for fixed projection mode.")
+        if net_g.speaker_control_encoder is not None:
             for param in net_g.speaker_control_encoder.parameters():
-                param.requires_grad = True
-        if hasattr(net_g, "speaker_adapter") and net_g.speaker_adapter is not None:
+                param.requires_grad = False
+        if net_g.speaker_adapter is not None:
             for param in net_g.speaker_adapter.parameters():
-                param.requires_grad = True
+                param.requires_grad = False
 
     net_d = MultiPeriodDiscriminator(hps.model.use_spectral_norm).cuda(local_rank)
     # Transformer-based DP/SDP では duration 系だけ weight decay の有無を明示的に分ける
@@ -730,12 +762,43 @@ def run():
     if is_resuming_training is False and (
         hasattr(net_g.module, "set_g_neutral")
         and hasattr(net_g.module, "emb_g")
-        and getattr(net_g.module, "use_speaker_adapter", False) is True
+        and (
+            getattr(net_g.module, "use_speaker_adapter", False) is True
+            or getattr(
+                net_g.module,
+                "use_fixed_isometric_speaker_projection",
+                False,
+            )
+            is True
+        )
     ):
         with torch.no_grad():
             # ゲート付き delta 経路用に、ロード済み emb_g の平均から g_neutral を初期化する
             g_neutral = net_g.module.emb_g.weight.detach().mean(dim=0, keepdim=True)
             net_g.module.set_g_neutral(g_neutral)
+
+    # 固定写像の中心は学習対象にせず、全発話から事前計算した平均を checkpoint buffer へ保存する
+    if hps.model.use_fixed_isometric_speaker_projection is True:
+        speaker_embedding_mean_path = paths.dataset_dir / "spk_emb_mean.npy"
+        if not speaker_embedding_mean_path.exists():
+            raise FileNotFoundError(
+                "Speaker embedding mean not found. "
+                f"Run prepare_nanairo_zeroshot_stats.py first: {speaker_embedding_mean_path}"
+            )
+        speaker_embedding_mean_array = np.load(speaker_embedding_mean_path)
+        expected_shape = (hps.model.speaker_adapter_input_dim,)
+        if speaker_embedding_mean_array.shape != expected_shape:
+            raise ValueError(
+                "Speaker embedding mean shape mismatch. "
+                f"expected: {expected_shape}, actual: {speaker_embedding_mean_array.shape}"
+            )
+        net_g.module.set_speaker_embedding_stats(
+            torch.from_numpy(
+                speaker_embedding_mean_array.astype(np.float32, copy=False)
+            ).cuda(local_rank)
+        )
+        if rank == 0:
+            logger.info(f"Loaded speaker embedding mean: {speaker_embedding_mean_path}")
 
     # 事前学習 emb_g の分布統計 (平均・分散・PCA) を初期化する
     ## 学習再開時も統計が checkpoint に残るが、emb_g 自体は学習中ほぼ更新されないので再計算で問題ない
@@ -867,7 +930,7 @@ def run():
     )
     for epoch in range(epoch_str, hps.train.epochs + 1):
         if rank == 0:
-            train_and_evaluate(
+            is_max_steps_reached = train_and_evaluate(
                 rank,
                 local_rank,
                 epoch,
@@ -883,9 +946,10 @@ def run():
                 pbar,
                 initial_step,
                 args.gradient_accumulation_steps,
+                args.max_steps,
             )
         else:
-            train_and_evaluate(
+            is_max_steps_reached = train_and_evaluate(
                 rank,
                 local_rank,
                 epoch,
@@ -901,7 +965,10 @@ def run():
                 pbar,
                 initial_step,
                 args.gradient_accumulation_steps,
+                args.max_steps,
             )
+        if is_max_steps_reached is True:
+            break
         scheduler_g.step()
         scheduler_d.step()
         if net_dur_disc is not None:
@@ -1011,7 +1078,8 @@ def train_and_evaluate(
     pbar: tqdm[Any] | None,
     initial_step: int,
     gradient_accumulation_steps: int = 1,
-):
+    max_steps: int | None = None,
+) -> bool:
     net_g, net_d, net_dur_disc, net_wd, wl = nets
     optim_g, optim_d, optim_dur_disc, optim_wd = optims
     scheduler_g, scheduler_d, scheduler_dur_disc, scheduler_wd = schedulers
@@ -1038,23 +1106,7 @@ def train_and_evaluate(
         hps.model.use_transformer_duration_predictor is True
         or use_duration_symbol_type_ids is True
     )
-    disable_discriminators = (
-        hps.train.train_speaker_adapter_only
-        and hps.train.disable_discriminators_for_adapter
-    )
-    if hps.train.train_speaker_adapter_only is True:
-        net_g.eval()
-        if (
-            hasattr(net_g.module, "speaker_control_encoder")
-            and net_g.module.speaker_control_encoder is not None
-        ):
-            net_g.module.speaker_control_encoder.train()
-        if (
-            hasattr(net_g.module, "speaker_adapter")
-            and net_g.module.speaker_adapter is not None
-        ):
-            net_g.module.speaker_adapter.train()
-
+    disable_discriminators = False  # 現在未使用
     if disable_discriminators:
         net_d.eval()
         if net_dur_disc is not None:
@@ -1159,6 +1211,16 @@ def train_and_evaluate(
             )
         if speaker_embedding is not None:
             speaker_embedding = speaker_embedding.cuda(local_rank, non_blocking=True)
+        # 共有平均モードでは dropout 設定にかかわらず、学習の全行を同じ style_vec に固定する
+        ## 対象音声由来の話者情報を遮断し、prior 側の話者条件を speaker_embedding に限定する
+        if hps.train.style_vec_shared_mean is True:
+            if _style_vec_shared_mean is None:
+                raise RuntimeError("Shared style vector mean is not initialized")
+            style_vec = (
+                _style_vec_shared_mean.to(dtype=style_vec.dtype)
+                .unsqueeze(0)
+                .expand(style_vec.shape[0], -1)
+            )
 
         with autocast(
             device_type="cuda",
@@ -1227,8 +1289,6 @@ def train_and_evaluate(
         loss_lm_gen: torch.Tensor | None = None
         loss_dur_gen: torch.Tensor | None = None
         losses_dur_gen: list[torch.Tensor] | None = None
-        loss_teacher = torch.tensor(0.0, device=y.device)
-        loss_delta_l2 = torch.tensor(0.0, device=y.device)
         generator_grad_metrics: dict[str, float] = {}
         # 分布診断メトリクス
         adapter_dist_metrics: dict[str, torch.Tensor] | None = None
@@ -1436,24 +1496,6 @@ def train_and_evaluate(
                     assert loss_lm_gen is not None
                     loss_gen_all += loss_lm + loss_lm_gen
 
-                # L_teacher は speaker adapter のみ学習モードかつ speaker_embedding がある場合のみ損失へ加算する
-                if (
-                    hps.train.train_speaker_adapter_only is True
-                    and speaker_embedding is not None
-                ):
-                    g_target = net_g.module.emb_g(speakers).detach()
-                    g_pred = g.squeeze(-1)
-                    loss_teacher = F.mse_loss(g_pred, g_target)
-                    loss_gen_all += hps.train.c_teacher * loss_teacher
-
-                    # ゲート適用前の素の delta の二乗平均で、更新幅が膨らみすぎないよう正則化する
-                    assert net_g.module.speaker_control_encoder is not None
-                    assert net_g.module.speaker_adapter is not None
-                    ctrl = net_g.module.speaker_control_encoder(speaker_embedding)
-                    delta = net_g.module.speaker_adapter.net(ctrl)
-                    loss_delta_l2 = delta.pow(2).mean()
-                    loss_gen_all += hps.train.c_delta_l2 * loss_delta_l2
-
         if is_first_accumulation_step:
             optim_g.zero_grad()
 
@@ -1473,6 +1515,59 @@ def train_and_evaluate(
         grad_norm_g = 0.0
         if should_step:
             scaler.unscale_(optim_g)
+            # 固定写像の初回 backward で、等長性と学習対象が設計どおりかを同じ実行ログへ残す
+            if (
+                rank == 0
+                and global_step == 0
+                and hps.model.use_fixed_isometric_speaker_projection is True
+            ):
+                if logger is None:
+                    raise RuntimeError("Training logger is not initialized")
+                fixed_projection = net_g.module.get_buffer(
+                    "speaker_isometric_projection"
+                )
+                if fixed_projection is None:
+                    raise RuntimeError("Fixed speaker projection buffer is missing")
+                identity = torch.eye(
+                    fixed_projection.shape[1],
+                    device=fixed_projection.device,
+                    dtype=fixed_projection.dtype,
+                )
+                orthogonality_max_error = float(
+                    (fixed_projection.T @ fixed_projection - identity)
+                    .abs()
+                    .max()
+                    .item()
+                )
+                projection_scale = net_g.module.get_parameter(
+                    "speaker_projection_scale"
+                )
+                if projection_scale is None:
+                    raise RuntimeError("Speaker projection scale is missing")
+                projection_scale_grad = projection_scale.grad
+                style_vec_max_deviation = 0.0
+                if _style_vec_shared_mean is not None:
+                    shared_style_vec = _style_vec_shared_mean.to(
+                        device=style_vec.device,
+                        dtype=style_vec.dtype,
+                    )
+                    style_vec_max_deviation = float(
+                        (style_vec - shared_style_vec.unsqueeze(0)).abs().max().item()
+                    )
+                g_norm_mean = float(g.detach().squeeze(-1).norm(dim=-1).mean().item())
+                emb_g_norm_median = float(
+                    net_g.module.emb_g.weight.detach().norm(dim=-1).median().item()
+                )
+                logger.info(
+                    "Fixed isometric projection dry-run probe. "
+                    f"orthogonality_max_error: {orthogonality_max_error:.8e}, "
+                    f"projection_scale_grad: {None if projection_scale_grad is None else float(projection_scale_grad.item())}, "
+                    f"projection_buffer_grad_is_none: {fixed_projection.grad is None}, "
+                    f"style_vec_max_deviation: {style_vec_max_deviation:.8e}, "
+                    f"emb_g_grad_is_none: {net_g.module.emb_g.weight.grad is None}, "
+                    f"g_norm_mean: {g_norm_mean:.6f}, "
+                    f"emb_g_norm_median: {emb_g_norm_median:.6f}"
+                )
             # Transformer-based DP/SDP は duration 系だけ強めに抑えて初期 flow の暴れを監視する
             grad_norm_g, generator_grad_metrics = clip_generator_gradients(
                 net_g,
@@ -1518,8 +1613,6 @@ def train_and_evaluate(
                         "loss/g/mel": loss_mel,
                         "loss/g/dur": loss_dur,
                         "loss/g/kl": loss_kl,
-                        "loss/teacher": loss_teacher,
-                        "loss/delta_l2": loss_delta_l2,
                     }
                 )
                 scalar_dict.update(generator_grad_metrics)
@@ -1785,6 +1878,80 @@ def train_and_evaluate(
                     )
 
         global_step += 1
+        if max_steps is not None and global_step >= max_steps:
+            if rank == 0:
+                assert runtime_config.model_dir is not None
+                assert runtime_config.out_dir is not None
+
+                # step 上限で止める smoke でも後段測定に使う checkpoint を必ず残す
+                utils.checkpoints.save_checkpoint(
+                    net_g,
+                    optim_g,
+                    hps.train.learning_rate,
+                    epoch,
+                    os.path.join(runtime_config.model_dir, f"G_{global_step}.pth"),
+                )
+                utils.checkpoints.save_checkpoint(
+                    net_d,
+                    optim_d,
+                    hps.train.learning_rate,
+                    epoch,
+                    os.path.join(runtime_config.model_dir, f"D_{global_step}.pth"),
+                )
+                if net_dur_disc is not None:
+                    assert optim_dur_disc is not None
+                    utils.checkpoints.save_checkpoint(
+                        net_dur_disc,
+                        optim_dur_disc,
+                        hps.train.learning_rate,
+                        epoch,
+                        os.path.join(
+                            runtime_config.model_dir, f"DUR_{global_step}.pth"
+                        ),
+                    )
+                if net_wd is not None:
+                    assert optim_wd is not None
+                    utils.checkpoints.save_checkpoint(
+                        net_wd,
+                        optim_wd,
+                        hps.train.learning_rate,
+                        epoch,
+                        os.path.join(runtime_config.model_dir, f"WD_{global_step}.pth"),
+                    )
+                if ema_model is not None:
+                    ema_state = {
+                        "state_dict": ema_model.state_dict(),
+                        "decay": ema_model.decay,
+                    }
+                    torch.save(
+                        ema_state,
+                        os.path.join(
+                            runtime_config.model_dir, f"EMA_{global_step}.pth"
+                        ),
+                    )
+                if runtime_config.keep_ckpts > 0:
+                    utils.checkpoints.clean_checkpoints(
+                        model_dir_path=runtime_config.model_dir,
+                        n_ckpts_to_keep=runtime_config.keep_ckpts,
+                        sort_by_time=True,
+                    )
+
+                # 推論用の safetensors も同じ step 名で出力し、測定対象を明確にする
+                model_to_save = (
+                    ema_model.get_ema_model() if ema_model is not None else net_g
+                )
+                utils.safetensors.save_safetensors(
+                    model_to_save,
+                    epoch,
+                    os.path.join(
+                        runtime_config.out_dir,
+                        f"{runtime_config.model_name}_e{epoch}_s{global_step}.safetensors",
+                    ),
+                    for_infer=True,
+                )
+                if logger is not None:
+                    logger.info(f"Reached max_steps: {global_step}. Stop training.")
+            return True
         if pbar is not None:
             pbar.set_description(
                 f"Epoch {epoch}({100.0 * batch_idx / len(train_loader):.0f}%)/{hps.train.epochs}"
@@ -1797,6 +1964,7 @@ def train_and_evaluate(
     if pbar is None and rank == 0:
         assert logger is not None
         logger.info(f"====> Epoch: {epoch}, step: {global_step}")
+    return False
 
 
 def evaluate(
@@ -1821,6 +1989,12 @@ def evaluate(
     is_nanairo_adapter_active = use_speaker_embedding is True and (
         hasattr(generator.module, "compute_adapter_distribution_metrics")
         and getattr(generator.module, "use_speaker_adapter", False) is True
+        and getattr(
+            generator.module,
+            "use_fixed_isometric_speaker_projection",
+            False,
+        )
+        is not True
     )
 
     with torch.no_grad():
@@ -1904,6 +2078,18 @@ def evaluate(
             tone = tone.cuda()
             language = language.cuda()
             style_vec = style_vec.cuda()
+            # 評価でも学習と同じ共有平均を使い、対象音声の style_vec から話者情報が戻らないようにする
+            if hps.train.style_vec_shared_mean is True:
+                if _style_vec_shared_mean is None:
+                    raise RuntimeError("Shared style vector mean is not initialized")
+                style_vec = (
+                    _style_vec_shared_mean.to(
+                        device=style_vec.device,
+                        dtype=style_vec.dtype,
+                    )
+                    .unsqueeze(0)
+                    .expand(style_vec.shape[0], -1)
+                )
             if duration_symbol_type_ids is not None:
                 duration_symbol_type_ids = duration_symbol_type_ids.cuda()
             if speaker_embedding is not None:
@@ -1983,6 +2169,7 @@ def evaluate(
         # 固定サンプルによる定期合成 (学習進行に伴う品質変化の追跡用)
         # 常に同一入力から合成することで、ステップ間の品質推移を TensorBoard で聴き比べ可能にする
         if _fixed_eval_batch is not None:
+            fixed_eval_batch = _fixed_eval_batch
             if use_speaker_embedding and use_duration_symbol_type_ids:
                 (
                     fixed_x,
@@ -1998,7 +2185,7 @@ def evaluate(
                     fixed_style_vec,
                     fixed_duration_symbol_type_ids,
                     fixed_speaker_embedding,
-                ) = _fixed_eval_batch
+                ) = fixed_eval_batch
             elif use_speaker_embedding:
                 (
                     fixed_x,
@@ -2013,7 +2200,7 @@ def evaluate(
                     fixed_bert,
                     fixed_style_vec,
                     fixed_speaker_embedding,
-                ) = _fixed_eval_batch
+                ) = fixed_eval_batch
                 fixed_duration_symbol_type_ids = None
             elif use_duration_symbol_type_ids:
                 (
@@ -2029,7 +2216,7 @@ def evaluate(
                     fixed_bert,
                     fixed_style_vec,
                     fixed_duration_symbol_type_ids,
-                ) = _fixed_eval_batch
+                ) = fixed_eval_batch
                 fixed_speaker_embedding = None
             else:
                 (
@@ -2044,7 +2231,7 @@ def evaluate(
                     fixed_language,
                     fixed_bert,
                     fixed_style_vec,
-                ) = _fixed_eval_batch
+                ) = fixed_eval_batch
                 fixed_speaker_embedding = None
                 fixed_duration_symbol_type_ids = None
             fixed_x = fixed_x.cuda()
@@ -2058,6 +2245,18 @@ def evaluate(
             fixed_tone = fixed_tone.cuda()
             fixed_language = fixed_language.cuda()
             fixed_style_vec = fixed_style_vec.cuda()
+            # 固定評価サンプルも共有平均へ置換し、step 間で同じ条件を比較する
+            if hps.train.style_vec_shared_mean is True:
+                if _style_vec_shared_mean is None:
+                    raise RuntimeError("Shared style vector mean is not initialized")
+                fixed_style_vec = (
+                    _style_vec_shared_mean.to(
+                        device=fixed_style_vec.device,
+                        dtype=fixed_style_vec.dtype,
+                    )
+                    .unsqueeze(0)
+                    .expand(fixed_style_vec.shape[0], -1)
+                )
             if fixed_duration_symbol_type_ids is not None:
                 fixed_duration_symbol_type_ids = fixed_duration_symbol_type_ids.cuda()
             if fixed_speaker_embedding is not None:

@@ -101,6 +101,8 @@ def get_net_g(
                 use_speaker_adapter=hps.model.use_speaker_adapter,
                 speaker_adapter_input_dim=hps.model.speaker_adapter_input_dim,
                 speaker_adapter_bottleneck_dim=hps.model.speaker_adapter_bottleneck_dim,
+                use_fixed_isometric_speaker_projection=hps.model.use_fixed_isometric_speaker_projection,
+                speaker_projection_scale_init=hps.model.speaker_projection_scale_init,
             ).to(device)
         elif is_jp_extra_like_model is True:
             logger.info("Using JP-Extra model")

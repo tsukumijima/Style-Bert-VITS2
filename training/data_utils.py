@@ -115,15 +115,16 @@ class TextAudioSpeakerLoader(Dataset[tuple[Any, ...]]):
         for line_index, fields in enumerate(
             tqdm(self.audiopaths_sid_text, file=sys.stdout, dynamic_ncols=True)
         ):
-            # train.list は 7 カラム (id|spk|language|text|phones|tone|word2ph) を期待する
-            if len(fields) != 7:
+            # train.list は原則 7 カラム (id|spk|language|text|phones|tone|word2ph) を期待する（互換性のため 8 カラムも受理する）
+            expected_field_counts = (7, 8)
+            if len(fields) not in expected_field_counts:
                 logger.warning(
                     f"Skipping malformed line {line_index}: "
-                    f"expected 7 fields, got {len(fields)}"
+                    f"expected {expected_field_counts} fields, got {len(fields)}"
                 )
                 skipped += 1
                 continue
-            _id, spk, language, text, phones, tone, word2ph = fields
+            _id, spk, language, text, phones, tone, word2ph = fields[:7]
 
             # _id は wavs_dir からの相対パスなので、フルパスを構築
             audiopath_path = self.wavs_dir / _id
@@ -300,12 +301,14 @@ class TextAudioSpeakerLoader(Dataset[tuple[Any, ...]]):
                 )
                 if self.return_duration_symbol_type_ids is True:
                     assert duration_symbol_type_ids is not None
-                    return (*sample, duration_symbol_type_ids, speaker_embedding)
-                return (*sample, speaker_embedding)
+                    sample = (*sample, duration_symbol_type_ids)
+                if self.use_speaker_embedding:
+                    sample = (*sample, speaker_embedding)
+                return sample
             sample = (phones, spec, wav, sid, tone, language, ja_bert, style_vec)
             if self.return_duration_symbol_type_ids is True:
                 assert duration_symbol_type_ids is not None
-                return (*sample, duration_symbol_type_ids)
+                sample = (*sample, duration_symbol_type_ids)
             return sample
         else:
             if self.use_speaker_embedding:
@@ -324,8 +327,10 @@ class TextAudioSpeakerLoader(Dataset[tuple[Any, ...]]):
                 )
                 if self.return_duration_symbol_type_ids is True:
                     assert duration_symbol_type_ids is not None
-                    return (*sample, duration_symbol_type_ids, speaker_embedding)
-                return (*sample, speaker_embedding)
+                    sample = (*sample, duration_symbol_type_ids)
+                if self.use_speaker_embedding:
+                    sample = (*sample, speaker_embedding)
+                return sample
             sample = (
                 phones,
                 spec,
@@ -340,7 +345,7 @@ class TextAudioSpeakerLoader(Dataset[tuple[Any, ...]]):
             )
             if self.return_duration_symbol_type_ids is True:
                 assert duration_symbol_type_ids is not None
-                return (*sample, duration_symbol_type_ids)
+                sample = (*sample, duration_symbol_type_ids)
             return sample
 
     def get_audio(self, filename: str) -> tuple[torch.Tensor, torch.Tensor]:
@@ -755,12 +760,14 @@ class TextAudioSpeakerCollate:
                 )
                 if self.return_duration_symbol_type_ids is True:
                     assert duration_symbol_type_ids_padded is not None
-                    return (
+                    batch_items = (
                         *batch_items,
                         duration_symbol_type_ids_padded,
                         speaker_embedding,
                     )
-                return (*batch_items, speaker_embedding)
+                else:
+                    batch_items = (*batch_items, speaker_embedding)
+                return batch_items
             batch_items = (
                 text_padded,
                 text_lengths,
@@ -776,7 +783,7 @@ class TextAudioSpeakerCollate:
             )
             if self.return_duration_symbol_type_ids is True:
                 assert duration_symbol_type_ids_padded is not None
-                return (*batch_items, duration_symbol_type_ids_padded)
+                batch_items = (*batch_items, duration_symbol_type_ids_padded)
             return batch_items
         else:
             if self.use_speaker_embedding:
@@ -800,12 +807,14 @@ class TextAudioSpeakerCollate:
                 )
                 if self.return_duration_symbol_type_ids is True:
                     assert duration_symbol_type_ids_padded is not None
-                    return (
+                    batch_items = (
                         *batch_items,
                         duration_symbol_type_ids_padded,
                         speaker_embedding,
                     )
-                return (*batch_items, speaker_embedding)
+                else:
+                    batch_items = (*batch_items, speaker_embedding)
+                return batch_items
             assert ja_bert_padded is not None
             assert en_bert_padded is not None
             batch_items = (
@@ -825,7 +834,7 @@ class TextAudioSpeakerCollate:
             )
             if self.return_duration_symbol_type_ids is True:
                 assert duration_symbol_type_ids_padded is not None
-                return (*batch_items, duration_symbol_type_ids_padded)
+                batch_items = (*batch_items, duration_symbol_type_ids_padded)
             return batch_items
 
 
