@@ -99,6 +99,17 @@ __BLOCK_PATTERN = re.compile(r"(?:(?:[#$%&*+\-=_:/\\|;<>^])|\s){3,}")
 __NUMBER_RANGE_PATTERN = re.compile(
     r"(\d+(?:\.\d+)?(?:\s*[a-zA-Z]+)?)\s*[〜~～]\s*(\d+(?:\.\d+)?(?:\s*[a-zA-Z]+)?)"
 )
+# 数値+日本語単位から一般語へ続く範囲を検出する
+## 「月1度～毎週」の右側は数値でないため、数値同士だけを見る上のパターンでは長音へ誤変換される
+__MIXED_NUMBER_RANGE_PATTERN = re.compile(
+    r"(\d+(?:\.\d+)?[々〆ヵヶぁ-んァ-ヶ一-龯]+)\s*[〜~～]\s*"
+    r"(?![のをがはにへとでも])(?=[ぁ-んァ-ヶ一-龯])"
+)
+# U+2212 は明示的な減算記号なので、英数字変数の間ではハイフンや長音として扱わない
+__SYMBOLIC_MINUS_PATTERN = re.compile(
+    r"(?<![A-Za-zΑ-Ωα-ω])([A-Za-zΑ-Ωα-ω])\s*−\s*"
+    r"([A-Za-zΑ-Ωα-ω])(?![A-Za-zΑ-Ωα-ω])"
+)
 __NUMBER_MATH_PATTERN = re.compile(
     r"(\d+)\s*([+＋➕\-−－ー➖×✖⨯÷➗*＊])\s*(\d+)\s*=\s*(\d+)"
 )
@@ -115,7 +126,16 @@ __YEAR_MONTH_PATTERN = re.compile(r"(?<!\d)(18|19|20|21|22)(\d{2})/([0-1]?\d)(?!
 __FRACTION_PATTERN = re.compile(r"(\d+)[/／](\d+)")
 __ZERO_HOUR_PATTERN = re.compile(r"(?<![0-9])(午前|午後)?0時(?![0-9分]|間)")
 __TIME_PATTERN = re.compile(r"(\d+)時(\d+)分(?:(\d+)秒)?")
-__ASPECT_PATTERN = re.compile(r"(\d+)[:：](\d+)(?:[:：](\d+))?")
+# コロン区切りの時刻・タイムスタンプ・アスペクト比を検出する
+## 秒以下の小数はマラソン計時のように単位を付けず秒の直後へ続ける (`5秒101` など)
+__ASPECT_PATTERN = re.compile(r"(\d+)[:：](\d+)(?:[:：](\d+)(?:[.,](\d+))?)?")
+# 時間を省略した経過時間 (`34:05.101` など) を検出する
+## 3 段の `HH:MM:SS.mmm` より先に当てると `34:05.101` がアスペクト比へ誤変換される
+__ELAPSED_TIMESTAMP_PATTERN = re.compile(
+    r"(?<![\d:])"
+    r"(?P<minutes>\d{1,3})[:：](?P<seconds>\d{2})[.,](?P<fraction>\d+)"
+    r"(?![\d:])"
+)
 __POWER_PATTERN = re.compile(
     r"(?P<base>[A-Za-z]+|\d+(?:\.\d+)?)?\s*\^\s*"
     r"(?P<sign>[+\-−－ー]?)(?P<exponent>\d+)"
@@ -629,7 +649,7 @@ __UNIT_MAP = {
 # 単位の正規化パターン (__UNIT_MAP の定義に対応する)
 # ニュース原稿では `200万t` のように概数単位の直後へ物理単位が続くため、数値部に大きな単位を1つだけ含める
 __UNIT_PATTERN = re.compile(
-    r"(?P<number>[0-9.]*[0-9](?:[eE][-+]?[0-9]+)?(?:[万億兆京])?)\s*"
+    r"(?<![A-Za-z0-9])(?P<number>[0-9.]*[0-9](?:[eE][-+]?[0-9]+)?(?:[万億兆京])?)\s*"
     r"(?P<unit>(?:(k|d|m)?L|(?:k|c|m)m[23]?|m[23]?|m(?![a-zA-Z])|"
     r"(?:k|m)?g|(?:k|K|M|G|T|P|E)(?:i)?B|B|t|d|h|s|ms|μs|ns|"
     r"(?:k|m)?Ah|(?:m|k|M|G|T)?Wh|(?:k|m)?A|(?:k|K|M|G|T)?[Hh]z|"
@@ -637,6 +657,20 @@ __UNIT_PATTERN = re.compile(
     r"(?P<suffix>/[hs])?"
     r"(?=($|(?=/([^A-Za-z]|$))|[^/A-Za-z]))"
 )
+# `1h25m23s` のような連続時間表記を検出する
+## 単独の `50m` はメートルとして残すため、時間単位が2つ以上連続する場合だけマッチする
+## `50ms` を `50分+秒` と誤読しないよう、直後に `/` や英数字が続く場合は除外する
+__COMPACT_DURATION_PATTERN = re.compile(
+    r"(?<![A-Za-z0-9])"
+    r"(?P<duration>(?:\d+(?:\.\d+)?[dDhHmMsS])(?:\d+(?:\.\d+)?[dDhHmMsS]){1,})"
+    r"(?![A-Za-z0-9/])"
+)
+__COMPACT_DURATION_UNIT_MAP = {
+    "d": "日",
+    "h": "時間",
+    "m": "分",
+    "s": "秒",
+}
 # 温度と角度の度数表記を単位変換の前に「度」へ畳む
 # `℃` / `℉` は NFKC で `°C` / `°F` に分解されるため、記号置換だけだと ASCII 入力と同じ漏れ方をする
 __DEGREE_UNIT_PATTERN = re.compile(
@@ -1289,6 +1323,11 @@ def __replace_symbols(text: str) -> str:
         return f"{start}から{end}"
 
     text = __NUMBER_RANGE_PATTERN.sub(convert_range, text)
+    # 数値+単位から一般語へ続く範囲は、残った波ダッシュが後段で長音になる前に展開する
+    text = __MIXED_NUMBER_RANGE_PATTERN.sub(r"\1から", text)
+
+    # 変数間の減算記号は最終文字フィルタで消える前に読みへ変換する
+    text = __SYMBOLIC_MINUS_PATTERN.sub(r"\1マイナス\2", text)
 
     def get_symbol_yomi(symbol: str) -> str:
         # 読み間違いを防ぐため、数式の間に挟まれた場合にのみ下記の通り読み上げる
@@ -1464,13 +1503,37 @@ def __replace_symbols(text: str) -> str:
     # 時刻パターンの処理（漢字で書かれた時分秒）
     text = __TIME_PATTERN.sub(convert_time, text)
 
+    def format_timestamp_seconds(seconds: int, fraction: str | None) -> str:
+        # 小数秒はマラソン計時のように単位を付けず秒の直後へ続ける
+        if fraction is not None:
+            if seconds == 0:
+                return f"零秒{fraction}"
+            return f"{seconds}秒{fraction}"
+        if 0 <= seconds <= 59:
+            return f"{num2words(seconds, lang='ja')}秒"
+        return f"{num2words(seconds, lang='ja')}"
+
+    def convert_elapsed_timestamp(match: re.Match[str]) -> str:
+        minutes = int(match.group("minutes"))
+        seconds = int(match.group("seconds"))
+        fraction = match.group("fraction")
+        seconds_text = format_timestamp_seconds(seconds, fraction)
+        if minutes == 0:
+            return f"零分{seconds_text}"
+        return f"{minutes}分{seconds_text}"
+
+    # 時間省略の経過時間は、コロン2 段の時刻判定より先に展開する
+    text = __ELAPSED_TIMESTAMP_PATTERN.sub(convert_elapsed_timestamp, text)
+
     # 時刻またはアスペクト比の処理
     # 時刻は 00:00:00 から 27:59:59 までの範囲であれば、分を除き漢数字に変換して「十四時5分三十秒」「二十四時」のように読み上げる
     # それ以外ならアスペクト比と判断し「十六タイ九」のように読み上げる (「対」にすると「つい」と読んでしまう場合がある)
     def convert_time_or_aspect(match: re.Match[str]) -> str:
         hours = int(match.group(1))
         minutes = int(match.group(2))
-        seconds = int(match.group(3)) if match.group(3) else None
+        seconds_text = match.group(3)
+        fraction = match.group(4)
+        seconds = int(seconds_text) if seconds_text is not None else None
 
         # 時刻として処理する条件をチェック
         # 時刻らしさを判定：時が0-27の範囲で、分が2桁で表現されている
@@ -1492,10 +1555,7 @@ def __replace_symbols(text: str) -> str:
 
             # 秒の処理
             if seconds is not None:
-                if 0 <= seconds <= 59:
-                    result += f"{num2words(seconds, lang='ja')}秒"
-                else:
-                    result += f"{num2words(seconds, lang='ja')}"
+                result += format_timestamp_seconds(seconds, fraction)
             return result
         else:
             # アスペクト比として処理
@@ -2168,6 +2228,18 @@ def __convert_numbers_to_words(text: str) -> str:
     # 「40p」のようなページ数略記を「40ページ」に変換する
     res = __PAGE_UNIT_PATTERN.sub(convert_page_unit, res)
 
+    def convert_compact_duration(match: re.Match[str]) -> str:
+        duration = match.group("duration")
+        parts = re.findall(r"(\d+(?:\.\d+)?)([dDhHmMsS])", duration)
+        return "".join(
+            f"{number}{__COMPACT_DURATION_UNIT_MAP[unit.lower()]}"
+            for number, unit in parts
+        )
+
+    # `1h25m23s` のような連続時間表記は、一般単位変換より先にまとめて日本語化する
+    ## 後段の `m` はメートル扱いになるため、ここで先に畳まないと `25m23s` が平方メートルへ誤変換される
+    res = __COMPACT_DURATION_PATTERN.sub(convert_compact_duration, res)
+
     # 単位の変換（平方メートルなどの特殊な単位も含む）
     def convert_unit(match: re.Match[str]) -> str:
         number = match.group("number")
@@ -2198,8 +2270,13 @@ def __convert_numbers_to_words(text: str) -> str:
         else:
             return f"{number}{__UNIT_MAP.get(unit, unit)}"
 
-    # 単位の変換
-    res = __UNIT_PATTERN.sub(convert_unit, res)
+    # 連続時間表記以外の複合単位は、先頭を日本語化すると後続の数字が英字境界から外れる
+    ## 型番内の `E2A` を守る英数字境界を維持したまま、変化がなくなるまで後続単位を順に変換する
+    while True:
+        converted_res = __UNIT_PATTERN.sub(convert_unit, res)
+        if converted_res == res:
+            break
+        res = converted_res
 
     # 12,300 のような数字の区切りとしてのカンマを削除
     res = __NUMBER_WITH_SEPARATOR_PATTERN.sub(lambda m: m[0].replace(",", ""), res)

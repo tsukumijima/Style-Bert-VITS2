@@ -709,6 +709,65 @@ def test_normalize_text_ranges():
     # 単位付きの範囲
     assert normalize_text("100m〜200m") == "100メートルから200メートル"
     assert normalize_text("1kg〜2kg") == "1キログラムから2キログラム"
+    # 片側が頻度語でも、数字と単位から始まる波ダッシュは範囲として読む
+    assert normalize_text("月1度～毎週") == "月1度から毎週"
+    # 数字を伴わない語尾の波ダッシュは従来どおり長音として残す
+    assert normalize_text("やった〜最高") == "やったー最高"
+    # 見出しを囲む波ダッシュの末尾は、後続助詞との範囲を表さない
+    assert normalize_text("～7か年戦略～の策定") == "ー7か年戦略ーの策定"
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        # 数字+日本語単位から一般語へ続く範囲は「から」に展開する
+        ("月1度～毎週", "月1度から毎週"),
+        ("月1度〜毎週", "月1度から毎週"),
+        ("月1度~毎週", "月1度から毎週"),
+        ("年1回～月2回", "年1回から月2回"),
+        ("週3日〜毎日", "週3日から毎日"),
+        ("日1回～週1回", "日1回から週1回"),
+        ("3か月～半年", "3か月から半年"),
+        ("月1度～毎週の", "月1度から毎週の"),
+        ("月1度～毎週です", "月1度から毎週です"),
+        # 数値同士の範囲は従来の数値範囲変換 (`月1～3回` 内の `1～3`)
+        ("月1～3回", "月1から3回"),
+    ],
+)
+def test_normalize_text_mixed_number_ranges(text: str, expected: str) -> None:
+    """数値+日本語単位から一般語へ続く波ダッシュ範囲の正規化テスト"""
+    assert normalize_text(text) == expected
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        # 語尾・感嘆の波ダッシュは長音として残す
+        ("やった〜最高", "やったー最高"),
+        ("すごい〜!", "すごいー!"),
+        ("おはよう〜", "おはようー"),
+        ("〜おはよう", "ーおはよう"),
+        # 見出しを囲む波ダッシュは長音のまま残す
+        ("～7か年戦略～の策定", "ー7か年戦略ーの策定"),
+        ("～重要～なお知らせ", "ー重要ーなお知らせ"),
+        # 後続助詞が付く場合は範囲として読まない
+        ("月1度～の方針", "月1度ーの方針"),
+        ("月1度～を", "月1度ーを"),
+        # 右側が数字から始まる、または両側とも一般語のみの場合は長音
+        ("1年～2年", "1年ー2年"),
+        ("100円～200円", "100円ー200円"),
+        ("毎週～毎日", "毎週ー毎日"),
+        ("月～曜日", "月ー曜日"),
+        ("東京～大阪", "東京ー大阪"),
+        ("A～Z", "AーZ"),
+    ],
+)
+def test_normalize_text_wave_dash_not_converted_to_range(
+    text: str,
+    expected: str,
+) -> None:
+    """波ダッシュが誤って「から」に変換されないケースの回帰テスト"""
+    assert normalize_text(text) == expected
 
 
 def test_normalize_text_mathematical():
@@ -729,6 +788,13 @@ def test_normalize_text_mathematical():
     assert normalize_text("∂") == "パーシャル"
     assert normalize_text("∇") == "ナブラ"
     assert normalize_text("∝") == "比例"
+    # Unicode の減算記号は英字変数の間でも消さずに読む
+    assert normalize_text("c−a") == "cマイナスa"
+    # 英単語と型番の内部では U+2212 がハイフンとして使われるため、減算読みを挿入しない
+    assert (
+        normalize_text("non−inertialcavitation") == "ノンイナーシャルキャビテーション"
+    )
+    assert normalize_text("ATX−S10") == "エーティーエックスS10"
     # キャレット表記の指数
     assert normalize_text("^4") == "の4乗"
     assert normalize_text("2^4") == "2の4乗"
@@ -1012,7 +1078,20 @@ def test_normalize_text_time():
     assert normalize_text("24:00:00") == "二十四時零分零秒"
     assert normalize_text("24:00") == "二十四時"
     assert normalize_text("27:59:00") == "二十七時59分零秒"
-    assert normalize_text("00:00:00.123") == "零時零分零秒.123"
+    # タイムスタンプの小数秒はマラソン計時のように秒の直後へ数字で続ける
+    assert normalize_text("00:00:00.123") == "零時零分零秒123"
+    assert normalize_text("00:34:05.101") == "零時34分5秒101"
+    assert normalize_text("01:02:03.456") == "一時2分3秒456"
+    assert normalize_text("03:04:05.6") == "三時4分5秒6"
+    assert normalize_text("10:20:30.5") == "十時20分30秒5"
+    assert normalize_text("00:00:00,123") == "零時零分零秒123"
+    assert (
+        normalize_text("経過時間は00:34:05.101です") == "経過時間は零時34分5秒101です"
+    )
+    # 時間省略の経過時間も同じ方針で読む
+    assert normalize_text("34:05.101") == "34分5秒101"
+    assert normalize_text("05:30.5") == "5分30秒5"
+    assert normalize_text("00:05.101") == "零分5秒101"
     assert normalize_text("12:00 PM") == "十二時ピーエム"
     assert normalize_text("12:00 AM") == "十二時エーエム"
     assert normalize_text("深夜03時") == "深夜3時"
@@ -1022,6 +1101,113 @@ def test_normalize_text_time():
     assert normalize_text("正午") == "正午"
     assert normalize_text("正午12時") == "正午12時"
     assert normalize_text("0:00:00") == "零時零分零秒"
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        # 連続時間表記 (`1h25m23s` 系)
+        ("1h3m5s", "1時間3分5秒"),
+        ("1h25m23s", "1時間25分23秒"),
+        ("24d23h50m4s", "24日23時間50分4秒"),
+        ("50m4s", "50分4秒"),
+        ("1h3m", "1時間3分"),
+        ("1h5s", "1時間5秒"),
+        ("2h30m", "2時間30分"),
+        ("45m30s", "45分30秒"),
+        ("3d12h", "3日12時間"),
+        ("3d12h5m", "3日12時間5分"),
+        ("1H25M23S", "1時間25分23秒"),
+        ("1.5h30m", "1.5時間30分"),
+        # `m2` / `ms` への誤変換回帰 (`25m23s` が平方メートルにならないこと)
+        ("25m23s", "25分23秒"),
+        ("50m", "50メートル"),
+        ("50m2", "50平方メートル"),
+        ("50m3", "50立方メートル"),
+        ("50ms", "50ミリ秒"),
+        ("100m/h", "100メートル毎時"),
+        # タイムスタンプ (`00:34:05.101` 系)
+        ("00:34:05.101", "零時34分5秒101"),
+        ("00:00:00.123", "零時零分零秒123"),
+        ("00:00:00,123", "零時零分零秒123"),
+        ("01:02:03.456", "一時2分3秒456"),
+        ("03:04:05.6", "三時4分5秒6"),
+        ("10:20:30.5", "十時20分30秒5"),
+        ("1:02:03.040", "一時2分3秒040"),
+        ("12:34:56.789", "十二時34分56秒789"),
+        ("00:34:05", "零時34分五秒"),
+        # 時間省略の経過時間 (`34:05.101` 系)
+        ("34:05.101", "34分5秒101"),
+        ("05:30.5", "5分30秒5"),
+        ("00:05.101", "零分5秒101"),
+        ("27:59.99", "27分59秒99"),
+        ("90:00.001", "90分零秒001"),
+        ("34:00.101", "34分零秒101"),
+        ("34:05.000", "34分5秒000"),
+        # 数値+単位から一般語へ続く範囲 (`月1度～毎週` 系)
+        ("月1度～毎週", "月1度から毎週"),
+        ("月1度〜毎週", "月1度から毎週"),
+        ("年1回～月2回", "年1回から月2回"),
+        ("週3日〜毎日", "週3日から毎日"),
+        # Unicode 減算記号の変数間読み
+        ("c−a", "cマイナスa"),
+        ("x−y", "xマイナスy"),
+        ("A−B", "AマイナスB"),
+        # 型番・英単語内部では減算読みを挿入しない
+        ("E2A", "E2A"),
+        ("E2−A", "E2A"),
+        ("ATX−S10", "エーティーエックスS10"),
+        (
+            "non−inertialcavitation",
+            "ノンイナーシャルキャビテーション",
+        ),
+    ],
+)
+def test_normalize_text_duration_timestamp_and_related_patterns(
+    text: str,
+    expected: str,
+) -> None:
+    """
+    連続時間表記・タイムスタンプ・経過時間・混合範囲・記号的減算の回帰テスト。
+    """
+    assert normalize_text(text) == expected
+
+
+def test_normalize_text_duration_timestamp_in_context() -> None:
+    """連続時間表記とタイムスタンプが文中に埋まっている場合の回帰テスト"""
+    assert normalize_text("経過1h25m23sでゴール") == "経過1時間25分23秒でゴール"
+    assert (
+        normalize_text("経過時間は00:34:05.101です") == "経過時間は零時34分5秒101です"
+    )
+    assert normalize_text("ラップは34:05.101でした") == "ラップは34分5秒101でした"
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("1h25m23s", "1時間25分23秒"),
+        ("00:34:05.101", "零時34分5秒101"),
+        ("34:05.101", "34分5秒101"),
+        ("月1度～毎週", "月1度から毎週"),
+    ],
+)
+def test_normalize_text_duration_timestamp_for_irodori(
+    text: str,
+    expected: str,
+) -> None:
+    """Irodori 経路でも同じ正規化結果になること"""
+    assert normalize_text(text, for_irodori=True) == expected
+
+
+def test_normalize_text_duration_timestamp_negative_cases() -> None:
+    """今回のルールが誤発火しないことの回帰テスト"""
+    # 両側が数字の範囲は従来の数値範囲変換を維持する
+    assert normalize_text("100m〜200m") == "100メートルから200メートル"
+    # 小数秒のない時刻・アスペクト比は従来どおり
+    assert normalize_text("14:05") == "十四時5分"
+    assert normalize_text("09:12") == "九時12分"
+    assert normalize_text("16:9") == "十六タイ九"
+    assert normalize_text("1920:1080") == "千九百二十タイ千八十"
 
 
 def test_normalize_text_fractions():
@@ -2676,6 +2862,8 @@ def test_normalize_text_units():
     assert normalize_text("45.56mA") == "45.56ミリアンペア"
     assert normalize_text("5000mAh") == "5000ミリアンペアアワー"
     assert normalize_text("1.2Ah") == "1.2アンペアアワー"
+    # 路線番号や型番の内部にある数字+英字は物理単位として切り出さない
+    assert normalize_text("E2A") == "E2A"
     assert normalize_text("65Wh") == "65ワットアワー"
     # bps
     assert normalize_text("100.55bps") == "100.55ビーピーエス"
@@ -2758,7 +2946,12 @@ def test_normalize_text_units():
     assert normalize_text("50s") == "50秒"
     assert normalize_text("50h") == "50時間"
     assert normalize_text("1h") == "1時間"
-    assert normalize_text("1h3m5s") == "1時間3メートル5秒"
+    # 連続時間表記は d/h/m/s をまとめて日本語の時間単位へ変換する
+    assert normalize_text("1h3m5s") == "1時間3分5秒"
+    assert normalize_text("1h25m23s") == "1時間25分23秒"
+    assert normalize_text("24d23h50m4s") == "24日23時間50分4秒"
+    assert normalize_text("50m4s") == "50分4秒"
+    assert normalize_text("1h3m") == "1時間3分"
     assert normalize_text("1h5s") == "1時間5秒"
     assert normalize_text("300s") == "300秒"
     assert normalize_text("3hで") == "3時間で"
