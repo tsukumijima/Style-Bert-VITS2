@@ -15,7 +15,35 @@ from style_bert_vits2.nlp.symbols import PUNCTUATIONS
 # C2K / NGram の初期化
 # NGram は英単語として読ませるか、アルファベット読みするべきかを判定するモデル
 __characters_to_katakana = C2K()
-__should_transliterated_word_by_ngram = NGram()
+__english_word_ngram = NGram()
+
+
+def __should_transliterated_word_by_ngram(word: str) -> bool:
+    """英字列を単語読みするか、資産定義どおりの固定順で判定する"""
+
+    cleaned_word = "".join(
+        character
+        for character in word.lower()
+        if character in __english_word_ngram.valid_chars
+    )
+    # e2k 0.1.1 はモデルを set へ格納した後、順序付きの重み配列と zip() して評価する
+    ## プロセスごとのハッシュ順で重みが入れ替わるため、資産定義と同じ2/3/4-gram順で評価する
+    scores = [
+        model.score(cleaned_word)
+        for model in sorted(__english_word_ngram.models, key=lambda model: model.n)
+    ]
+    if __english_word_ngram.weights:
+        score = sum(
+            weight * model_score
+            for weight, model_score in zip(
+                __english_word_ngram.weights,
+                scores,
+                strict=True,
+            )
+        )
+    else:
+        score = sum(scores) / len(scores)
+    return score > __english_word_ngram.threshold
 
 # 異体字・旧字体→新字体の変換テーブル
 # str.translate() 用に構築しておくことで、異体字・旧字体を新字体に高速に一括変換できる

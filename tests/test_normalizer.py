@@ -3164,6 +3164,10 @@ def test_normalize_text_english():
         # OFDMEXA は辞書未収録の造語かつ全て大文字で、NGram によって英単語として読むべきと判定されるのでそのまま
         normalize_text("a OFDMEXA modular") == "アOFDMEXAモジュラー"
     )
+    # e2k の2/3/4-gramを固定順で評価し、プロセスのハッシュ順による判定揺れを防ぐ
+    ## EISEIGIYO は正しい重み順ではアルファベット読み、PFOA も意図どおり OpenJTalk 側へ委ねる
+    assert normalize_text("EISEIGIYO") == "EISEIGIYO"
+    assert normalize_text("PFOA") == "PFOA"
     assert normalize_text("a 123") == "a123"  # 数字の前の a はそのまま
     assert normalize_text("This is a pen.") == "ディスイズアペン."
     assert normalize_text("This is a good pen.") == "ディスイズアグッドペン."
