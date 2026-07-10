@@ -21,6 +21,18 @@ __should_transliterated_word_by_ngram = NGram()
 # str.translate() 用に構築しておくことで、異体字・旧字体を新字体に高速に一括変換できる
 __ITAIJI_TRANSLATE_TABLE = str.maketrans(ITAIJI_MAP)
 
+# NFKC で展開されない装飾付き数字を、通常の丸付き数字と同じ ASCII 数字へ変換する
+## Python では `❻`.isdigit() が True でも int('❻') は ValueError になるため、
+## 英単語直後の数字判定へ渡す前に数値表記を統一する
+__NON_NFKC_ENCLOSED_NUMBER_TRANSLATE_TABLE = str.maketrans(
+    {
+        **dict(zip("❶❷❸❹❺❻❼❽❾❿", map(str, range(1, 11)), strict=True)),
+        **dict(zip("⓫⓬⓭⓮⓯⓰⓱⓲⓳⓴", map(str, range(11, 21)), strict=True)),
+        **dict(zip("➀➁➂➃➄➅➆➇➈➉", map(str, range(1, 11)), strict=True)),
+        **dict(zip("➊➋➌➍➎➏➐➑➒➓", map(str, range(1, 11)), strict=True)),
+    }
+)
+
 # 数字と数字の間のスペースを検出するパターン
 # スペース削除時に数字が連結して意図しない大きな数になるのを防ぐ
 # 例: "5090 32G" → "509032G" → 「ゴジュウマンキュウセンサンジュウニ」を防止
@@ -1038,6 +1050,9 @@ def normalize_text(text: str, *, for_irodori: bool = False) -> str:
     res = res.replace("\u200b", "")
 
     res = unicodedata.normalize("NFKC", res)  # ここで Unicode 正規化が行われる
+
+    # NFKC が変換しない装飾付き数字だけを追加で ASCII 数字へ展開する
+    res = res.translate(__NON_NFKC_ENCLOSED_NUMBER_TRANSLATE_TABLE)
 
     # OpenJTalk (MeCab) 辞書に存在しない可能性が高い旧字体を新字体に統一し、辞書ヒット率を高める
     ## NFKC 正規化後に実行することで、NFKC で統一しきれない旧字体も新字体に置換できる

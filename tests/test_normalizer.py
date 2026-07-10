@@ -2883,6 +2883,14 @@ def test_normalize_text_enclosed_characters():
     # 丸付き数字
     assert normalize_text("①②③④⑤⑥⑦⑧⑨⑩") == "12345678910"
     assert normalize_text("⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳") == "11121314151617181920"
+    # NFKC で展開されない装飾付き数字も、通常の丸付き数字と同じ数値へ変換する
+    assert normalize_text("❶❷❸❹❺❻❼❽❾❿") == "12345678910"
+    assert normalize_text("⓫⓬⓭⓮⓯⓰⓱⓲⓳⓴") == "11121314151617181920"
+    assert normalize_text("➀➁➂➃➄➅➆➇➈➉") == "12345678910"
+    assert normalize_text("➊➋➌➍➎➏➐➑➒➓") == "12345678910"
+    # 英単語直後の装飾付き数字を Python の int() へ直接渡さず、先に ASCII 数字へ直す
+    assert normalize_text("Chapter❻", for_irodori=True) == "チャプターシックス"
+    assert normalize_text("❻今後の課題", for_irodori=True) == "6今後の課題"
     # 囲み文字（漢字）
     assert normalize_text("㈱") == "株式会社"
     assert normalize_text("㈲") == "有限会社"
