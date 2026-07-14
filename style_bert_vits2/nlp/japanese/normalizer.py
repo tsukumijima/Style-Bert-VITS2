@@ -777,6 +777,8 @@ __ENGLISH_WORD_PATTERN = re.compile(r"[a-zA-Z0-9]")
 
 # =========== replace_punctuation() で使う定数・正規表現パターン ===========
 
+__IRODORI_DECIMAL_PATTERN = re.compile(r"(?<![\d.])(\d+)\.(\d+)(?![\d.])")
+
 # 記号類の正規化マップ
 ## 置換先は style_bert_vits2.nlp.symbols.PUNCTUATIONS ( !, ?, …, ,, ., ', - ) に合わせた半角記号
 __SYMBOL_REPLACE_MAP = {
@@ -1159,6 +1161,27 @@ def normalize_text(text: str, *, for_irodori: bool = False) -> str:
     res = __convert_english_to_katakana(res)  # 英単語をカタカナに変換
 
     res = __convert_numbers_to_words(res)  # 「100円」→「百円」等
+
+    # Irodori-TTS 向けの小数は漢数字へ展開し、英語読みと句点の解釈揺れを防ぐ
+    if for_irodori is True:
+
+        def convert_irodori_decimal(match: re.Match[str]) -> str:
+            integer_digits = match.group(1)
+            fractional_digits = match.group(2)
+            integer_words = str(num2words(int(integer_digits), lang="ja"))
+            fractional_words = "".join(
+                str(num2words(int(digit), lang="ja")) for digit in fractional_digits
+            )
+
+            # 単独で1モーラの「二」と「五」は、小数点前の母音を長音にする
+            ## Irodori-TTS が自動で変音する「一点三」は原形を保ち、「五ー点六」のような長音だけを補う
+            if integer_digits in {"2", "5"}:
+                integer_words = f"{integer_words}ー"
+
+            return f"{integer_words}点{fractional_words}"
+
+        res = __IRODORI_DECIMAL_PATTERN.sub(convert_irodori_decimal, res)
+
     # 「～」と「〜」と「~」も長音記号として扱う
     res = res.replace("~", "ー")
     res = res.replace("～", "ー")
@@ -3063,17 +3086,6 @@ def replace_punctuation(text: str, *, for_irodori: bool = False) -> str:
 
         def _replace_irodori_symbol(match: re.Match[str]) -> str:
             matched = match.group()
-            # 数字に挟まれた「.」は小数点なので句点へ変換せず保持する
-            ## pyopenjtalk の数詞処理は「2.5」を「ニーテンゴ」と正しく読めるため、
-            ## 小数点まで句点化すると「2。5」→「ニ。ゴ」のように泣き別れて読みが壊れる
-            if (
-                matched == "."
-                and match.start() > 0
-                and text[match.start() - 1].isdigit()
-                and match.end() < len(text)
-                and text[match.end()].isdigit()
-            ):
-                return matched
             return __IRODORI_SYMBOL_REPLACE_MAP[matched]
 
         replaced_text = __IRODORI_SYMBOL_REPLACE_PATTERN.sub(
