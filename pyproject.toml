@@ -7,7 +7,7 @@ name = "style-bert-vits2"
 version = "2.7.0"
 description = "Style-Bert-VITS2: Bert-VITS2 with more controllable voice styles."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = "AGPL-3.0-only"
 license-files = ["LICENSE", "LGPL_LICENSE"]
 keywords = []
@@ -17,7 +17,6 @@ authors = [
 classifiers = [
     "Development Status :: 4 - Beta",
     "Programming Language :: Python",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -38,7 +37,7 @@ dependencies = [
     "num2words",
     "numpy>=2.0",
     "pydantic>=2.0",
-    "pyopenjtalk-plus>=0.4.1.post8",
+    "pyopenjtalk-plus>=0.4.1.post9",
     "pypinyin",
     "pyworld-prebuilt>=0.3.5.post2",
     "safetensors",
@@ -66,8 +65,8 @@ onnxruntime = [
     ## onnxruntime (DirectML): Windows のみ
     "onnxruntime-directml>=1.24.0,<2.0.0; sys_platform == 'win32'",
     ## onnxruntime (GPU): Linux x64 のみ
-    ## 1.27.0 以降、import した時点で CUDA 13 の .so がないとエラー吐くように改悪されたので当面 1.26.x に固定
-    "onnxruntime-gpu>=1.24.0,<1.27.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
+    ## CUDA 13.0 ビルドへ切り替わった 1.27.0 以降を使い、PyTorch と同じ CUDA メジャーバージョンに統一する
+    "onnxruntime-gpu>=1.27.0,<1.30.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
 ]
 # PyTorch モデルで推論を行う場合は別途必須
 ## numba は monotonic_alignment.py で使用されている
@@ -88,13 +87,13 @@ core = [
     "onnxruntime==1.23.2; sys_platform == 'darwin' and platform_machine == 'x86_64'",
     "onnxruntime>=1.24.0,<2.0.0; (sys_platform == 'darwin' and platform_machine != 'x86_64') or (sys_platform == 'linux' and platform_machine != 'x86_64')",
     "onnxruntime-directml>=1.24.0,<2.0.0; sys_platform == 'win32'",
-    "onnxruntime-gpu>=1.24.0,<1.27.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "onnxruntime-gpu>=1.27.0,<1.30.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
     # PyTorch 関連 (project.optional-dependencies.torch に相当)
     ## 単体利用で ONNX 版推論だけ回すユースケースは極めて考えづらいので、常に PyTorch 関連も必須依存関係に含める
     ## PyTorch のバリアントは tool.uv.sources で torch / torchaudio のソース指定で固定している
     "accelerate",
     "numba",
-    "torch>=2.9.1,<2.10.0",
+    "torch>=2.12.1,<2.13.0",
     # torchcodec 0.11.0 は .so が CUDA ランタイムに直リンクされており、
     # CUDA ライブラリが LD_LIBRARY_PATH にないと音声デコードすらできなくなるバグがある (pytorch/torchcodec#1309)
     ## torchaudio 2.9 が torchcodec をデフォルトバックエンドとして使うため、torchaudio.save/load に影響する
@@ -150,7 +149,8 @@ train = [
     "pyloudnorm",
     "speechbrain>=1.1.0",
     "tensorboard",
-    "torchaudio>=2.9.1,<2.10.0",
+    # torchaudio は 2.11.0 が最終リリース
+    "torchaudio==2.11.0",
     "utmosv2",
 ]
 ## ここまでの依存関係を全てインストールするグループ
@@ -186,6 +186,7 @@ test-onnx-coreml = "pytest -s tests/test_main.py::test_synthesize_onnx_coreml"
 [tool.uv]
 default-groups = ["core"]
 exclude-newer = "1 week"
+exclude-newer-package = { pyopenjtalk-plus = false }
 
 # ビルド設定
 [tool.uv.build-backend]
@@ -214,21 +215,21 @@ e2k = { git = "https://github.com/tsukumijima/e2k.git", rev = "9920754e15d8c9640
 # torch/torchaudio の固定を解除したフォークを利用する
 "pyannote.audio" = { git = "https://github.com/tsukumijima/pyannote-audio.git", rev = "f155cf0cc0b2f293fa78726b6ae54fc90bd42f5a" }
 # torch / torchaudio のソース指定
-# Windows x64・Linux x64: CUDA 12.8 版
+# Windows x64・Linux x64: CUDA 13.0 版
 # macOS・その他: PyPI から CPU 版
 torch = [
-    { index = "pytorch-cu128", marker = "(sys_platform == 'linux' and platform_machine == 'x86_64') or sys_platform == 'win32'" },
+    { index = "pytorch-cu130", marker = "(sys_platform == 'linux' and platform_machine == 'x86_64') or sys_platform == 'win32'" },
 ]
 torchaudio = [
-    { index = "pytorch-cu128", marker = "(sys_platform == 'linux' and platform_machine == 'x86_64') or sys_platform == 'win32'" },
+    { index = "pytorch-cu130", marker = "(sys_platform == 'linux' and platform_machine == 'x86_64') or sys_platform == 'win32'" },
 ]
 # UTMOSv2 は PyPI に公開されていないため GitHub から取得する
 utmosv2 = { git = "https://github.com/sarulab-speech/UTMOSv2.git", rev = "cc2700db57bb83ee13dc31ebe1b868c254e15d09" }
 
-# PyTorch の CUDA 12.8 版のパッケージインデックス
+# PyTorch の CUDA 13.0 版のパッケージインデックス
 [[tool.uv.index]]
-name = "pytorch-cu128"
-url = "https://download.pytorch.org/whl/cu128"
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
 explicit = true
 
 [tool.coverage.run]

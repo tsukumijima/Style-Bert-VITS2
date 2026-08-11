@@ -3,7 +3,7 @@ import shutil
 from pathlib import Path
 from queue import Queue
 from threading import Thread
-from typing import Any
+from typing import Any, cast
 
 import soundfile as sf
 import torch
@@ -167,7 +167,8 @@ if __name__ == "__main__":
         repo_or_dir="litagin02/silero-vad",
         model="silero_vad",
         onnx=True,
-        trust_repo=True,
+        # PyTorch 2.12.1 の型定義は str のみだが、実装と Docstring は引き続き bool の True を正式に受け付ける
+        trust_repo=True,  # pyright: ignore[reportArgumentType]
     )
 
     # Silero VADのモデルは、同じインスタンスで並列処理するとおかしくなるらしい
@@ -178,11 +179,15 @@ if __name__ == "__main__":
         error_queue: Queue[tuple[Path, Exception]],
     ):
         # logger.debug("Worker started.")
-        vad_model, utils = torch.hub.load(
-            repo_or_dir="litagin02/silero-vad",
-            model="silero_vad",
-            onnx=True,
-            trust_repo=True,
+        vad_model, utils = cast(
+            tuple[Any, Any],
+            torch.hub.load(
+                repo_or_dir="litagin02/silero-vad",
+                model="silero_vad",
+                onnx=True,
+                # PyTorch 2.12.1 の型定義は str のみだが、実装と Docstring は引き続き bool の True を正式に受け付ける
+                trust_repo=True,  # pyright: ignore[reportArgumentType]
+            ),
         )
         while True:
             file = q.get()
