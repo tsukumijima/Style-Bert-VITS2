@@ -2,7 +2,6 @@
 日本語 g2p 処理の回帰テスト。
 """
 
-from collections.abc import Iterator
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -16,10 +15,6 @@ from style_bert_vits2.nlp.japanese.g2p_utils import (
     kata_tone2phone_tone,
     phone_tone2kata_tone,
 )
-from style_bert_vits2.nlp.japanese.pyopenjtalk_worker import (
-    initialize_worker,
-    terminate_worker,
-)
 from style_bert_vits2.nlp.nanairo_emoji import normalize_nanairo_emoji_text
 
 
@@ -30,17 +25,6 @@ NANAIRO_PAUSE_TEXT = (
 NANAIRO_ANGER_TEXT = (
     "センパイってば,寧々先輩となんか2人だけのヒミツの話があったっぽいし😠"
 )
-
-
-# G2P テスト実行時のみ pyopenjtalk worker を初期化する
-## import 時の副作用を避けつつ、既存の preprocess_text.py と同じ worker を使って回帰を検証する
-@pytest.fixture(scope="module", autouse=True)
-def pyopenjtalk_worker_fixture() -> Iterator[None]:
-    """モジュール単位で pyopenjtalk worker を初期化し、終了時に明示終了する。"""
-
-    initialize_worker()
-    yield
-    terminate_worker()
 
 
 def _assert_phone_tone_word2ph_consistency(

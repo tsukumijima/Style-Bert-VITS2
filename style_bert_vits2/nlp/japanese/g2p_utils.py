@@ -1,3 +1,5 @@
+from pyopenjtalk import OpenJTalk
+
 from style_bert_vits2.nlp.japanese.g2p import g2p
 from style_bert_vits2.nlp.japanese.mora_list import (
     CONSONANTS,
@@ -12,6 +14,8 @@ def g2kata_tone(
     norm_text: str,
     *,
     use_nanairo: bool = False,
+    use_tsqyomi: bool = False,
+    jtalk: OpenJTalk | None = None,
 ) -> list[tuple[str, int]]:
     """
     テキストからカタカナとアクセントのペアのリストを返す。
@@ -20,6 +24,8 @@ def g2kata_tone(
     Args:
         norm_text (str): 正規化されたテキスト。
         use_nanairo (bool, optional): Nanairo 専用の絵文字モーラを保持するかどうか。Defaults to False.
+        use_tsqyomi (bool): True の場合、ロード済みの tsqyomi で文脈に合う読み候補を選ぶ (デフォルト: False)
+        jtalk (OpenJTalk | None, optional): 未指定時は pyopenjtalk モジュール内部で保持されているインスタンスが自動的に利用される。
 
     Returns:
         list[tuple[str, int]]: カタカナと音高のリスト。
@@ -29,7 +35,9 @@ def g2kata_tone(
         norm_text,
         use_jp_extra=True,
         use_nanairo=use_nanairo,
+        use_tsqyomi=use_tsqyomi,
         raise_yomi_error=False,
+        jtalk=jtalk,
     )
     return phone_tone2kata_tone(list(zip(phones, tones)))
 

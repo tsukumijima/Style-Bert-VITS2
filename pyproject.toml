@@ -170,7 +170,7 @@ lint = "ruff check --fix . ; pyright"
 format = "ruff format ."
 typecheck = "pyright"
 ## NLP 関連テスト
-test-g2p = "pytest -s tests/test_g2p.py"
+test-g2p = "pytest -s tests/test_g2p.py tests/test_g2p_tsqyomi.py"
 test-normalizer = "pytest -s tests/test_normalizer.py"
 ## PyTorch 推論テスト
 test = "pytest -s tests/test_main.py::test_synthesize_cpu"

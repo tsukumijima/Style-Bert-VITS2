@@ -26,6 +26,7 @@ def run_frontend(
     *,
     run_marine: bool = False,
     use_vanilla: bool = False,
+    use_tsqyomi: bool = False,
     use_sudachi_kanji_yomi: bool = True,
     predict_nani: bool = True,
     normalize_mode: Literal["None", "NFC", "NFKC"] = "None",
@@ -34,7 +35,9 @@ def run_frontend(
     revert_yotsugana: bool = False,
     jtalk: OpenJTalk | None = None,
 ) -> list[NJDFeature]:
-    if WORKER_CLIENT is not None:
+    # tsqyomi は呼び出し元プロセス側でモデルをロードする前提のため、ワーカー経由では扱えない
+    # jtalk も OpenJTalk インスタンスを JSON 経由で渡せないため、指定時はワーカーを迂回する
+    if WORKER_CLIENT is not None and use_tsqyomi is False and jtalk is None:
         ret = WORKER_CLIENT.dispatch_pyopenjtalk("run_frontend", text)
         assert isinstance(ret, list)
         return ret
@@ -46,6 +49,7 @@ def run_frontend(
             text,
             run_marine=run_marine,
             use_vanilla=use_vanilla,
+            use_tsqyomi=use_tsqyomi,
             use_sudachi_kanji_yomi=use_sudachi_kanji_yomi,
             predict_nani=predict_nani,
             normalize_mode=normalize_mode,

@@ -57,6 +57,7 @@ def get_text_onnx(
     assist_text_weight: float = 0.7,
     given_phone: list[str] | None = None,
     given_tone: list[int] | None = None,
+    use_tsqyomi: bool = False,
     jtalk: OpenJTalk | None = None,
 ) -> tuple[
     NDArray[Any], NDArray[Any], NDArray[Any], NDArray[Any], NDArray[Any], NDArray[Any]
@@ -70,6 +71,7 @@ def get_text_onnx(
         given_tone=given_tone,
         use_jp_extra=is_jp_extra_like_model,
         use_nanairo=is_nanairo_like_model,
+        use_tsqyomi=use_tsqyomi,
         # 推論時のみ呼び出されるので、raise_yomi_error は False に設定
         raise_yomi_error=False,
         jtalk=jtalk,
@@ -144,6 +146,7 @@ def infer_onnx(
     assist_text_weight: float = 0.7,
     given_phone: list[str] | None = None,
     given_tone: list[int] | None = None,
+    use_tsqyomi: bool = False,
     jtalk: OpenJTalk | None = None,
 ) -> NDArray[np.float32]:
     """
@@ -166,6 +169,7 @@ def infer_onnx(
         assist_text_weight=assist_text_weight,
         given_phone=given_phone,
         given_tone=given_tone,
+        use_tsqyomi=use_tsqyomi,
         jtalk=jtalk,
     )
     if skip_start:

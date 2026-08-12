@@ -203,6 +203,7 @@ def get_text(
     assist_text_weight: float = 0.7,
     given_phone: list[str] | None = None,
     given_tone: list[int] | None = None,
+    use_tsqyomi: bool = False,
     jtalk: OpenJTalk | None = None,
 ) -> tuple[
     torch.Tensor,
@@ -222,6 +223,7 @@ def get_text(
         given_tone=given_tone,
         use_jp_extra=is_jp_extra_like_model,
         use_nanairo=is_nanairo_like_model,
+        use_tsqyomi=use_tsqyomi,
         # 推論時のみ呼び出されるので、raise_yomi_error は False に設定
         raise_yomi_error=False,
         jtalk=jtalk,
@@ -344,6 +346,7 @@ def prepare_inference_data(
     assist_text_weight: float = 0.7,
     given_phone: list[str] | None = None,
     given_tone: list[int] | None = None,
+    use_tsqyomi: bool = False,
     jtalk: OpenJTalk | None = None,
     enable_tensor_padding: bool = False,
 ) -> tuple[
@@ -377,6 +380,7 @@ def prepare_inference_data(
             assist_text_weight=assist_text_weight,
             given_phone=given_phone,
             given_tone=given_tone,
+            use_tsqyomi=use_tsqyomi,
             jtalk=jtalk,
         )
     )
@@ -495,6 +499,7 @@ def predict_token_durations(
     assist_text_weight: float = 0.7,
     given_phone: list[str] | None = None,
     given_tone: list[int] | None = None,
+    use_tsqyomi: bool = False,
     jtalk: OpenJTalk | None = None,
     use_fp16: bool = False,
     enable_tensor_padding: bool = False,
@@ -547,6 +552,7 @@ def predict_token_durations(
             assist_text_weight=assist_text_weight,
             given_phone=given_phone,
             given_tone=given_tone,
+            use_tsqyomi=use_tsqyomi,
             jtalk=jtalk,
             enable_tensor_padding=enable_tensor_padding,
         )
@@ -854,6 +860,7 @@ def infer(
     given_phone: list[str] | None = None,
     given_phone_length: list[float | None] | None = None,
     given_tone: list[int] | None = None,
+    use_tsqyomi: bool = False,
     jtalk: OpenJTalk | None = None,
     use_fp16: bool = False,
     clear_cuda_cache: bool = True,
@@ -894,6 +901,7 @@ def infer(
             assist_text_weight=assist_text_weight,
             given_phone=given_phone,
             given_tone=given_tone,
+            use_tsqyomi=use_tsqyomi,
             jtalk=jtalk,
             enable_tensor_padding=enable_tensor_padding,
         )
@@ -1029,6 +1037,7 @@ def infer_stream(
     given_phone: list[str] | None = None,
     given_phone_length: list[float | None] | None = None,
     given_tone: list[int] | None = None,
+    use_tsqyomi: bool = False,
     jtalk: OpenJTalk | None = None,
     use_fp16: bool = False,
     clear_cuda_cache: bool = True,
@@ -1079,6 +1088,7 @@ def infer_stream(
             assist_text_weight=assist_text_weight,
             given_phone=given_phone,
             given_tone=given_tone,
+            use_tsqyomi=use_tsqyomi,
             jtalk=jtalk,
             enable_tensor_padding=enable_tensor_padding,
         )

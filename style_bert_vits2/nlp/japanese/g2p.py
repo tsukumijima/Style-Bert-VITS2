@@ -23,6 +23,7 @@ def g2p(
     *,
     use_jp_extra: bool = True,
     use_nanairo: bool = False,
+    use_tsqyomi: bool = False,
     raise_yomi_error: bool = False,
     jtalk: OpenJTalk | None = None,
 ) -> tuple[list[str], list[int], list[int], list[str], list[str], list[str]]:
@@ -41,6 +42,7 @@ def g2p(
         norm_text (str): 正規化済みテキスト
         use_jp_extra (bool, optional): False の場合、「ん」の音素を「N」ではなく「n」とする。Defaults to True.
         use_nanairo (bool, optional): Nanairo 専用の絵文字モーラを保持するかどうか。Defaults to False.
+        use_tsqyomi (bool): True の場合、ロード済みの tsqyomi で文脈に合う読み候補を選ぶ (デフォルト: False)
         raise_yomi_error (bool, optional): False の場合、読めない文字が「'」として発音される。Defaults to False.
         jtalk (OpenJTalk | None, optional): 未指定時は pyopenjtalk モジュール内部で保持されているインスタンスが自動的に利用される。
 
@@ -86,6 +88,7 @@ def g2p(
                 segment,
                 use_jp_extra=use_jp_extra,
                 use_nanairo=False,
+                use_tsqyomi=use_tsqyomi,
                 raise_yomi_error=raise_yomi_error,
                 jtalk=jtalk,
             )
@@ -118,7 +121,11 @@ def g2p(
     # アクセント割当をしなおすことによって punctuation を含めた音素とアクセントのリストを作る。
 
     # OpenJTalk から NJDFeature のリストを取得
-    njd_features = pyopenjtalk.run_frontend(norm_text, jtalk=jtalk)
+    njd_features = pyopenjtalk.run_frontend(
+        norm_text,
+        use_tsqyomi=use_tsqyomi,
+        jtalk=jtalk,
+    )
 
     # punctuation がすべて消えた、音素とアクセントのタプルのリスト（「ん」は「N」）
     phone_tone_list_wo_punct = __g2phone_tone_wo_punct(njd_features, jtalk=jtalk)
@@ -131,6 +138,7 @@ def g2p(
         njd_features=njd_features,
         use_nanairo=use_nanairo,
         raise_yomi_error=raise_yomi_error,
+        use_tsqyomi=use_tsqyomi,
         jtalk=jtalk,
     )
 
@@ -188,6 +196,7 @@ def text_to_sep_kata(
     njd_features: list[NJDFeature] | None = None,
     use_nanairo: bool = False,
     raise_yomi_error: bool = False,
+    use_tsqyomi: bool = False,
     jtalk: OpenJTalk | None = None,
 ) -> tuple[list[str], list[str], list[str]]:
     """
@@ -203,6 +212,7 @@ def text_to_sep_kata(
         njd_features (list[NJDFeature] | None, optional): pyopenjtalk.run_frontend() の結果。None の場合は内部で実行する。
         use_nanairo (bool, optional): Nanairo 専用の絵文字モーラを保持するかどうか。Defaults to False.
         raise_yomi_error (bool, optional): False の場合、読めない文字が「'」として発音される。Defaults to False.
+        use_tsqyomi (bool): True の場合、ロード済みの tsqyomi で文脈に合う読み候補を選ぶ (デフォルト: False)
         jtalk (OpenJTalk | None, optional): 未指定時は pyopenjtalk モジュール内部で保持されているインスタンスが自動的に利用される。
 
     Returns:
@@ -232,6 +242,7 @@ def text_to_sep_kata(
                 njd_features=None,
                 use_nanairo=False,
                 raise_yomi_error=raise_yomi_error,
+                use_tsqyomi=use_tsqyomi,
                 jtalk=jtalk,
             )
             merged_sep_text.extend(segment_sep_text)
@@ -241,7 +252,11 @@ def text_to_sep_kata(
 
     # njd_features: OpenJTalkの解析結果
     if njd_features is None:
-        njd_features = pyopenjtalk.run_frontend(norm_text, jtalk=jtalk)
+        njd_features = pyopenjtalk.run_frontend(
+            norm_text,
+            use_tsqyomi=use_tsqyomi,
+            jtalk=jtalk,
+        )
     sep_text: list[str] = []
     sep_kata: list[str] = []
     sep_kata_with_joshi: list[str] = []  # 助詞を分けずに連結した sep_kata (例: "鉛筆", "を" -> "鉛筆を") # fmt: skip

@@ -179,6 +179,7 @@ def _clean_text(
     *,
     use_jp_extra: bool = True,
     use_nanairo: bool = False,
+    use_tsqyomi: bool = False,
     raise_yomi_error: bool = False,
     jtalk: OpenJTalk | None = None,
 ) -> tuple[
@@ -199,6 +200,7 @@ def _clean_text(
         text (str): クリーニングするテキスト
         language (Languages): テキストの言語
         use_jp_extra (bool, optional): テキストが日本語の場合に JP-Extra モデルを利用するかどうか。Defaults to True.
+        use_tsqyomi (bool): True の場合、ロード済みの tsqyomi で文脈に合う読み候補を選ぶ (デフォルト: False)
         raise_yomi_error (bool, optional): False の場合、読めない文字が消えたような扱いとして処理される。Defaults to False.
         jtalk (OpenJTalk | None, optional): 未指定時は pyopenjtalk モジュール内部で保持されているインスタンスが自動的に利用される。
 
@@ -236,6 +238,7 @@ def _clean_text(
             norm_text,
             use_jp_extra=use_jp_extra,
             use_nanairo=use_nanairo,
+            use_tsqyomi=use_tsqyomi,
             raise_yomi_error=raise_yomi_error,
             jtalk=jtalk,
         )
@@ -275,6 +278,7 @@ def clean_text_with_given_phone_tone(
     given_tone: list[int] | None = None,
     use_jp_extra: bool = True,
     use_nanairo: bool = False,
+    use_tsqyomi: bool = False,
     raise_yomi_error: bool = False,
     jtalk: OpenJTalk | None = None,
 ) -> tuple[
@@ -298,6 +302,7 @@ def clean_text_with_given_phone_tone(
         given_tone (list[int] | None, optional): アクセントのトーンのリスト. Defaults to None.
         use_jp_extra (bool, optional): テキストが日本語の場合に JP-Extra モデルを利用するかどうか。Defaults to True.
         use_nanairo (bool, optional): Nanairo 専用の絵文字モーラを保持するかどうか。Defaults to False.
+        use_tsqyomi (bool): True の場合、ロード済みの tsqyomi で文脈に合う読み候補を選ぶ (デフォルト: False)
         raise_yomi_error (bool, optional): False の場合、読めない文字が消えたような扱いとして処理される。Defaults to False.
         jtalk (OpenJTalk | None, optional): 未指定時は pyopenjtalk モジュール内部で保持されているインスタンスが自動的に利用される。
 
@@ -346,6 +351,7 @@ def clean_text_with_given_phone_tone(
             language,
             use_jp_extra=use_jp_extra,
             use_nanairo=use_nanairo,
+            use_tsqyomi=use_tsqyomi,
             raise_yomi_error=raise_yomi_error,
             jtalk=jtalk,
         )
