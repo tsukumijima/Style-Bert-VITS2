@@ -66,6 +66,8 @@ onnxruntime = [
     "onnxruntime-directml>=1.24.0,<2.0.0; sys_platform == 'win32'",
     ## onnxruntime (GPU): Linux x64 のみ
     ## CUDA 13.0 ビルドへ切り替わった 1.27.0 以降を使い、PyTorch と同じ CUDA メジャーバージョンに統一する
+    ## onnxruntime-gpu はバージョン間の CUDA / cuDNN の非互換が出やすいので、当面動作確認が取れている 1.29.x までに固定し、
+    ## それ以降のバージョンへは動作テストを行ってから適宜切り替える運用とする予定
     "onnxruntime-gpu>=1.27.0,<1.30.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
 ]
 # PyTorch モデルで推論を行う場合は別途必須
@@ -90,15 +92,10 @@ core = [
     "onnxruntime-gpu>=1.27.0,<1.30.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
     # PyTorch 関連 (project.optional-dependencies.torch に相当)
     ## 単体利用で ONNX 版推論だけ回すユースケースは極めて考えづらいので、常に PyTorch 関連も必須依存関係に含める
-    ## PyTorch のバリアントは tool.uv.sources で torch / torchaudio のソース指定で固定している
+    ## PyTorch のバリアントは tool.uv.sources で torch のソース指定で固定している
     "accelerate",
     "numba",
     "torch>=2.12.1,<2.13.0",
-    # torchcodec 0.11.0 は .so が CUDA ランタイムに直リンクされており、
-    # CUDA ライブラリが LD_LIBRARY_PATH にないと音声デコードすらできなくなるバグがある (pytorch/torchcodec#1309)
-    ## torchaudio 2.9 が torchcodec をデフォルトバックエンドとして使うため、torchaudio.save/load に影響する
-    ## 0.9.1 は CUDA 非依存で正常に動作するためこのバージョンに固定する
-    "torchcodec>=0.9.1,<0.10.0",
     # 開発関連ツール
     ## 比較的サイズが小さいため core に含める
     "coverage[toml]>=6.5",
@@ -149,8 +146,11 @@ train = [
     "pyloudnorm",
     "speechbrain>=1.1.0",
     "tensorboard",
-    # torchaudio は 2.11.0 が最終リリース
-    "torchaudio==2.11.0",
+    # torchaudio は最終リリースである 2.11.x に固定する
+    # 本体コードでは torchaudio.transforms.Resample() のみ使われている
+    "torchaudio>=2.11.0,<2.12.0",
+    # torchcodec は pyannote.audio が AudioDecoder 経由で音声デコードに使っている (本体コードからの直接インポートはない)
+    "torchcodec>=0.16.0,<0.17.0",
     "utmosv2",
 ]
 ## ここまでの依存関係を全てインストールするグループ
@@ -214,14 +214,16 @@ e2k = { git = "https://github.com/tsukumijima/e2k.git", rev = "9920754e15d8c9640
 # pyannote.audio 4.x が torchaudio / torchcodec 周りの非互換性を理由に torch/torchaudio を 2.8.0 に固定しているため、
 # torch/torchaudio の固定を解除したフォークを利用する
 "pyannote.audio" = { git = "https://github.com/tsukumijima/pyannote-audio.git", rev = "f155cf0cc0b2f293fa78726b6ae54fc90bd42f5a" }
-# torch / torchaudio のソース指定
-# Windows x64・Linux x64: CUDA 13.0 版
-# macOS・その他: PyPI から CPU 版
+# torch / torchaudio / torchcodec のソース指定
+# Windows x64・Linux x64: CUDA 13.0 版 / macOS・その他: PyPI から CPU 版
 torch = [
-    { index = "pytorch-cu130", marker = "(sys_platform == 'linux' and platform_machine == 'x86_64') or sys_platform == 'win32'" },
+    { index = "pytorch-cu130", marker = "(sys_platform == 'linux' and platform_machine == 'x86_64') or (sys_platform == 'win32' and platform_machine == 'AMD64')" },
 ]
 torchaudio = [
-    { index = "pytorch-cu130", marker = "(sys_platform == 'linux' and platform_machine == 'x86_64') or sys_platform == 'win32'" },
+    { index = "pytorch-cu130", marker = "(sys_platform == 'linux' and platform_machine == 'x86_64') or (sys_platform == 'win32' and platform_machine == 'AMD64')" },
+]
+torchcodec = [
+    { index = "pytorch-cu130", marker = "(sys_platform == 'linux' and platform_machine == 'x86_64') or (sys_platform == 'win32' and platform_machine == 'AMD64')" },
 ]
 # UTMOSv2 は PyPI に公開されていないため GitHub から取得する
 utmosv2 = { git = "https://github.com/sarulab-speech/UTMOSv2.git", rev = "cc2700db57bb83ee13dc31ebe1b868c254e15d09" }
