@@ -926,7 +926,7 @@ sdist = { url = "https://files.pythonhosted.org/packages/a2/55/8f8cab2afd404cf57
 [[package]]
 name = "e2k"
 version = "0.6.2"
-source = { git = "https://github.com/tsukumijima/e2k.git?rev=9920754e15d8c96404bef0bd81d424352fb7a48b#9920754e15d8c96404bef0bd81d424352fb7a48b" }
+source = { git = "https://github.com/tsukumijima/e2k?rev=9920754e15d8c96404bef0bd81d424352fb7a48b#9920754e15d8c96404bef0bd81d424352fb7a48b" }
 dependencies = [
     { name = "numpy" },
 ]
@@ -4708,7 +4708,7 @@ requires-dist = [
     { name = "aivmlib" },
     { name = "cmudict" },
     { name = "cn2an" },
-    { name = "e2k", git = "https://github.com/tsukumijima/e2k.git?rev=9920754e15d8c96404bef0bd81d424352fb7a48b" },
+    { name = "e2k", git = "https://github.com/tsukumijima/e2k?rev=9920754e15d8c96404bef0bd81d424352fb7a48b" },
     { name = "g2p-en" },
     { name = "jaconv" },
     { name = "jieba" },
@@ -4784,8 +4784,8 @@ full = [
     { name = "tensorboard" },
     { name = "torch", marker = "(platform_machine != 'x86_64' and sys_platform == 'linux') or (platform_machine != 'AMD64' and sys_platform == 'win32') or (sys_platform != 'linux' and sys_platform != 'win32')", specifier = ">=2.12.1,<2.13.0" },
     { name = "torch", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')", specifier = ">=2.12.1,<2.13.0", index = "https://download.pytorch.org/whl/cu130" },
-    { name = "torchaudio", marker = "(platform_machine != 'x86_64' and sys_platform == 'linux') or (platform_machine != 'AMD64' and sys_platform == 'win32') or (sys_platform != 'linux' and sys_platform != 'win32')", specifier = "==2.11.0" },
-    { name = "torchaudio", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')", specifier = "==2.11.0", index = "https://download.pytorch.org/whl/cu130" },
+    { name = "torchaudio", marker = "(platform_machine != 'x86_64' and sys_platform == 'linux') or (platform_machine != 'AMD64' and sys_platform == 'win32') or (sys_platform != 'linux' and sys_platform != 'win32')", specifier = ">=2.11.0,<2.12.0" },
+    { name = "torchaudio", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')", specifier = ">=2.11.0,<2.12.0", index = "https://download.pytorch.org/whl/cu130" },
     { name = "torchcodec", marker = "(platform_machine != 'x86_64' and sys_platform == 'linux') or (platform_machine != 'AMD64' and sys_platform == 'win32') or (sys_platform != 'linux' and sys_platform != 'win32')", specifier = ">=0.16.0,<0.17.0" },
     { name = "torchcodec", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')", specifier = ">=0.16.0,<0.17.0", index = "https://download.pytorch.org/whl/cu130" },
     { name = "umap-learn" },
@@ -4857,8 +4857,8 @@ train = [
     { name = "tensorboard" },
     { name = "torch", marker = "(platform_machine != 'x86_64' and sys_platform == 'linux') or (platform_machine != 'AMD64' and sys_platform == 'win32') or (sys_platform != 'linux' and sys_platform != 'win32')", specifier = ">=2.12.1,<2.13.0" },
     { name = "torch", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')", specifier = ">=2.12.1,<2.13.0", index = "https://download.pytorch.org/whl/cu130" },
-    { name = "torchaudio", marker = "(platform_machine != 'x86_64' and sys_platform == 'linux') or (platform_machine != 'AMD64' and sys_platform == 'win32') or (sys_platform != 'linux' and sys_platform != 'win32')", specifier = "==2.11.0" },
-    { name = "torchaudio", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')", specifier = "==2.11.0", index = "https://download.pytorch.org/whl/cu130" },
+    { name = "torchaudio", marker = "(platform_machine != 'x86_64' and sys_platform == 'linux') or (platform_machine != 'AMD64' and sys_platform == 'win32') or (sys_platform != 'linux' and sys_platform != 'win32')", specifier = ">=2.11.0,<2.12.0" },
+    { name = "torchaudio", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')", specifier = ">=2.11.0,<2.12.0", index = "https://download.pytorch.org/whl/cu130" },
     { name = "torchcodec", marker = "(platform_machine != 'x86_64' and sys_platform == 'linux') or (platform_machine != 'AMD64' and sys_platform == 'win32') or (sys_platform != 'linux' and sys_platform != 'win32')", specifier = ">=0.16.0,<0.17.0" },
     { name = "torchcodec", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')", specifier = ">=0.16.0,<0.17.0", index = "https://download.pytorch.org/whl/cu130" },
     { name = "utmosv2", git = "https://github.com/sarulab-speech/UTMOSv2.git?rev=cc2700db57bb83ee13dc31ebe1b868c254e15d09" },

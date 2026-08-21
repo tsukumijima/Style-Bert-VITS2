@@ -26,7 +26,7 @@ dependencies = [
     "aivmlib",
     "cmudict",
     "cn2an",
-    "e2k>=0.6.1",
+    "e2k @ git+https://github.com/tsukumijima/e2k@9920754e15d8c96404bef0bd81d424352fb7a48b",
     "g2p_en",
     "jaconv",
     "jieba",
@@ -142,7 +142,9 @@ train = [
     "librosa>=0.11.0",
     "matplotlib",
     "matplotlib-fontja>=1.1.0",
-    "pyannote.audio>=4.0.3",
+    # pyannote.audio 4.x が torchaudio / torchcodec 周りの非互換性を理由に torch/torchaudio を 2.8.0 に固定しているため、
+    # torch/torchaudio の固定を解除したフォークを利用する
+    "pyannote.audio @ git+https://github.com/tsukumijima/pyannote-audio.git@f155cf0cc0b2f293fa78726b6ae54fc90bd42f5a",
     "pyloudnorm",
     "speechbrain>=1.1.0",
     "tensorboard",
@@ -151,7 +153,7 @@ train = [
     "torchaudio>=2.11.0,<2.12.0",
     # torchcodec は pyannote.audio が AudioDecoder 経由で音声デコードに使っている (本体コードからの直接インポートはない)
     "torchcodec>=0.16.0,<0.17.0",
-    "utmosv2",
+    "utmosv2 @ git+https://github.com/sarulab-speech/UTMOSv2.git@cc2700db57bb83ee13dc31ebe1b868c254e15d09",
 ]
 ## ここまでの依存関係を全てインストールするグループ
 ## Usage: uv sync --group full
@@ -210,10 +212,6 @@ source-exclude = [
 ]
 
 [tool.uv.sources]
-e2k = { git = "https://github.com/tsukumijima/e2k.git", rev = "9920754e15d8c96404bef0bd81d424352fb7a48b" }
-# pyannote.audio 4.x が torchaudio / torchcodec 周りの非互換性を理由に torch/torchaudio を 2.8.0 に固定しているため、
-# torch/torchaudio の固定を解除したフォークを利用する
-"pyannote.audio" = { git = "https://github.com/tsukumijima/pyannote-audio.git", rev = "f155cf0cc0b2f293fa78726b6ae54fc90bd42f5a" }
 # torch / torchaudio / torchcodec のソース指定
 # Windows x64・Linux x64: CUDA 13.0 版 / macOS・その他: PyPI から CPU 版
 torch = [
@@ -225,8 +223,6 @@ torchaudio = [
 torchcodec = [
     { index = "pytorch-cu130", marker = "(sys_platform == 'linux' and platform_machine == 'x86_64') or (sys_platform == 'win32' and platform_machine == 'AMD64')" },
 ]
-# UTMOSv2 は PyPI に公開されていないため GitHub から取得する
-utmosv2 = { git = "https://github.com/sarulab-speech/UTMOSv2.git", rev = "cc2700db57bb83ee13dc31ebe1b868c254e15d09" }
 
 # PyTorch の CUDA 13.0 版のパッケージインデックス
 [[tool.uv.index]]
