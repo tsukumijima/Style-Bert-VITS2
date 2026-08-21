@@ -3264,8 +3264,8 @@ wheels = [
 
 [[package]]
 name = "pyannote-audio"
-version = "4.0.4.dev15+gf155cf0cc"
-source = { git = "https://github.com/tsukumijima/pyannote-audio.git?rev=f155cf0cc0b2f293fa78726b6ae54fc90bd42f5a#f155cf0cc0b2f293fa78726b6ae54fc90bd42f5a" }
+version = "4.0.7"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "asteroid-filterbanks" },
     { name = "einops" },
@@ -3291,6 +3291,10 @@ dependencies = [
     { name = "torchcodec", version = "0.16.0", source = { registry = "https://pypi.org/simple" }, marker = "(platform_machine != 'x86_64' and sys_platform == 'linux') or (platform_machine != 'AMD64' and sys_platform == 'win32') or (sys_platform != 'linux' and sys_platform != 'win32')" },
     { name = "torchcodec", version = "0.16.0+cu130", source = { registry = "https://download.pytorch.org/whl/cu130" }, marker = "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')" },
     { name = "torchmetrics" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/6d/d7/03b1d00d431c7be1d98635fefb99c2da64d9b84b4b8a06d5302666a96c88/pyannote_audio-4.0.7.tar.gz", hash = "sha256:3a903dfb5ca711d134cc2522561c9158b186836f5d62e8a57c46c6648e8a8229", size = 13963479, upload-time = "2026-06-30T14:28:53.454Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/66/a3/1d03ed6c7669f7b94ce4a7ebe3b21f5c3b6331999a5680837e371e0a0537/pyannote_audio-4.0.7-py3-none-any.whl", hash = "sha256:852ea15c4d85bc34773e618267603ffca6a521669a74d33742692cc67fc700d6", size = 894598, upload-time = "2026-06-30T14:28:51.779Z" },
 ]
 
 [[package]]
@@ -4770,7 +4774,7 @@ full = [
     { name = "onnxsim-prebuilt", specifier = ">=0.4.39.post2" },
     { name = "protobuf", specifier = ">=4.25" },
     { name = "psutil" },
-    { name = "pyannote-audio", git = "https://github.com/tsukumijima/pyannote-audio.git?rev=f155cf0cc0b2f293fa78726b6ae54fc90bd42f5a" },
+    { name = "pyannote-audio", specifier = ">=4.0.5" },
     { name = "pyloudnorm" },
     { name = "pyright" },
     { name = "pytest" },
@@ -4846,7 +4850,7 @@ train = [
     { name = "onnxruntime", marker = "platform_machine == 'x86_64' and sys_platform == 'darwin'", specifier = "==1.23.2" },
     { name = "onnxruntime-directml", marker = "sys_platform == 'win32'", specifier = ">=1.24.0,<2.0.0" },
     { name = "onnxruntime-gpu", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'", specifier = ">=1.27.0,<1.30.0" },
-    { name = "pyannote-audio", git = "https://github.com/tsukumijima/pyannote-audio.git?rev=f155cf0cc0b2f293fa78726b6ae54fc90bd42f5a" },
+    { name = "pyannote-audio", specifier = ">=4.0.5" },
     { name = "pyloudnorm" },
     { name = "pyright" },
     { name = "pytest" },
