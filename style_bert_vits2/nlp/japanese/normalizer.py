@@ -2,14 +2,35 @@ import re
 import sys
 import unicodedata
 from datetime import datetime
+from typing import Literal, overload
 
 from e2k import C2K, NGram
 from jaconv import jaconv
 from num2words import num2words
+from pydantic import BaseModel
 
 from style_bert_vits2.nlp.japanese.itaiji_map import ITAIJI_MAP
 from style_bert_vits2.nlp.japanese.katakana_map import KATAKANA_MAP
 from style_bert_vits2.nlp.symbols import PUNCTUATIONS
+
+
+class NormalizationDetail(BaseModel):
+    """発話内容を置換した区間の由来と正規化結果。"""
+
+    original_start: int
+    original_end: int
+    normalized_start: int
+    normalized_end: int
+    original_text: str
+    normalized_text: str
+    category: Literal["date", "number", "percentage", "symbol", "unit", "url"]
+
+
+class NormalizationResult(BaseModel):
+    """正規化済みテキストと、発話内容を変えた置換区間。"""
+
+    text: str
+    details: tuple[NormalizationDetail, ...]
 
 
 # C2K / NGram の初期化
@@ -1069,7 +1090,30 @@ def __normalize_kanji_and_separators(text: str) -> str:
     return text
 
 
-def normalize_text(text: str, *, for_irodori: bool = False) -> str:
+@overload
+def normalize_text(
+    text: str,
+    *,
+    for_irodori: bool = False,
+    return_details: Literal[False] = False,
+) -> str: ...
+
+
+@overload
+def normalize_text(
+    text: str,
+    *,
+    for_irodori: bool = False,
+    return_details: Literal[True],
+) -> NormalizationResult: ...
+
+
+def normalize_text(
+    text: str,
+    *,
+    for_irodori: bool = False,
+    return_details: bool = False,
+) -> str | NormalizationResult:
     """
     日本語のテキストを正規化する。
 
@@ -1099,10 +1143,13 @@ def normalize_text(text: str, *, for_irodori: bool = False) -> str:
         for_irodori (bool): Irodori-TTS 向けの正規化ルールを適用するかどうか。
             True のときはテキストエンコーダー入力用に、句読点・括弧・疑問符等を
             全角役物 (、。！？「」… 等) に変換し、通常の日本語文章に近い形にする。
+        return_details (bool): 発話内容を置換した区間の由来も返すかどうか。
 
     Returns:
-        str: 正規化されたテキスト
+        str | NormalizationResult: 正規化されたテキスト、または置換区間を含む結果
     """
+
+    original_text = text
 
     # 最初にカタカナを除く英数字記号 (ASCII 文字) を半角に変換する
     # どのみち Unicode 正規化で行われる処理ではあるが、__replace_symbols() は Unicode 正規化前に実行しなければ正常に動作しない
@@ -1206,7 +1253,115 @@ def normalize_text(text: str, *, for_irodori: bool = False) -> str:
         r"([\u4e00-\u9FFF])(-{2,})", lambda m: m.group(1) + "—" * len(m.group(2)), res
     )
 
+    if return_details is True:
+        return NormalizationResult(
+            text=res,
+            details=__collect_normalization_details(original_text, res, for_irodori),
+        )
+
     return res
+
+
+def __collect_normalization_details(
+    original_text: str,
+    normalized_text: str,
+    for_irodori: bool,
+) -> tuple[NormalizationDetail, ...]:
+    """
+    発話内容を変える入力区間を、完成済みの正規化文字列へ対応付ける。
+
+    Args:
+        original_text (str): 正規化前のテキスト
+        normalized_text (str): 正規化後のテキスト
+        for_irodori (bool): Irodori-TTS 向けの正規化ルールを適用するかどうか
+
+    Returns:
+        tuple[NormalizationDetail, ...]: 正規化区間の詳細
+    """
+
+    candidates: list[
+        tuple[
+            int, int, Literal["date", "number", "percentage", "symbol", "unit", "url"]
+        ]
+    ] = []
+
+    # URL は内部の数字や記号を個別の変換として重複記録しないよう、最初に全体を確保する
+    candidates.extend(
+        (match.start(), match.end(), "url")
+        for match in __URL_PATTERN.finditer(original_text)
+    )
+    # 日付は数値と区切り記号が一体で読み替わるため、単位や数値より先に扱う
+    candidates.extend(
+        (match.start(), match.end(), "date")
+        for match in __DATE_PATTERN.finditer(original_text)
+    )
+    # 数値と百分率記号は一つの発話内容になるため、数値部分を分割しない
+    candidates.extend(
+        (match.start(), match.end(), "percentage")
+        for match in re.finditer(r"\d+(?:\.\d+)?[%％]", original_text)
+    )
+    # 数値に接続する単位だけを対象にして、英単語内の文字は単位として記録しない
+    candidates.extend(
+        (match.start(), match.end(), "unit")
+        for match in re.finditer(
+            r"(?<![A-Za-z0-9])\d+(?:\.\d+)?(?:km|cm|mm|mL|kg|mg|GB|MB|KB|Hz|h|m|s)(?![A-Za-z0-9])",
+            original_text,
+        )
+    )
+    # 数式・Irodori-TTS 向け小数・位取りの漢数字は、記号や数字列を一つの発話内容へ置換する
+    candidates.extend(
+        (match.start(), match.end(), "number")
+        for match in __NUMBER_MATH_PATTERN.finditer(original_text)
+    )
+    if for_irodori is True:
+        candidates.extend(
+            (match.start(), match.end(), "number")
+            for match in __IRODORI_DECIMAL_PATTERN.finditer(original_text)
+        )
+    candidates.extend(
+        (match.start(), match.end(), "number")
+        for match in __KANJI_ZERO_DIGIT_SEQUENCE_PATTERN.finditer(original_text)
+    )
+    # 単独の百分率記号は装飾用途と書式文字列の両方で発話内容を追加する
+    candidates.extend(
+        (match.start(), match.end(), "symbol")
+        for match in re.finditer(r"[%％]", original_text)
+    )
+
+    details: list[NormalizationDetail] = []
+    occupied_until = 0
+    for start, end, category in sorted(candidates, key=lambda candidate: candidate[:2]):
+        if start < occupied_until:
+            continue
+
+        original_fragment = original_text[start:end]
+        normalized_fragment = normalize_text(
+            original_fragment,
+            for_irodori=for_irodori,
+        )
+        if normalized_fragment == original_fragment:
+            continue
+        normalized_start = len(
+            normalize_text(original_text[:start], for_irodori=for_irodori)
+        )
+        normalized_end = normalized_start + len(normalized_fragment)
+        if normalized_text[normalized_start:normalized_end] != normalized_fragment:
+            continue
+
+        details.append(
+            NormalizationDetail(
+                original_start=start,
+                original_end=end,
+                normalized_start=normalized_start,
+                normalized_end=normalized_end,
+                original_text=original_fragment,
+                normalized_text=normalized_fragment,
+                category=category,
+            )
+        )
+        occupied_until = end
+
+    return tuple(details)
 
 
 def __replace_symbols(text: str) -> str:

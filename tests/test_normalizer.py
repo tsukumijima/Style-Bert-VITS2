@@ -8,7 +8,8 @@ normalize_text() のテスト。
 import pytest
 
 from style_bert_vits2.nlp.japanese.normalizer import (
-    __IRODORI_SYMBOL_REPLACE_MAP,
+    __IRODORI_SYMBOL_REPLACE_MAP,  # pyright: ignore[reportPrivateUsage]
+    NormalizationResult,
     normalize_text,
 )
 
@@ -30,6 +31,100 @@ def test_normalize_text_basic():
     # 重複する記号
     assert normalize_text("！！！？？？。。。") == "!!!???..."
     assert normalize_text("。。。、、、") == "...,,,"
+
+
+def test_normalize_text_return_details_tracks_spoken_replacements():
+    """発話内容を置換する入力だけが元区間と出力区間つきで返る"""
+
+    text = "90% https://example.com/a?b=1 %s 100m 2024/01/01"
+    result = normalize_text(text, return_details=True)
+
+    assert isinstance(result, NormalizationResult)
+    assert result.text == (
+        "90パーセントエイチティーティーピーエス,イグザンプルドットコム,"
+        "スラッシュ,a,クエスチョン,bイコール1パーセントs100メートル2024年1月1日"
+    )
+    assert [
+        (detail.category, detail.original_text, detail.normalized_text)
+        for detail in result.details
+    ] == [
+        ("percentage", "90%", "90パーセント"),
+        (
+            "url",
+            "https://example.com/a?b=1",
+            "エイチティーティーピーエス,イグザンプルドットコム,スラッシュ,a,クエスチョン,bイコール1",
+        ),
+        ("symbol", "%", "パーセント"),
+        ("unit", "100m", "100メートル"),
+        ("date", "2024/01/01", "2024年1月1日"),
+    ]
+    for detail in result.details:
+        assert text[detail.original_start : detail.original_end] == detail.original_text
+        assert (
+            result.text[detail.normalized_start : detail.normalized_end]
+            == detail.normalized_text
+        )
+
+
+def test_normalize_text_return_details_keeps_decorative_percent_symbols():
+    """連続する装飾記号も発話へ変換された各記号だけを記録する"""
+
+    result = normalize_text("装飾%%%", return_details=True)
+
+    assert result.text == "装飾パーセントパーセントパーセント"
+    assert [
+        (detail.original_start, detail.original_end) for detail in result.details
+    ] == [
+        (2, 3),
+        (3, 4),
+        (4, 5),
+    ]
+    assert all(detail.category == "symbol" for detail in result.details)
+
+
+def test_normalize_text_return_details_tracks_number_expressions():
+    """数式、小数、位取りの漢数字を数値表現として一つの区間へ記録する"""
+
+    standard_result = normalize_text("1+1=2 と 二〇二四", return_details=True)
+    irodori_result = normalize_text(
+        "値は1.5です", for_irodori=True, return_details=True
+    )
+
+    assert standard_result.text == "1プラス1イコール2と2024"
+    assert [
+        (detail.category, detail.original_text, detail.normalized_text)
+        for detail in standard_result.details
+    ] == [
+        ("number", "1+1=2", "1プラス1イコール2"),
+        ("number", "二〇二四", "2024"),
+    ]
+    assert irodori_result.text == "値は一点五です"
+    assert [
+        (detail.category, detail.original_text, detail.normalized_text)
+        for detail in irodori_result.details
+    ] == [
+        ("number", "1.5", "一点五"),
+    ]
+    for result, text in (
+        (standard_result, "1+1=2 と 二〇二四"),
+        (irodori_result, "値は1.5です"),
+    ):
+        for detail in result.details:
+            assert (
+                text[detail.original_start : detail.original_end]
+                == detail.original_text
+            )
+            assert (
+                result.text[detail.normalized_start : detail.normalized_end]
+                == detail.normalized_text
+            )
+
+
+def test_normalize_text_return_details_keeps_str_compatibility_for_irodori():
+    """既存呼び出しと Irodori-TTS 向け出力は文字列のまま維持する"""
+
+    assert normalize_text("90%") == "90パーセント"
+    assert normalize_text("90%", for_irodori=True) == "90パーセント"
 
 
 def _build_irodori_symbol_replace_map_cases() -> list[tuple[str, str]]:
