@@ -164,6 +164,11 @@ def run():
         help="Do not show the progress bar while training.",
     )
     parser.add_argument(
+        "--disable_gradient_monitor",
+        action="store_true",
+        help="Disable automatic learning rate adjustment based on the generator gradient norm.",
+    )
+    parser.add_argument(
         "--speedup",
         action="store_true",
         help="Speed up training by disabling logging and evaluation.",
@@ -701,10 +706,13 @@ def run():
         )
     initial_step = global_step
 
-    # 自動学習率調整用の勾配モニターを初期化
-    # 分散学習時は各 GPU 間での学習率同期が複雑になるため無効化
+    # 実験で固定学習率を比較できるよう、明示的に指定された場合は勾配モニターを無効化
+    # 分散学習時も各 GPU 間での学習率同期が複雑になるため無効化
     global gradient_monitor
-    if n_gpus > 1:
+    if args.disable_gradient_monitor is True:
+        gradient_monitor = None
+        logger.info("[GradientMonitor] Disabled by command-line option.")
+    elif n_gpus > 1:
         gradient_monitor = None
         logger.info(
             "[GradientMonitor] Disabled (distributed training with multiple GPUs detected)."
