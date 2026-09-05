@@ -2,7 +2,7 @@ import re
 import sys
 import unicodedata
 from datetime import datetime
-from typing import Literal, overload
+from typing import Literal, TypeAlias, overload
 
 from e2k import C2K, NGram
 from jaconv import jaconv
@@ -14,6 +14,11 @@ from style_bert_vits2.nlp.japanese.katakana_map import KATAKANA_MAP
 from style_bert_vits2.nlp.symbols import PUNCTUATIONS
 
 
+NormalizationCategory: TypeAlias = Literal[
+    "date", "email", "number", "percentage", "symbol", "unit", "url"
+]
+
+
 class NormalizationDetail(BaseModel):
     """発話内容を置換した区間の由来と正規化結果。"""
 
@@ -23,7 +28,7 @@ class NormalizationDetail(BaseModel):
     normalized_end: int
     original_text: str
     normalized_text: str
-    category: Literal["date", "number", "percentage", "symbol", "unit", "url"]
+    category: NormalizationCategory
 
 
 class NormalizationResult(BaseModel):
@@ -106,8 +111,9 @@ __WEEKDAY_PATTERN = re.compile(
     r")"  # 日付部分をキャプチャ終了
     r"\s*[（(]([月火水木金土日])[)）]"  # 全角/半角括弧で囲まれた曜日漢字
 )
+# ホストの直後がパス無しのクエリ・フラグメントでも、符号化を含めて URL 全体を1区間にする
 __URL_PATTERN = re.compile(
-    r"https?://[-a-zA-Z0-9.]+(?:/[-a-zA-Z0-9._~:/?#\[\]@!$&\'()*+,;=]*)?"
+    r"https?://[-a-zA-Z0-9.]+(?:[/?#][-a-zA-Z0-9._~:/?#\[\]@!$&\'()*+,;=%]*)?"
 )
 __EMAIL_PATTERN = re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")
 # 英数・かな・カナ・漢字のワード文字を判定するパターン
@@ -337,6 +343,15 @@ __SYMBOL_YOMI_MAP = {
 }
 # 記号類の読み正規化パターン
 __SYMBOL_YOMI_PATTERN = re.compile("|".join(re.escape(p) for p in __SYMBOL_YOMI_MAP))
+# 💲 は後段で $ として通貨処理するため、ここでは読み上げ記号の候補から外す
+## 長い記号を先に照合し、複合記号を1つの読みとして取る
+__SYMBOL_YOMI_DETAIL_PATTERN = re.compile(
+    "|".join(
+        re.escape(symbol)
+        for symbol in sorted(__SYMBOL_YOMI_MAP, key=len, reverse=True)
+        if symbol not in {"💲"}
+    )
+)
 
 # =========== __normalize_phone_postal_address_floor() で使う定数・正規表現パターン ===========
 
@@ -1279,58 +1294,109 @@ def __collect_normalization_details(
         tuple[NormalizationDetail, ...]: 正規化区間の詳細
     """
 
-    candidates: list[
-        tuple[
-            int, int, Literal["date", "number", "percentage", "symbol", "unit", "url"]
-        ]
-    ] = []
+    candidates: list[tuple[int, int, NormalizationCategory, int]] = []
 
-    # URL は内部の数字や記号を個別の変換として重複記録しないよう、最初に全体を確保する
-    candidates.extend(
-        (match.start(), match.end(), "url")
-        for match in __URL_PATTERN.finditer(original_text)
+    # 変換本体は全角英数を半角にしてからパターン照合するので、候補検索も同じ表層で行う
+    ## jaconv.z2h() は1文字対1文字のため、開始・終了位置はそのまま原文へ戻せる
+    search_text = jaconv.z2h(
+        original_text, kana=False, digit=True, ascii=True, ignore="\u3000"
     )
-    # 日付は数値と区切り記号が一体で読み替わるため、単位や数値より先に扱う
-    candidates.extend(
-        (match.start(), match.end(), "date")
-        for match in __DATE_PATTERN.finditer(original_text)
-    )
+
+    # 既存の変換パターンを同じ優先順位付き候補へ集め、変換本体と詳細抽出の対象を一致させる
+    pattern_candidates: list[tuple[re.Pattern[str], NormalizationCategory, int]] = [
+        (__URL_PATTERN, "url", 0),
+        (__EMAIL_PATTERN, "email", 1),
+        (__WEEKDAY_PATTERN, "date", 2),
+        (__DATE_PATTERN, "date", 3),
+        (__WAREKI_PATTERN, "date", 4),
+        (__POSTAL_CODE_WITH_SYMBOL_PATTERN, "number", 5),
+        (__POSTAL_CODE_PATTERN, "number", 6),
+        (__PHONE_HYPHENATED_PATTERN, "number", 7),
+        (__PHONE_NO_HYPHEN_PATTERN, "number", 8),
+        (__ADDRESS_STANDALONE_3PART_WITH_ROOM_PATTERN, "number", 9),
+        (__ADDRESS_PATTERN, "number", 10),
+        (__ADDRESS_JP_NUMBERING_PATTERN, "number", 11),
+        (__ADDRESS_BLOCK_PATTERN, "number", 12),
+        (__ROOM_NUMBER_GOUSHITSU_PATTERN, "number", 13),
+        (__ROOM_NUMBER_GOU_PATTERN, "number", 14),
+        (__ROOM_NUMBER_IMPLICIT_PATTERN, "number", 15),
+        (__FLOOR_PATTERN, "number", 16),
+        (__COMPACT_DURATION_PATTERN, "unit", 17),
+        (__DEGREE_UNIT_PATTERN, "unit", 18),
+        (__PAGE_UNIT_PATTERN, "unit", 19),
+        (__UNIT_PATTERN, "unit", 20),
+        (__CURRENCY_PATTERN, "unit", 21),
+        (__CHEMICAL_FORMULA_PATTERN, "number", 22),
+        (__NUMBER_RANGE_PATTERN, "number", 23),
+        (__MIXED_NUMBER_RANGE_PATTERN, "number", 24),
+        (__SYMBOLIC_MINUS_PATTERN, "number", 25),
+        (__NUMBER_MATH_PATTERN, "number", 26),
+        (__NUMBER_MULTIPLICATION_PATTERN, "number", 27),
+        (__NUMBER_COMPARISON_PATTERN, "number", 28),
+        (__FRACTION_PATTERN, "number", 29),
+        (__ZERO_HOUR_PATTERN, "number", 30),
+        (__TIME_PATTERN, "number", 31),
+        (__ELAPSED_TIMESTAMP_PATTERN, "number", 32),
+        (__ASPECT_PATTERN, "number", 33),
+        (__POWER_PATTERN, "number", 34),
+        (__EXPONENT_PATTERN, "number", 35),
+        (__IRODORI_DECIMAL_PATTERN, "number", 36),
+        (__KANJI_ZERO_DIGIT_SEQUENCE_PATTERN, "number", 37),
+    ]
+    for pattern, category, priority in pattern_candidates:
+        candidates.extend(
+            (match.start(), match.end(), category, priority)
+            for match in pattern.finditer(search_text)
+        )
+
     # 数値と百分率記号は一つの発話内容になるため、数値部分を分割しない
     candidates.extend(
-        (match.start(), match.end(), "percentage")
-        for match in re.finditer(r"\d+(?:\.\d+)?[%％]", original_text)
+        (match.start(), match.end(), "percentage", 0)
+        for match in re.finditer(r"\d+(?:\.\d+)?[%％]", search_text)
     )
-    # 数値に接続する単位だけを対象にして、英単語内の文字は単位として記録しない
+
+    # 記号辞書で読みへ変わる記号は、数値や URL に含まれない範囲を個別に記録する
     candidates.extend(
-        (match.start(), match.end(), "unit")
+        (match.start(), match.end(), "symbol", 50)
+        for match in __SYMBOL_YOMI_DETAIL_PATTERN.finditer(search_text)
+    )
+    # 後段で読みを持たず削除される音符・絵文字も、元の発話区間として記録する
+    candidates.extend(
+        (match.start(), match.end(), "symbol", 51)
         for match in re.finditer(
-            r"(?<![A-Za-z0-9])\d+(?:\.\d+)?(?:km|cm|mm|mL|kg|mg|GB|MB|KB|Hz|h|m|s)(?![A-Za-z0-9])",
-            original_text,
+            r"[♪♫♬♩]|[\U0001F300-\U0001FAFF][\ufe0e\ufe0f]?", search_text
         )
     )
-    # 数式・Irodori-TTS 向け小数・位取りの漢数字は、記号や数字列を一つの発話内容へ置換する
+    # 丸系文字は数値文脈と伏せ字の両方で使われるため、正規化後の一致確認で採否を決める
     candidates.extend(
-        (match.start(), match.end(), "number")
-        for match in __NUMBER_MATH_PATTERN.finditer(original_text)
+        (match.start(), match.end(), "symbol", 52)
+        for match in re.finditer(r"(?:○|◯|⭕|⚪)[\ufe0e\ufe0f]?", search_text)
     )
-    if for_irodori is True:
-        candidates.extend(
-            (match.start(), match.end(), "number")
-            for match in __IRODORI_DECIMAL_PATTERN.finditer(original_text)
-        )
+    # × 系文字は文脈に応じて「かける」または「バツ」へ変換される
     candidates.extend(
-        (match.start(), match.end(), "number")
-        for match in __KANJI_ZERO_DIGIT_SEQUENCE_PATTERN.finditer(original_text)
+        (match.start(), match.end(), "symbol", 53)
+        for match in __CROSS_MARK_AS_BATSU_PATTERN.finditer(search_text)
     )
-    # 単独の百分率記号は装飾用途と書式文字列の両方で発話内容を追加する
     candidates.extend(
-        (match.start(), match.end(), "symbol")
-        for match in re.finditer(r"[%％]", original_text)
+        (match.start(), match.end(), "symbol", 54)
+        for match in __CROSS_MARK_AS_KAKERU_PATTERN.finditer(search_text)
+    )
+    # NFKC で数字へ展開される囲み数字も、発話内容を変えた元区間として残す
+    candidates.extend(
+        (match.start(), match.end(), "number", 55)
+        for match in re.finditer(r"[❶-❿⓫-⓴➀-➉➊-➓]", search_text)
     )
 
     details: list[NormalizationDetail] = []
     occupied_until = 0
-    for start, end, category in sorted(candidates, key=lambda candidate: candidate[:2]):
+    for start, end, category, _priority in sorted(
+        candidates,
+        key=lambda candidate: (
+            candidate[0],
+            -(candidate[1] - candidate[0]),
+            candidate[3],
+        ),
+    ):
         if start < occupied_until:
             continue
 
@@ -1339,11 +1405,38 @@ def __collect_normalization_details(
             original_fragment,
             for_irodori=for_irodori,
         )
-        if normalized_fragment == original_fragment:
-            continue
         normalized_start = len(
             normalize_text(original_text[:start], for_irodori=for_irodori)
         )
+        # × の「かける」は前後の文字で決まるので、前後1文字を含めて変換し中央の読みを取る
+        ## 記号だけの再変換は「バツ」になる。全文と同じ文脈で読んだ中央だけを details の読みにする
+        isolated_span = normalized_text[
+            normalized_start : normalized_start + len(normalized_fragment)
+        ]
+        if (
+            re.fullmatch(r"[×✖⨯❌][\ufe0e\ufe0f]?", original_fragment) is not None
+            and isolated_span != normalized_fragment
+        ):
+            context_start = max(0, start - 1)
+            context_end = min(len(original_text), end + 1)
+            normalized_context = normalize_text(
+                original_text[context_start:context_end],
+                for_irodori=for_irodori,
+            )
+            prefix_len = len(
+                normalize_text(
+                    original_text[context_start:start],
+                    for_irodori=for_irodori,
+                )
+            )
+            suffix_len = len(
+                normalize_text(original_text[end:context_end], for_irodori=for_irodori)
+            )
+            normalized_fragment = normalized_context[
+                prefix_len : len(normalized_context) - suffix_len
+            ]
+        if normalized_fragment == original_fragment:
+            continue
         normalized_end = normalized_start + len(normalized_fragment)
         if normalized_text[normalized_start:normalized_end] != normalized_fragment:
             continue
@@ -1409,6 +1502,7 @@ def __replace_symbols(text: str) -> str:
         url = url.replace(":", "コロン")
         url = url.replace("~", "チルダ")
         url = url.replace("+", "プラス")
+        # % は記号辞書の段階で「パーセント」へ読む。URL 処理では残し、号室判定 (カタカナ直後の 3 桁以上) より後へ回す
         return url.rstrip(",").replace(",,", ",")
 
     # URL パターンの処理

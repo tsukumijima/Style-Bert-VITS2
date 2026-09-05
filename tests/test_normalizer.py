@@ -82,6 +82,85 @@ def test_normalize_text_return_details_keeps_decorative_percent_symbols():
     assert all(detail.category == "symbol" for detail in result.details)
 
 
+def test_normalize_text_return_details_keeps_percent_encoding_inside_url():
+    """URL 内のパーセント符号を URL 全体の発話区間として記録する。"""
+
+    text = "https://x.test/a%20b?x=50%25"
+    result = normalize_text(text, for_irodori=True, return_details=True)
+
+    assert len(result.details) == 1
+    detail = result.details[0]
+    assert detail.category == "url"
+    assert detail.original_text == text
+    assert "パーセント20" in detail.normalized_text
+    assert "パーセント25" in detail.normalized_text
+    assert result.text[detail.normalized_start : detail.normalized_end] == result.text
+
+
+def test_normalize_text_return_details_keeps_pathless_url_query_as_one_segment():
+    """パスの無いクエリ付き URL も符号化を含めて一つの発話区間として記録する。"""
+
+    text = "https://example.com?q=a%20b"
+    result = normalize_text(text, for_irodori=True, return_details=True)
+
+    assert len(result.details) == 1
+    detail = result.details[0]
+    assert detail.category == "url"
+    assert detail.original_text == text
+    assert "クエスチョン" in detail.normalized_text
+    assert "パーセント20" in detail.normalized_text
+    assert result.text[detail.normalized_start : detail.normalized_end] == result.text
+
+
+def test_normalize_text_return_details_tracks_fullwidth_url_and_email():
+    """全角の URL とメールアドレスも半角化後の照合で発話区間として記録する。"""
+
+    url_text = "ｈｔｔｐｓ：／／ｅｘａｍｐｌｅ．ｃｏｍ"
+    email_text = "ｔｅｓｔ＠ｅｘａｍｐｌｅ．ｃｏｍ"
+    url_result = normalize_text(url_text, for_irodori=True, return_details=True)
+    email_result = normalize_text(email_text, for_irodori=True, return_details=True)
+
+    assert [
+        (detail.category, detail.original_text, detail.normalized_text)
+        for detail in url_result.details
+    ] == [
+        (
+            "url",
+            url_text,
+            "エイチティーティーピーエス、イグザンプルドットコム",
+        )
+    ]
+    assert [
+        (detail.category, detail.original_text, detail.normalized_text)
+        for detail in email_result.details
+    ] == [
+        (
+            "email",
+            email_text,
+            "テスト、アットマーク、イグザンプルドットコム",
+        )
+    ]
+
+
+def test_normalize_text_return_details_tracks_contextual_kakeru_cross_mark():
+    """両側が漢字の × を、全文と同じ「かける」として記録する。"""
+
+    text = "山×里"
+    result = normalize_text(text, for_irodori=True, return_details=True)
+
+    assert result.text == "山かける里"
+    assert [
+        (detail.category, detail.original_text, detail.normalized_text)
+        for detail in result.details
+    ] == [("symbol", "×", "かける")]
+    hiragana_result = normalize_text("あ×い", for_irodori=True, return_details=True)
+    assert hiragana_result.text == "あバツい"
+    assert [
+        (detail.category, detail.original_text, detail.normalized_text)
+        for detail in hiragana_result.details
+    ] == [("symbol", "×", "バツ")]
+
+
 def test_normalize_text_return_details_tracks_number_expressions():
     """数式、小数、位取りの漢数字を数値表現として一つの区間へ記録する"""
 
@@ -125,6 +204,86 @@ def test_normalize_text_return_details_keeps_str_compatibility_for_irodori():
 
     assert normalize_text("90%") == "90パーセント"
     assert normalize_text("90%", for_irodori=True) == "90パーセント"
+
+
+@pytest.mark.parametrize(
+    ("text", "category", "original_text", "normalized_text"),
+    [
+        ("#", "symbol", "#", "シャープ"),
+        ("2.5%", "percentage", "2.5%", "二ー点五パーセント"),
+        ("25℃", "unit", "25℃", "25度"),
+        ("3‰", "symbol", "‰", "パーミル"),
+        ("a@b.com", "email", "a@b.com", "a、アットマーク、bドットコム"),
+        ("R6.1.1", "date", "R6.1.1", "令和6年1月1日"),
+        ("12+34=46", "number", "12+34=46", "12プラス34イコール46"),
+        ("5〜10", "number", "5〜10", "5から10"),
+        ("2^4", "number", "2^4", "2の4乗"),
+        ("09:05", "number", "09:05", "九時5分"),
+        (
+            "〒100-0001",
+            "number",
+            "〒100-0001",
+            "郵便番号イチゼロゼロのゼロゼロゼロイチ",
+        ),
+        (
+            "03-1234-5678",
+            "number",
+            "03-1234-5678",
+            "ゼロサン、イチニーサンヨン、ゴーロクナナハチ",
+        ),
+        ("東京都1-2-3", "number", "都1-2-3", "都1の2の3"),
+        ("1920×1080", "number", "1920×1080", "1920かける1080"),
+        ("○か×か", "symbol", "○", "マル"),
+        ("⓫", "number", "⓫", "11"),
+        ("♪", "symbol", "♪", ""),
+        ("😀", "symbol", "😀", ""),
+    ],
+)
+def test_normalize_text_return_details_tracks_all_spoken_replacement_kinds(
+    text: str,
+    category: str,
+    original_text: str,
+    normalized_text: str,
+) -> None:
+    """既存正規化パターンが追加・置換・削除した発話区間を全て記録する。"""
+
+    result = normalize_text(text, for_irodori=True, return_details=True)
+
+    matching_details = [
+        detail
+        for detail in result.details
+        if detail.original_text == original_text
+        and detail.normalized_text == normalized_text
+    ]
+    assert len(matching_details) == 1
+    detail = matching_details[0]
+    assert detail.category == category
+    assert text[detail.original_start : detail.original_end] == original_text
+    assert (
+        result.text[detail.normalized_start : detail.normalized_end] == normalized_text
+    )
+
+
+def test_normalize_text_return_details_prefers_percentage_over_decimal_and_symbol():
+    """小数と百分率記号を一つの百分率区間へまとめる。"""
+
+    result = normalize_text("2.5%", for_irodori=True, return_details=True)
+
+    assert [
+        (detail.category, detail.original_text, detail.normalized_text)
+        for detail in result.details
+    ] == [("percentage", "2.5%", "二ー点五パーセント")]
+
+
+@pytest.mark.parametrize("text", ["日本語", "パーセント", "五半期", "5試合"])
+def test_normalize_text_return_details_omits_unmodified_or_non_target_ranges(
+    text: str,
+) -> None:
+    """発話内容を変えない本文や数値に見えても対象外の区間は記録しない。"""
+
+    result = normalize_text(text, for_irodori=True, return_details=True)
+
+    assert result.details == ()
 
 
 def _build_irodori_symbol_replace_map_cases() -> list[tuple[str, str]]:
@@ -769,6 +928,19 @@ def test_normalize_text_url_email():
         normalize_text("info@test.co.jp")
         == "インフォ,アットマーク,テストドットシーオードットジェイピー"
     )
+    # パスが無くてもクエリとパーセント符号化を URL 読みに含める
+    pathless_query_url = normalize_text("https://example.com?q=a%20b")
+    assert "クエスチョン" in pathless_query_url
+    assert "パーセント20" in pathless_query_url
+    # パーセント符号化の途中で URL が切れず、後続のクエリも URL 読みになる
+    url_with_percent_encoding = normalize_text("https://x.test/a%20b?x=50%25")
+    assert "クエスチョン" in url_with_percent_encoding
+    assert "パーセント20" in url_with_percent_encoding
+    assert "パーセント25" in url_with_percent_encoding
+    # `%20` に続く数字は、`%` を号室判定より後で読むため、数字列のまま残る
+    url_with_percent_then_digit = normalize_text("https://example.com/foo#bar?x=1%202")
+    assert "パーセント202" in url_with_percent_then_digit
+    assert "ニーマルニ" not in url_with_percent_then_digit
 
 
 def test_normalize_text_divider_blocks():
