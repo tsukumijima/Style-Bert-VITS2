@@ -33,6 +33,7 @@ from style_bert_vits2.models.models import (
 from style_bert_vits2.nlp.symbols import SYMBOLS
 from style_bert_vits2.utils.paths import (
     TrainingModelPaths,
+    add_dataset_root_argument,
     add_model_argument,
     get_paths_config,
 )
@@ -83,6 +84,7 @@ def run():
         description="Train multi-language model.",
     )
     add_model_argument(parser)
+    add_dataset_root_argument(parser)
     parser.add_argument(
         "--pretrained_model_dir",
         type=str,
@@ -131,7 +133,9 @@ def run():
 
     # TrainingModelPaths を使ってパスを解決
     model_folder_name: str = args.model
-    paths = TrainingModelPaths(model_folder_name=model_folder_name)
+    paths = TrainingModelPaths(
+        model_folder_name=model_folder_name, dataset_root=Path(args.dataset_root)
+    )
     assets_root = Path(args.assets_root)
 
     # チェックポイント保存ディレクトリ (Data/{model_folder_name}/models/)

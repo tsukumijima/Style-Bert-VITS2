@@ -26,7 +26,11 @@ from tqdm import tqdm
 
 from style_bert_vits2.logging import logger
 from style_bert_vits2.models.hyper_parameters import HyperParameters
-from style_bert_vits2.utils.paths import TrainingModelPaths, add_model_argument
+from style_bert_vits2.utils.paths import (
+    TrainingModelPaths,
+    add_dataset_root_argument,
+    add_model_argument,
+)
 from style_bert_vits2.utils.stdout_wrapper import SAFE_STDOUT
 
 
@@ -129,6 +133,7 @@ if __name__ == "__main__":
         description="Generate style vectors for audio files.",
     )
     add_model_argument(parser)
+    add_dataset_root_argument(parser)
     parser.add_argument(
         "--num_processes",
         type=int,
@@ -145,7 +150,7 @@ if __name__ == "__main__":
 
     # TrainingModelPaths を使ってパスを解決
     model_folder_name: str = args.model
-    paths = TrainingModelPaths(model_folder_name)
+    paths = TrainingModelPaths(model_folder_name, dataset_root=Path(args.dataset_root))
     config_path = paths.config_path
     wavs_dir = paths.wavs_dir
 

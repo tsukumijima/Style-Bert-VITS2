@@ -20,6 +20,7 @@ from style_bert_vits2.nlp.japanese import pyopenjtalk_worker
 from style_bert_vits2.nlp.japanese.user_dict import update_dict
 from style_bert_vits2.utils.paths import (
     TrainingModelPaths,
+    add_dataset_root_argument,
     add_model_argument,
 )
 from style_bert_vits2.utils.stdout_wrapper import SAFE_STDOUT
@@ -317,6 +318,7 @@ if __name__ == "__main__":
         description="Preprocess transcription files and generate train.list / val.list.",
     )
     add_model_argument(parser)
+    add_dataset_root_argument(parser)
 
     # 「話者ごと」のバリデーションデータ数、言語ごとではない！
     # 元のコードや設定ファイルで val_per_lang となっていたので名前をそのままにしている
@@ -343,7 +345,7 @@ if __name__ == "__main__":
 
     # TrainingModelPaths を使ってパスを解決
     model_folder_name: str = args.model
-    paths = TrainingModelPaths(model_folder_name)
+    paths = TrainingModelPaths(model_folder_name, dataset_root=Path(args.dataset_root))
     hyper_parameters = HyperParameters.load_from_json(paths.config_path)
     use_jp_extra = hyper_parameters.is_jp_extra_like_model()
     use_nanairo = hyper_parameters.is_nanairo_like_model()

@@ -133,6 +133,24 @@ def add_model_argument(
     )
 
 
+def add_dataset_root_argument(parser: argparse.ArgumentParser) -> None:
+    """
+    共通の --dataset_root 引数を ArgumentParser に追加するヘルパー関数。
+    未指定時は paths.yml の dataset_root がそのまま使われるため、従来の挙動は変わらない。
+
+    Args:
+        parser (argparse.ArgumentParser): ArgumentParser インスタンス
+    """
+
+    parser.add_argument(
+        "--dataset_root",
+        type=str,
+        default=str(get_paths_config().dataset_root),
+        help="Root directory of training datasets (the parent directory of the model folder). "
+        "Defaults to dataset_root in configs/paths.yml.",
+    )
+
+
 @dataclass
 class TrainingModelPaths:
     """
