@@ -90,7 +90,6 @@ from training.losses import (
 from training.mel_processing import mel_spectrogram_torch, spec_to_mel_torch
 from training.runtime import (
     EMAModel,
-    GradientMonitor,
     TrainRuntimeConfig,
 )
 from training.utils import check_git_hash, get_steps, is_resuming, summarize
@@ -122,8 +121,6 @@ global_step = 0
 api = HfApi()
 
 
-# グローバル勾配モニターインスタンス (分散学習との互換性のため run() 内で初期化)
-gradient_monitor: GradientMonitor | None = None
 # グローバル EMA インスタンス
 ema_model: EMAModel | None = None
 
@@ -162,11 +159,6 @@ def run():
         "--no_progress_bar",
         action="store_true",
         help="Do not show the progress bar while training.",
-    )
-    parser.add_argument(
-        "--disable_gradient_monitor",
-        action="store_true",
-        help="Disable automatic learning rate adjustment based on the generator gradient norm.",
     )
     parser.add_argument(
         "--speedup",
@@ -706,21 +698,6 @@ def run():
         )
     initial_step = global_step
 
-    # 実験で固定学習率を比較できるよう、明示的に指定された場合は勾配モニターを無効化
-    # 分散学習時も各 GPU 間での学習率同期が複雑になるため無効化
-    global gradient_monitor
-    if args.disable_gradient_monitor is True:
-        gradient_monitor = None
-        logger.info("[GradientMonitor] Disabled by command-line option.")
-    elif n_gpus > 1:
-        gradient_monitor = None
-        logger.info(
-            "[GradientMonitor] Disabled (distributed training with multiple GPUs detected)."
-        )
-    else:
-        gradient_monitor = GradientMonitor()
-        logger.info("[GradientMonitor] Automatic learning rate adjustment enabled.")
-
     # EMA (Exponential Moving Average) の初期化
     # 推論時により安定した出力を得るために、モデル重みの移動平均を保持
     global ema_model
@@ -1251,11 +1228,6 @@ def train_and_evaluate(
             # EMA の更新（オプティマイザステップ後に実行）
             if ema_model is not None:
                 ema_model.update(net_g)
-
-            # 勾配ノルムに基づく自動学習率調整
-            # 分散学習での競合を避けるため、rank 0 のみがモニタリングと調整を行う
-            if rank == 0 and gradient_monitor is not None:
-                gradient_monitor.update(grad_norm_g, optim_g, scheduler_g, global_step)
 
         if rank == 0:
             if (
